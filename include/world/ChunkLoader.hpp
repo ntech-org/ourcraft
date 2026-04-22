@@ -10,19 +10,38 @@
 #include <memory>
 #include <vector>
 
+enum class ChunkTaskType {
+    Generate,
+    Decorate
+};
+
+struct ChunkTask {
+    ChunkTaskType type;
+    int x, z;
+    std::shared_ptr<Chunk> chunk;
+    std::shared_ptr<Chunk> chunkE;
+    std::shared_ptr<Chunk> chunkS;
+    std::shared_ptr<Chunk> chunkSE;
+};
+
 class ChunkLoader {
 public:
     ChunkLoader(WorldGenerator& generator);
     ~ChunkLoader();
 
     void requestChunk(int x, int z);
+    void requestDecoration(std::shared_ptr<Chunk> chunk, 
+                           std::shared_ptr<Chunk> chunkE,
+                           std::shared_ptr<Chunk> chunkS,
+                           std::shared_ptr<Chunk> chunkSE);
+    
     bool tryPopResult(std::shared_ptr<Chunk>& outChunk);
 
 private:
     void workerLoop();
 
     WorldGenerator& m_generator;
-    std::queue<std::pair<int, int>> m_requestQueue;
+    std::queue<ChunkTask> m_requestQueue;
     std::queue<std::shared_ptr<Chunk>> m_resultQueue;
     
     std::mutex m_requestMutex;

@@ -54,7 +54,7 @@ void Application::init() {
     m_terrainTex = m_renderEngine->getTexture("/terrain.png");
 
     m_world = std::make_unique<World>();
-    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1337));
+    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(-1));
 
     m_camera.position = glm::vec3(8.0f, 80.0f, 8.0f);
     m_camera.yaw = 90.0f;
@@ -131,14 +131,14 @@ void Application::update(float deltaTime) {
     if (deltaTime > 0.0f) {
         m_world->update(deltaTime);
     }
-    m_world->pollGeneratedChunks();
+    bool anyChunksAdded = m_world->pollGeneratedChunks();
 
     int playerCX = (int)std::floor(m_camera.position.x / 16.0f);
     int playerCZ = (int)std::floor(m_camera.position.z / 16.0f);
 
     int renderDistance = 8;
     int keepDistance = renderDistance + 2;
-    bool chunksChanged = false;
+    bool chunksRequested = false;
 
     // Unload chunks far away
     m_worldRenderer->removeFarSections(playerCX, playerCZ, keepDistance);
@@ -164,11 +164,11 @@ void Application::update(float deltaTime) {
 
         for (const auto& coords : chunksToLoad) {
             m_world->requestChunk(coords.first, coords.second);
-            chunksChanged = true;
+            chunksRequested = true;
         }
     }
 
-    if (chunksChanged) {
+    if (anyChunksAdded || chunksRequested) {
         m_worldRenderer->rebuildSectionList();
     }
 }
@@ -177,7 +177,7 @@ void Application::handleInput() {
     if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(m_window, true);
 
-    float cameraSpeed = 10000.0f * m_deltaTime;
+    float cameraSpeed = 100.0f * m_deltaTime;
     if (glfwGetKey(m_window, GLFW_KEY_W) == GLFW_PRESS)
         m_camera.position += cameraSpeed * m_camera.front;
     if (glfwGetKey(m_window, GLFW_KEY_S) == GLFW_PRESS)

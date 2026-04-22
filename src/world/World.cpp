@@ -1,4 +1,5 @@
 #include "world/World.hpp"
+#include "world/Block.hpp"
 #include <algorithm>
 #include <cmath>
 #include <glm/geometric.hpp>
@@ -19,30 +20,62 @@ void World::addChunk(std::shared_ptr<Chunk> chunk) {
 
 void World::requestChunk(int chunkX, int chunkZ) {
     if (isChunkLoaded(chunkX, chunkZ) || isChunkPending(chunkX, chunkZ)) return;
-    
+
     m_pendingChunks.insert(chunkKey(chunkX, chunkZ));
     m_loader->requestChunk(chunkX, chunkZ);
 }
 
-void World::pollGeneratedChunks() {
+bool World::pollGeneratedChunks() {
+    bool changed = false;
     std::shared_ptr<Chunk> chunk;
     while (m_loader->tryPopResult(chunk)) {
         int cx = chunk->getX();
         int cz = chunk->getZ();
 
-        m_pendingChunks.erase(chunkKey(cx, cz));
-        addChunk(chunk); // chunk is copied, but that's fine since we std::move later into m_chunks, wait addChunk moves it.
-        // Let's pass by copy to addChunk or change addChunk. Actually, addChunk takes by value. So we pass it by copy and it moves inside.
-        // Let's fix addChunk call and neighbors.
+        if (chunk->getState() == ChunkState::Generated) {
+            m_pendingChunks.erase(chunkKey(cx, cz));
+            addChunk(chunk);
+            changed = true;
 
-        // When a new chunk is generated, notify neighbors to re-mesh for culling
-        for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
-            if (auto neighbor = getChunk(cx - 1, cz)) neighbor->touchSection(i);
-            if (auto neighbor = getChunk(cx + 1, cz)) neighbor->touchSection(i);
-            if (auto neighbor = getChunk(cx, cz - 1)) neighbor->touchSection(i);
-            if (auto neighbor = getChunk(cx, cz + 1)) neighbor->touchSection(i);
+            // Notify neighbors to re-mesh now that this chunk is available for culling
+            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
+                if (auto neighbor = getChunk(cx - 1, cz)) neighbor->touchSection(i);
+                if (auto neighbor = getChunk(cx + 1, cz)) neighbor->touchSection(i);
+                if (auto neighbor = getChunk(cx, cz - 1)) neighbor->touchSection(i);
+                if (auto neighbor = getChunk(cx, cz + 1)) neighbor->touchSection(i);
+            }
+
+            // Check for 2x2 areas that can now be decorated
+            for (int dx = -1; dx <= 0; ++dx) {
+                for (int dz = -1; dz <= 0; ++dz) {
+                    auto c00 = getChunk(cx + dx, cz + dz);
+                    auto c10 = getChunk(cx + dx + 1, cz + dz);
+                    auto c01 = getChunk(cx + dx, cz + dz + 1);
+                    auto c11 = getChunk(cx + dx + 1, cz + dz + 1);
+
+                    if (c00 && c10 && c01 && c11 &&
+                        c00->getState() == ChunkState::Generated &&
+                        c10->getState() == ChunkState::Generated &&
+                        c01->getState() == ChunkState::Generated &&
+                        c11->getState() == ChunkState::Generated)
+                    {
+                        c00->setState(ChunkState::Decorating);
+                        m_loader->requestDecoration(c00, c10, c01, c11);
+                    }
+                }
+            }
+        } else if (chunk->getState() == ChunkState::Decorated) {
+            // When a chunk is decorated, notify neighbors to re-mesh for culling
+            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
+                if (auto neighbor = getChunk(cx - 1, cz)) neighbor->touchSection(i);
+                if (auto neighbor = getChunk(cx + 1, cz)) neighbor->touchSection(i);
+                if (auto neighbor = getChunk(cx, cz - 1)) neighbor->touchSection(i);
+                if (auto neighbor = getChunk(cx, cz + 1)) neighbor->touchSection(i);
+                chunk->touchSection(i);
+            }
         }
     }
+    return changed;
 }
 
 void World::unloadFarChunks(int playerCX, int playerCZ, int keepDistance) {
@@ -216,18 +249,26 @@ float World::getBrightness(int x, int y, int z) const {
         return lightBrightnessTable[0];
     }
 
-    if (y >= 64) {
+    if (y >= Chunk::HEIGHT) {
         return lightBrightnessTable[15];
     }
 
-    // Check if any block above is solid
-    for (int ty = y + 1; ty < Chunk::HEIGHT; ++ty) {
-        if (getBlockID(x, ty, z) != 0) {
-            return lightBrightnessTable[0];
+    int currentLight = 15;
+    for (int ty = Chunk::HEIGHT - 1; ty > y; --ty) {
+        uint8_t bid = getBlockID(x, ty, z);
+        if (bid == 0) continue;
+
+        int opacity = Block::lightOpacity[bid];
+        if (opacity <= 0) continue;
+
+        currentLight -= opacity;
+        if (currentLight <= 0) {
+            currentLight = 0;
+            break;
         }
     }
 
-    return lightBrightnessTable[15];
+    return lightBrightnessTable[currentLight];
 }
 
 float World::getStarBrightness(float partialTick) const {

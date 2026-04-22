@@ -112,7 +112,10 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
     // Dispatch new dirty meshes
     int buildsThisFrame = 0;
     for (auto& [key, entry] : m_sections) {
-        if (!entry.chunk->isSectionDirty(entry.sectionIndex) || entry.isBuilding) {
+        if (!entry.chunk->isSectionDirty(entry.sectionIndex) || 
+            entry.isBuilding || 
+            (entry.chunk->getState() != ChunkState::Decorated && entry.chunk->getState() != ChunkState::Generated && entry.chunk->getState() != ChunkState::Decorating)) 
+        {
             continue;
         }
 

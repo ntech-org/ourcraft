@@ -19,7 +19,7 @@ public:
 
     void addChunk(std::shared_ptr<Chunk> chunk);
     void requestChunk(int chunkX, int chunkZ);
-    void pollGeneratedChunks();
+    bool pollGeneratedChunks();
     void unloadFarChunks(int playerCX, int playerCZ, int keepDistance);
 
     std::shared_ptr<Chunk> getChunk(int chunkX, int chunkZ);

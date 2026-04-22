@@ -298,16 +298,8 @@ void greedyMeshNorthSouth(
                 const std::uint8_t blockId = neighborhood.getBlockID(x, globalY, localZ);
                 
                 int nz = localZ + neighborOffset;
-                bool chunkLoaded = true;
-                if (nz < 0 && !neighborhood.north) chunkLoaded = false;
-                if (nz >= Chunk::DEPTH && !neighborhood.south) chunkLoaded = false;
-
-                if (!chunkLoaded) {
-                    mask[x + y * Chunk::WIDTH] = FaceMaskCell{};
-                } else {
-                    const std::uint8_t neighborId = neighborhood.getBlockID(x, globalY, nz);
-                    mask[x + y * Chunk::WIDTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
-                }
+                const std::uint8_t neighborId = neighborhood.getBlockID(x, globalY, nz);
+                mask[x + y * Chunk::WIDTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
             }
         }
 
@@ -382,16 +374,8 @@ void greedyMeshWestEast(
                 const std::uint8_t blockId = neighborhood.getBlockID(localX, globalY, z);
                 
                 int nx = localX + neighborOffset;
-                bool chunkLoaded = true;
-                if (nx < 0 && !neighborhood.west) chunkLoaded = false;
-                if (nx >= Chunk::WIDTH && !neighborhood.east) chunkLoaded = false;
-
-                if (!chunkLoaded) {
-                    mask[z + y * Chunk::DEPTH] = FaceMaskCell{};
-                } else {
-                    const std::uint8_t neighborId = neighborhood.getBlockID(nx, globalY, z);
-                    mask[z + y * Chunk::DEPTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
-                }
+                const std::uint8_t neighborId = neighborhood.getBlockID(nx, globalY, z);
+                mask[z + y * Chunk::DEPTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
             }
         }
 
