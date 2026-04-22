@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Chunk.hpp"
+#include "world/WorldGenerator.hpp"
 #include <glm/vec3.hpp>
 #include <cstdint>
 #include <memory>
@@ -9,12 +10,17 @@
 
 class World {
 public:
-    World() = default;
+    World();
+
+    void setGenerator(std::unique_ptr<WorldGenerator> generator);
 
     void addChunk(std::unique_ptr<Chunk> chunk);
+    Chunk* getOrGenerateChunk(int chunkX, int chunkZ);
 
     Chunk* getChunk(int chunkX, int chunkZ);
     const Chunk* getChunk(int chunkX, int chunkZ) const;
+
+    bool isChunkLoaded(int chunkX, int chunkZ) const;
 
     uint8_t getBlockID(int worldX, int worldY, int worldZ) const;
     void setBlockID(int worldX, int worldY, int worldZ, uint8_t id);
@@ -44,4 +50,5 @@ private:
     std::uint32_t m_skyColor = 8961023u;
     std::uint32_t m_fogColor = 12638463u;
     std::uint32_t m_cloudColor = 16777215u;
+    std::unique_ptr<WorldGenerator> m_generator;
 };

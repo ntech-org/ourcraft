@@ -4,10 +4,44 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/constants.hpp>
 
+World::World() : m_worldTime(6000.0) {}
+
+void World::setGenerator(std::unique_ptr<WorldGenerator> generator) {
+    m_generator = std::move(generator);
+}
+
 void World::addChunk(std::unique_ptr<Chunk> chunk) {
     Chunk* chunkPtr = chunk.get();
     m_chunkLookup[chunkKey(chunkPtr->getX(), chunkPtr->getZ())] = chunkPtr;
     m_chunks.push_back(std::move(chunk));
+}
+
+Chunk* World::getOrGenerateChunk(int chunkX, int chunkZ) {
+    if (Chunk* chunk = getChunk(chunkX, chunkZ)) {
+        return chunk;
+    }
+
+    if (m_generator) {
+        auto chunk = std::make_unique<Chunk>(chunkX, chunkZ);
+        m_generator->generateChunk(*chunk);
+        
+        // IMPORTANT: Register the chunk BEFORE marking neighbors dirty, 
+        // so that if neighbors re-mesh immediately, they can see this new chunk.
+        Chunk* ptr = chunk.get();
+        addChunk(std::move(chunk));
+
+        // When a new chunk is generated, its neighbors might need to cull their boundary faces.
+        for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
+            if (Chunk* neighbor = getChunk(chunkX - 1, chunkZ)) neighbor->touchSection(i);
+            if (Chunk* neighbor = getChunk(chunkX + 1, chunkZ)) neighbor->touchSection(i);
+            if (Chunk* neighbor = getChunk(chunkX, chunkZ - 1)) neighbor->touchSection(i);
+            if (Chunk* neighbor = getChunk(chunkX, chunkZ + 1)) neighbor->touchSection(i);
+        }
+
+        return ptr;
+    }
+
+    return nullptr;
 }
 
 Chunk* World::getChunk(int chunkX, int chunkZ) {
@@ -18,6 +52,10 @@ Chunk* World::getChunk(int chunkX, int chunkZ) {
 const Chunk* World::getChunk(int chunkX, int chunkZ) const {
     const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
     return it == m_chunkLookup.end() ? nullptr : it->second;
+}
+
+bool World::isChunkLoaded(int chunkX, int chunkZ) const {
+    return m_chunkLookup.find(chunkKey(chunkX, chunkZ)) != m_chunkLookup.end();
 }
 
 uint8_t World::getBlockID(int worldX, int worldY, int worldZ) const {

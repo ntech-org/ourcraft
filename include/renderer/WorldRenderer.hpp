@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <map>
 
 class Shader;
 class World;
@@ -40,6 +41,8 @@ private:
     };
 
     World& m_world;
-    std::vector<SectionRenderEntry> m_sections;
+    std::map<std::uint64_t, SectionRenderEntry> m_sections;
     Stats m_stats;
+
+    static std::uint64_t sectionKey(int cx, int cz, int sectionIndex);
 };
