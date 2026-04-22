@@ -16,6 +16,9 @@ enum class BlockRenderShape {
     Special
 };
 
+class World;
+class AxisAlignedBB;
+
 class Block {
 public:
     static Block* blocksList[256];
@@ -88,6 +91,9 @@ public:
     virtual bool isOccluder() const;
     virtual bool isGreedyMergeable() const;
     virtual bool isOpaqueCube() const;
+
+    virtual void getCollisionBoxes(World& world, int x, int y, int z, const AxisAlignedBB& mask, std::vector<AxisAlignedBB>& list) const;
+    virtual AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const;
 
     const int blockID;
     int blockIndexInTexture;

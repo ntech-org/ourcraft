@@ -1,0 +1,24 @@
+#pragma once
+
+#include <vector>
+
+class AxisAlignedBB {
+public:
+    AxisAlignedBB(double minX, double minY, double minZ, double maxX, double maxY, double maxZ);
+
+    static AxisAlignedBB getBoundingBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ);
+
+    AxisAlignedBB addCoord(double x, double y, double z) const;
+    AxisAlignedBB expand(double x, double y, double z) const;
+    AxisAlignedBB getOffsetBoundingBox(double x, double y, double z) const;
+
+    double calculateXOffset(const AxisAlignedBB& other, double offsetX) const;
+    double calculateYOffset(const AxisAlignedBB& other, double offsetY) const;
+    double calculateZOffset(const AxisAlignedBB& other, double offsetZ) const;
+
+    bool intersectsWith(const AxisAlignedBB& other) const;
+    void offset(double x, double y, double z);
+
+    double minX, minY, minZ;
+    double maxX, maxY, maxZ;
+};

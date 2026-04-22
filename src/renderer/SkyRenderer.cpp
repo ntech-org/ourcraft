@@ -68,10 +68,10 @@ void SkyRenderer::render(const World& world, const Camera& camera, const glm::ma
     const float blendFactor = 0.29289321881f; // for renderDistance = 0
     fogColor += (world.getSkyColor() - fogColor) * blendFactor;
 
-    // Void darkening for fog: starts at Y=32
+    // Void darkening for fog: starts at half the horizon
     float fogVoidDarkening = 1.0f;
-    if (camera.position.y < 32.0f) {
-        fogVoidDarkening = glm::clamp(camera.position.y / 32.0f, 0.0f, 1.0f);
+    if (camera.position.y < (world.getHorizon()/2.0f)) {
+        fogVoidDarkening = glm::clamp(camera.position.y / world.getHorizon(), 0.0f, 1.0f);
         fogVoidDarkening *= fogVoidDarkening;
     }
     fogColor *= (fogMultiplier * fogVoidDarkening);

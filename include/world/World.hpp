@@ -3,6 +3,7 @@
 #include "world/Chunk.hpp"
 #include "world/WorldGenerator.hpp"
 #include "world/ChunkLoader.hpp"
+#include "physics/AxisAlignedBB.hpp"
 #include <glm/vec3.hpp>
 #include <cstdint>
 #include <memory>
@@ -31,6 +32,8 @@ public:
 
     uint8_t getBlockID(int worldX, int worldY, int worldZ) const;
     void setBlockID(int worldX, int worldY, int worldZ, uint8_t id);
+
+    std::vector<AxisAlignedBB> getCollidingBoundingBoxes(const AxisAlignedBB& bb);
 
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;

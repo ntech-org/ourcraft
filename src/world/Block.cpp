@@ -1,4 +1,5 @@
 #include "world/Block.hpp"
+#include "physics/AxisAlignedBB.hpp"
 
 Block* Block::blocksList[256] = { nullptr };
 bool Block::opaqueCubeLookup[256] = { false };
@@ -182,6 +183,19 @@ bool Block::isGreedyMergeable() const {
 
 bool Block::isOpaqueCube() const {
     return true;
+}
+
+void Block::getCollisionBoxes(World& world, int x, int y, int z, const AxisAlignedBB& mask, std::vector<AxisAlignedBB>& list) const {
+    AxisAlignedBB bb = getCollisionBoundingBoxFromPool(world, x, y, z);
+    if (bb.minX != bb.maxX || bb.minY != bb.maxY || bb.minZ != bb.maxZ) {
+        if (bb.intersectsWith(mask)) {
+            list.push_back(bb);
+        }
+    }
+}
+
+AxisAlignedBB Block::getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const {
+    return AxisAlignedBB((double)x + minX, (double)y + minY, (double)z + minZ, (double)x + maxX, (double)y + maxY, (double)z + maxZ);
 }
 
 void Block::setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1) {

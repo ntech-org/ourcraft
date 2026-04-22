@@ -131,6 +131,28 @@ uint8_t World::getBlockID(int worldX, int worldY, int worldZ) const {
     return chunk->getBlockID(floorMod(worldX, Chunk::WIDTH), worldY, floorMod(worldZ, Chunk::DEPTH));
 }
 
+std::vector<AxisAlignedBB> World::getCollidingBoundingBoxes(const AxisAlignedBB& bb) {
+    std::vector<AxisAlignedBB> list;
+    int x0 = (int)std::floor(bb.minX);
+    int x1 = (int)std::floor(bb.maxX + 1.0);
+    int y0 = (int)std::floor(bb.minY);
+    int y1 = (int)std::floor(bb.maxY + 1.0);
+    int z0 = (int)std::floor(bb.minZ);
+    int z1 = (int)std::floor(bb.maxZ + 1.0);
+
+    for (int x = x0; x < x1; ++x) {
+        for (int y = y0; y < y1; ++y) {
+            for (int z = z0; z < z1; ++z) {
+                uint8_t bid = getBlockID(x, y, z);
+                if (bid > 0 && Block::blocksList[bid]) {
+                    Block::blocksList[bid]->getCollisionBoxes(*this, x, y, z, bb, list);
+                }
+            }
+        }
+    }
+    return list;
+}
+
 void World::setBlockID(int worldX, int worldY, int worldZ, uint8_t id) {
     if (worldY < 0 || worldY >= Chunk::HEIGHT) {
         return;
