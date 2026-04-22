@@ -4,6 +4,18 @@
 #include <string>
 #include <vector>
 
+enum class BlockRenderLayer {
+    Opaque,
+    Cutout,
+    Translucent,
+    Special
+};
+
+enum class BlockRenderShape {
+    FullCube,
+    Special
+};
+
 class Block {
 public:
     static Block* blocksList[256];
@@ -23,6 +35,11 @@ public:
     virtual ~Block() = default;
 
     virtual int getTexture(int side) const;
+    virtual BlockRenderLayer getRenderLayer() const;
+    virtual BlockRenderShape getRenderShape() const;
+    virtual bool isFullCube() const;
+    virtual bool isOccluder() const;
+    virtual bool isGreedyMergeable() const;
     bool isOpaqueCube() const;
 
     const int blockID;

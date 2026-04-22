@@ -43,6 +43,26 @@ int Block::getTexture(int side) const {
     return blockIndexInTexture;
 }
 
+BlockRenderLayer Block::getRenderLayer() const {
+    return BlockRenderLayer::Opaque;
+}
+
+BlockRenderShape Block::getRenderShape() const {
+    return BlockRenderShape::FullCube;
+}
+
+bool Block::isFullCube() const {
+    return true;
+}
+
+bool Block::isOccluder() const {
+    return isOpaqueCube() && isFullCube();
+}
+
+bool Block::isGreedyMergeable() const {
+    return getRenderLayer() == BlockRenderLayer::Opaque && isFullCube();
+}
+
 bool Block::isOpaqueCube() const {
     return true;
 }

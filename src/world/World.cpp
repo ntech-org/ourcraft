@@ -1,0 +1,194 @@
+#include "world/World.hpp"
+#include <algorithm>
+#include <cmath>
+#include <glm/geometric.hpp>
+#include <glm/gtc/constants.hpp>
+
+void World::addChunk(std::unique_ptr<Chunk> chunk) {
+    Chunk* chunkPtr = chunk.get();
+    m_chunkLookup[chunkKey(chunkPtr->getX(), chunkPtr->getZ())] = chunkPtr;
+    m_chunks.push_back(std::move(chunk));
+}
+
+Chunk* World::getChunk(int chunkX, int chunkZ) {
+    const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
+    return it == m_chunkLookup.end() ? nullptr : it->second;
+}
+
+const Chunk* World::getChunk(int chunkX, int chunkZ) const {
+    const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
+    return it == m_chunkLookup.end() ? nullptr : it->second;
+}
+
+uint8_t World::getBlockID(int worldX, int worldY, int worldZ) const {
+    if (worldY < 0 || worldY >= Chunk::HEIGHT) {
+        return 0;
+    }
+
+    const int chunkX = floorDiv(worldX, Chunk::WIDTH);
+    const int chunkZ = floorDiv(worldZ, Chunk::DEPTH);
+    const Chunk* chunk = getChunk(chunkX, chunkZ);
+    if (!chunk) {
+        return 0;
+    }
+
+    return chunk->getBlockID(floorMod(worldX, Chunk::WIDTH), worldY, floorMod(worldZ, Chunk::DEPTH));
+}
+
+void World::setBlockID(int worldX, int worldY, int worldZ, uint8_t id) {
+    if (worldY < 0 || worldY >= Chunk::HEIGHT) {
+        return;
+    }
+
+    const int chunkX = floorDiv(worldX, Chunk::WIDTH);
+    const int chunkZ = floorDiv(worldZ, Chunk::DEPTH);
+    Chunk* chunk = getChunk(chunkX, chunkZ);
+    if (!chunk) {
+        return;
+    }
+
+    const int localX = floorMod(worldX, Chunk::WIDTH);
+    const int localZ = floorMod(worldZ, Chunk::DEPTH);
+    const int sectionIndex = Chunk::getSectionIndex(worldY);
+
+    chunk->setBlockID(localX, worldY, localZ, id);
+
+    if (localX == 0) {
+        if (Chunk* neighbor = getChunk(chunkX - 1, chunkZ)) {
+            neighbor->touchSection(sectionIndex);
+        }
+    } else if (localX == Chunk::WIDTH - 1) {
+        if (Chunk* neighbor = getChunk(chunkX + 1, chunkZ)) {
+            neighbor->touchSection(sectionIndex);
+        }
+    }
+
+    if (localZ == 0) {
+        if (Chunk* neighbor = getChunk(chunkX, chunkZ - 1)) {
+            neighbor->touchSection(sectionIndex);
+        }
+    } else if (localZ == Chunk::DEPTH - 1) {
+        if (Chunk* neighbor = getChunk(chunkX, chunkZ + 1)) {
+            neighbor->touchSection(sectionIndex);
+        }
+    }
+}
+
+int World::floorDiv(int value, int divisor) {
+    int quotient = value / divisor;
+    int remainder = value % divisor;
+    if (remainder != 0 && ((remainder < 0) != (divisor < 0))) {
+        --quotient;
+    }
+    return quotient;
+}
+
+int World::floorMod(int value, int divisor) {
+    int remainder = value % divisor;
+    if (remainder < 0) {
+        remainder += divisor;
+    }
+    return remainder;
+}
+
+std::uint64_t World::chunkKey(int chunkX, int chunkZ) {
+    return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkX)) << 32) |
+           static_cast<std::uint32_t>(chunkZ);
+}
+
+void World::update(float deltaTime) {
+    // Match the original day length: 20 ticks per second, 24000 ticks per full day.
+    m_worldTime += static_cast<double>(deltaTime) * 20.0;
+    if (m_worldTime >= 24000.0) {
+        m_worldTime = std::fmod(m_worldTime, 24000.0);
+    }
+}
+
+float World::getCelestialAngle(float partialTick) const {
+    float timeOfDay = static_cast<float>(std::fmod(m_worldTime, 24000.0));
+    float angle = (timeOfDay + partialTick) / 24000.0f - 0.25f;
+    if (angle < 0.0f) {
+        angle += 1.0f;
+    }
+    if (angle > 1.0f) {
+        angle -= 1.0f;
+    }
+
+    float base = angle;
+    angle = 1.0f - static_cast<float>((std::cos(static_cast<double>(angle) * glm::pi<double>()) + 1.0) * 0.5);
+    angle = base + (angle - base) / 3.0f;
+    return angle;
+}
+
+glm::vec3 World::getSkyColor(float partialTick) const {
+    const float angle = getCelestialAngle(partialTick);
+    const float daylight = std::clamp(std::cos(angle * glm::two_pi<float>()) * 2.0f + 0.5f, 0.0f, 1.0f);
+    return unpackColor(m_skyColor) * daylight;
+}
+
+glm::vec3 World::getFogColor(float partialTick) const {
+    const float angle = getCelestialAngle(partialTick);
+    const float daylight = std::clamp(std::cos(angle * glm::two_pi<float>()) * 2.0f + 0.5f, 0.0f, 1.0f);
+    const glm::vec3 fog = unpackColor(m_fogColor);
+    return {
+        fog.r * (daylight * 0.94f + 0.06f),
+        fog.g * (daylight * 0.94f + 0.06f),
+        fog.b * (daylight * 0.91f + 0.09f)
+    };
+}
+
+float World::getBrightness(int x, int y, int z) const {
+    static float lightBrightnessTable[16];
+    static bool initialized = false;
+    if (!initialized) {
+        float var0 = 0.05f;
+        for (int i = 0; i <= 15; ++i) {
+            float var2 = 1.0f - static_cast<float>(i) / 15.0f;
+            lightBrightnessTable[i] = (1.0f - var2) / (var2 * 3.0f + 1.0f) * (1.0f - var0) + var0;
+        }
+        initialized = true;
+    }
+
+    if (y < 0) {
+        return lightBrightnessTable[0];
+    }
+
+    if (y >= 64) {
+        return lightBrightnessTable[15];
+    }
+
+    // Check if any block above is solid
+    for (int ty = y + 1; ty < Chunk::HEIGHT; ++ty) {
+        if (getBlockID(x, ty, z) != 0) {
+            return lightBrightnessTable[0];
+        }
+    }
+
+    return lightBrightnessTable[15];
+}
+
+float World::getStarBrightness(float partialTick) const {
+    const float angle = getCelestialAngle(partialTick);
+    float brightness = 1.0f - (std::cos(angle * glm::two_pi<float>()) * 2.0f + 12.0f / 16.0f);
+    brightness = std::clamp(brightness, 0.0f, 1.0f);
+    return brightness * brightness * 0.5f;
+}
+
+float World::getDaylightStrength(float partialTick) const {
+    const float angle = getCelestialAngle(partialTick);
+    return std::clamp(std::cos(angle * glm::two_pi<float>()) * 2.0f + 0.5f, 0.0f, 1.0f);
+}
+
+glm::vec3 World::getSunDirection(float partialTick) const {
+    const float angle = getCelestialAngle(partialTick) * glm::two_pi<float>();
+    glm::vec3 direction(0.0f, std::cos(angle), std::sin(angle));
+    return glm::normalize(direction);
+}
+
+glm::vec3 World::unpackColor(std::uint32_t rgb) {
+    return {
+        static_cast<float>((rgb >> 16) & 255u) / 255.0f,
+        static_cast<float>((rgb >> 8) & 255u) / 255.0f,
+        static_cast<float>(rgb & 255u) / 255.0f
+    };
+}
