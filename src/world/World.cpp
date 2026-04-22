@@ -8,54 +8,79 @@ World::World() : m_worldTime(6000.0) {}
 
 void World::setGenerator(std::unique_ptr<WorldGenerator> generator) {
     m_generator = std::move(generator);
+    m_loader = std::make_unique<ChunkLoader>(*m_generator);
 }
 
-void World::addChunk(std::unique_ptr<Chunk> chunk) {
-    Chunk* chunkPtr = chunk.get();
-    m_chunkLookup[chunkKey(chunkPtr->getX(), chunkPtr->getZ())] = chunkPtr;
+void World::addChunk(std::shared_ptr<Chunk> chunk) {
+    std::unique_lock<std::shared_mutex> lock(m_chunkMutex);
+    m_chunkLookup[chunkKey(chunk->getX(), chunk->getZ())] = chunk;
     m_chunks.push_back(std::move(chunk));
 }
 
-Chunk* World::getOrGenerateChunk(int chunkX, int chunkZ) {
-    if (Chunk* chunk = getChunk(chunkX, chunkZ)) {
-        return chunk;
-    }
+void World::requestChunk(int chunkX, int chunkZ) {
+    if (isChunkLoaded(chunkX, chunkZ) || isChunkPending(chunkX, chunkZ)) return;
+    
+    m_pendingChunks.insert(chunkKey(chunkX, chunkZ));
+    m_loader->requestChunk(chunkX, chunkZ);
+}
 
-    if (m_generator) {
-        auto chunk = std::make_unique<Chunk>(chunkX, chunkZ);
-        m_generator->generateChunk(*chunk);
-        
-        // IMPORTANT: Register the chunk BEFORE marking neighbors dirty, 
-        // so that if neighbors re-mesh immediately, they can see this new chunk.
-        Chunk* ptr = chunk.get();
-        addChunk(std::move(chunk));
+void World::pollGeneratedChunks() {
+    std::shared_ptr<Chunk> chunk;
+    while (m_loader->tryPopResult(chunk)) {
+        int cx = chunk->getX();
+        int cz = chunk->getZ();
 
-        // When a new chunk is generated, its neighbors might need to cull their boundary faces.
+        m_pendingChunks.erase(chunkKey(cx, cz));
+        addChunk(chunk); // chunk is copied, but that's fine since we std::move later into m_chunks, wait addChunk moves it.
+        // Let's pass by copy to addChunk or change addChunk. Actually, addChunk takes by value. So we pass it by copy and it moves inside.
+        // Let's fix addChunk call and neighbors.
+
+        // When a new chunk is generated, notify neighbors to re-mesh for culling
         for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
-            if (Chunk* neighbor = getChunk(chunkX - 1, chunkZ)) neighbor->touchSection(i);
-            if (Chunk* neighbor = getChunk(chunkX + 1, chunkZ)) neighbor->touchSection(i);
-            if (Chunk* neighbor = getChunk(chunkX, chunkZ - 1)) neighbor->touchSection(i);
-            if (Chunk* neighbor = getChunk(chunkX, chunkZ + 1)) neighbor->touchSection(i);
+            if (auto neighbor = getChunk(cx - 1, cz)) neighbor->touchSection(i);
+            if (auto neighbor = getChunk(cx + 1, cz)) neighbor->touchSection(i);
+            if (auto neighbor = getChunk(cx, cz - 1)) neighbor->touchSection(i);
+            if (auto neighbor = getChunk(cx, cz + 1)) neighbor->touchSection(i);
         }
-
-        return ptr;
     }
-
-    return nullptr;
 }
 
-Chunk* World::getChunk(int chunkX, int chunkZ) {
-    const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
-    return it == m_chunkLookup.end() ? nullptr : it->second;
-}
+void World::unloadFarChunks(int playerCX, int playerCZ, int keepDistance) {
+    std::unique_lock<std::shared_mutex> lock(m_chunkMutex);
+    auto it = m_chunks.begin();
+    while (it != m_chunks.end()) {
+        std::shared_ptr<Chunk>& chunk = *it;
+        int cx = chunk->getX();
+        int cz = chunk->getZ();
 
-const Chunk* World::getChunk(int chunkX, int chunkZ) const {
-    const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
-    return it == m_chunkLookup.end() ? nullptr : it->second;
+        if (std::abs(cx - playerCX) > keepDistance || std::abs(cz - playerCZ) > keepDistance) {
+            m_chunkLookup.erase(chunkKey(cx, cz));
+            it = m_chunks.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 bool World::isChunkLoaded(int chunkX, int chunkZ) const {
+    std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
     return m_chunkLookup.find(chunkKey(chunkX, chunkZ)) != m_chunkLookup.end();
+}
+
+bool World::isChunkPending(int chunkX, int chunkZ) const {
+    return m_pendingChunks.find(chunkKey(chunkX, chunkZ)) != m_pendingChunks.end();
+}
+
+std::shared_ptr<Chunk> World::getChunk(int chunkX, int chunkZ) {
+    std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
+    const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
+    return it == m_chunkLookup.end() ? nullptr : it->second;
+}
+
+std::shared_ptr<const Chunk> World::getChunk(int chunkX, int chunkZ) const {
+    std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
+    const auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
+    return it == m_chunkLookup.end() ? nullptr : it->second;
 }
 
 uint8_t World::getBlockID(int worldX, int worldY, int worldZ) const {
@@ -65,7 +90,7 @@ uint8_t World::getBlockID(int worldX, int worldY, int worldZ) const {
 
     const int chunkX = floorDiv(worldX, Chunk::WIDTH);
     const int chunkZ = floorDiv(worldZ, Chunk::DEPTH);
-    const Chunk* chunk = getChunk(chunkX, chunkZ);
+    std::shared_ptr<const Chunk> chunk = getChunk(chunkX, chunkZ);
     if (!chunk) {
         return 0;
     }
@@ -80,7 +105,7 @@ void World::setBlockID(int worldX, int worldY, int worldZ, uint8_t id) {
 
     const int chunkX = floorDiv(worldX, Chunk::WIDTH);
     const int chunkZ = floorDiv(worldZ, Chunk::DEPTH);
-    Chunk* chunk = getChunk(chunkX, chunkZ);
+    std::shared_ptr<Chunk> chunk = getChunk(chunkX, chunkZ);
     if (!chunk) {
         return;
     }
@@ -92,21 +117,21 @@ void World::setBlockID(int worldX, int worldY, int worldZ, uint8_t id) {
     chunk->setBlockID(localX, worldY, localZ, id);
 
     if (localX == 0) {
-        if (Chunk* neighbor = getChunk(chunkX - 1, chunkZ)) {
+        if (auto neighbor = getChunk(chunkX - 1, chunkZ)) {
             neighbor->touchSection(sectionIndex);
         }
     } else if (localX == Chunk::WIDTH - 1) {
-        if (Chunk* neighbor = getChunk(chunkX + 1, chunkZ)) {
+        if (auto neighbor = getChunk(chunkX + 1, chunkZ)) {
             neighbor->touchSection(sectionIndex);
         }
     }
 
     if (localZ == 0) {
-        if (Chunk* neighbor = getChunk(chunkX, chunkZ - 1)) {
+        if (auto neighbor = getChunk(chunkX, chunkZ - 1)) {
             neighbor->touchSection(sectionIndex);
         }
     } else if (localZ == Chunk::DEPTH - 1) {
-        if (Chunk* neighbor = getChunk(chunkX, chunkZ + 1)) {
+        if (auto neighbor = getChunk(chunkX, chunkZ + 1)) {
             neighbor->touchSection(sectionIndex);
         }
     }

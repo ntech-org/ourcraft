@@ -62,12 +62,45 @@ void Application::init() {
     m_camera.updateCameraVectors();
 
     m_worldRenderer = std::make_unique<WorldRenderer>(*m_world);
-    
+
     // Initial load
-    update(0.0f);
+    int renderDistance = 8;
+    int playerCX = (int)std::floor(m_camera.position.x / 16.0f);
+    int playerCZ = (int)std::floor(m_camera.position.z / 16.0f);
+
+    std::vector<std::pair<int, int>> initialChunks;
+    for (int dx = -renderDistance; dx <= renderDistance; ++dx) {
+        for (int dz = -renderDistance; dz <= renderDistance; ++dz) {
+            initialChunks.push_back({playerCX + dx, playerCZ + dz});
+        }
+    }
+
+    std::sort(initialChunks.begin(), initialChunks.end(), [playerCX, playerCZ](const auto& a, const auto& b) {
+        int distA = (a.first - playerCX) * (a.first - playerCX) + (a.second - playerCZ) * (a.second - playerCZ);
+        int distB = (b.first - playerCX) * (b.first - playerCX) + (b.second - playerCZ) * (b.second - playerCZ);
+        return distA < distB;
+    });
+
+    for (const auto& coords : initialChunks) {
+        m_world->requestChunk(coords.first, coords.second);
+    }
+
+    // Spin until loaded to ensure initial visibility
+
+    while (!m_world->m_pendingChunks.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        m_world->pollGeneratedChunks();
+    }
+    m_worldRenderer->rebuildSectionList();
+
 }
 
 void Application::cleanup() {
+    m_worldRenderer.reset();
+    m_skyRenderer.reset();
+    m_basicShader.reset();
+    m_world.reset();
+    m_renderEngine.reset();
     glfwTerminate();
 }
 
@@ -98,33 +131,41 @@ void Application::update(float deltaTime) {
     if (deltaTime > 0.0f) {
         m_world->update(deltaTime);
     }
+    m_world->pollGeneratedChunks();
 
     int playerCX = (int)std::floor(m_camera.position.x / 16.0f);
     int playerCZ = (int)std::floor(m_camera.position.z / 16.0f);
 
-    int renderDistance = 6; 
+    int renderDistance = 8;
+    int keepDistance = renderDistance + 2;
     bool chunksChanged = false;
 
-    // Only load ONE chunk per frame to avoid lag spikes
-    bool loadedThisFrame = false;
+    // Unload chunks far away
+    m_worldRenderer->removeFarSections(playerCX, playerCZ, keepDistance);
+    m_world->unloadFarChunks(playerCX, playerCZ, keepDistance);
 
-    for (int r = 0; r <= renderDistance; ++r) {
-        for (int dx = -r; dx <= r; ++dx) {
-            for (int dz = -r; dz <= r; ++dz) {
-                if (std::abs(dx) != r && std::abs(dz) != r) continue;
-
-                int cx = playerCX + dx;
-                int cz = playerCZ + dz;
-                if (m_world->getChunk(cx, cz) == nullptr) {
-                    m_world->getOrGenerateChunk(cx, cz);
-                    chunksChanged = true;
-                    loadedThisFrame = true;
-                    break;
-                }
+    std::vector<std::pair<int, int>> chunksToLoad;
+    for (int dx = -renderDistance; dx <= renderDistance; ++dx) {
+        for (int dz = -renderDistance; dz <= renderDistance; ++dz) {
+            int cx = playerCX + dx;
+            int cz = playerCZ + dz;
+            if (!m_world->isChunkLoaded(cx, cz) && !m_world->isChunkPending(cx, cz)) {
+                chunksToLoad.push_back({cx, cz});
             }
-            if (loadedThisFrame) break;
         }
-        if (loadedThisFrame) break;
+    }
+
+    if (!chunksToLoad.empty()) {
+        std::sort(chunksToLoad.begin(), chunksToLoad.end(), [playerCX, playerCZ](const auto& a, const auto& b) {
+            int distA = (a.first - playerCX) * (a.first - playerCX) + (a.second - playerCZ) * (a.second - playerCZ);
+            int distB = (b.first - playerCX) * (b.first - playerCX) + (b.second - playerCZ) * (b.second - playerCZ);
+            return distA < distB;
+        });
+
+        for (const auto& coords : chunksToLoad) {
+            m_world->requestChunk(coords.first, coords.second);
+            chunksChanged = true;
+        }
     }
 
     if (chunksChanged) {
@@ -136,7 +177,7 @@ void Application::handleInput() {
     if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(m_window, true);
 
-    float cameraSpeed = 10.0f * m_deltaTime;
+    float cameraSpeed = 10000.0f * m_deltaTime;
     if (glfwGetKey(m_window, GLFW_KEY_W) == GLFW_PRESS)
         m_camera.position += cameraSpeed * m_camera.front;
     if (glfwGetKey(m_window, GLFW_KEY_S) == GLFW_PRESS)
@@ -196,7 +237,7 @@ void Application::render() {
 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
-    m_worldRenderer->updateDirtyMeshes();
+    m_worldRenderer->updateDirtyMeshes(50);
     m_worldRenderer->render(m_frustum, *m_basicShader);
 
     m_titleTimer += m_deltaTime;

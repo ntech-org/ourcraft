@@ -182,28 +182,45 @@ void emitXQuad(
     appendIndices(meshData, false);
 }
 
+struct ChunkNeighborhood {
+    std::shared_ptr<const Chunk> center;
+    std::shared_ptr<const Chunk> north;
+    std::shared_ptr<const Chunk> south;
+    std::shared_ptr<const Chunk> west;
+    std::shared_ptr<const Chunk> east;
+
+    std::uint8_t getBlockID(int localX, int globalY, int localZ) const {
+        if (globalY < 0 || globalY >= Chunk::HEIGHT) return 0;
+        if (localX < 0) return west ? west->getBlockID(Chunk::WIDTH - 1, globalY, localZ) : 0;
+        if (localX >= Chunk::WIDTH) return east ? east->getBlockID(0, globalY, localZ) : 0;
+        if (localZ < 0) return north ? north->getBlockID(localX, globalY, Chunk::DEPTH - 1) : 0;
+        if (localZ >= Chunk::DEPTH) return south ? south->getBlockID(localX, globalY, 0) : 0;
+        return center->getBlockID(localX, globalY, localZ);
+    }
+};
+
 void greedyMeshTopBottom(
     ChunkMeshData& meshData,
-    const World& world,
-    const Chunk& chunk,
+    const ChunkNeighborhood& neighborhood,
     int sectionIndex,
     FaceDirection direction
 ) {
     std::array<FaceMaskCell, kMaskArea> mask {};
-    const int baseX = chunk.getX() * Chunk::WIDTH;
+    const int baseX = neighborhood.center->getX() * Chunk::WIDTH;
     const int baseY = Chunk::getSectionMinY(sectionIndex);
-    const int baseZ = chunk.getZ() * Chunk::DEPTH;
+    const int baseZ = neighborhood.center->getZ() * Chunk::DEPTH;
     const int neighborOffset = direction == FaceDirection::Up ? 1 : -1;
     const int faceIndex = static_cast<int>(direction);
 
     for (int localY = 0; localY < kSectionSize; ++localY) {
         for (int x = 0; x < Chunk::WIDTH; ++x) {
             for (int z = 0; z < Chunk::DEPTH; ++z) {
-                const int worldX = baseX + x;
-                const int worldY = baseY + localY;
-                const int worldZ = baseZ + z;
-                const std::uint8_t blockId = world.getBlockID(worldX, worldY, worldZ);
-                const std::uint8_t neighborId = world.getBlockID(worldX, worldY + neighborOffset, worldZ);
+                const int globalY = baseY + localY;
+                const std::uint8_t blockId = neighborhood.getBlockID(x, globalY, z);
+                
+                // For Top/Bottom, we only check vertical neighbors which are always in the same chunk/column.
+                // If it goes out of bounds (Y < 0 or Y >= 128), getBlockID returns 0.
+                const std::uint8_t neighborId = neighborhood.getBlockID(x, globalY + neighborOffset, z);
 
                 mask[x + z * Chunk::WIDTH] =
                     isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
@@ -263,29 +280,34 @@ void greedyMeshTopBottom(
 
 void greedyMeshNorthSouth(
     ChunkMeshData& meshData,
-    const World& world,
-    const Chunk& chunk,
+    const ChunkNeighborhood& neighborhood,
     int sectionIndex,
     FaceDirection direction
 ) {
     std::array<FaceMaskCell, kMaskArea> mask {};
-    const int baseX = chunk.getX() * Chunk::WIDTH;
+    const int baseX = neighborhood.center->getX() * Chunk::WIDTH;
     const int baseY = Chunk::getSectionMinY(sectionIndex);
-    const int baseZ = chunk.getZ() * Chunk::DEPTH;
+    const int baseZ = neighborhood.center->getZ() * Chunk::DEPTH;
     const int neighborOffset = direction == FaceDirection::South ? 1 : -1;
     const int faceIndex = static_cast<int>(direction);
 
     for (int localZ = 0; localZ < Chunk::DEPTH; ++localZ) {
         for (int x = 0; x < Chunk::WIDTH; ++x) {
             for (int y = 0; y < kSectionSize; ++y) {
-                const int worldX = baseX + x;
-                const int worldY = baseY + y;
-                const int worldZ = baseZ + localZ;
-                const std::uint8_t blockId = world.getBlockID(worldX, worldY, worldZ);
-                const std::uint8_t neighborId = world.getBlockID(worldX, worldY, worldZ + neighborOffset);
+                const int globalY = baseY + y;
+                const std::uint8_t blockId = neighborhood.getBlockID(x, globalY, localZ);
+                
+                int nz = localZ + neighborOffset;
+                bool chunkLoaded = true;
+                if (nz < 0 && !neighborhood.north) chunkLoaded = false;
+                if (nz >= Chunk::DEPTH && !neighborhood.south) chunkLoaded = false;
 
-                mask[x + y * Chunk::WIDTH] =
-                    isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                if (!chunkLoaded) {
+                    mask[x + y * Chunk::WIDTH] = FaceMaskCell{};
+                } else {
+                    const std::uint8_t neighborId = neighborhood.getBlockID(x, globalY, nz);
+                    mask[x + y * Chunk::WIDTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                }
             }
         }
 
@@ -342,29 +364,34 @@ void greedyMeshNorthSouth(
 
 void greedyMeshWestEast(
     ChunkMeshData& meshData,
-    const World& world,
-    const Chunk& chunk,
+    const ChunkNeighborhood& neighborhood,
     int sectionIndex,
     FaceDirection direction
 ) {
     std::array<FaceMaskCell, kMaskArea> mask {};
-    const int baseX = chunk.getX() * Chunk::WIDTH;
+    const int baseX = neighborhood.center->getX() * Chunk::WIDTH;
     const int baseY = Chunk::getSectionMinY(sectionIndex);
-    const int baseZ = chunk.getZ() * Chunk::DEPTH;
+    const int baseZ = neighborhood.center->getZ() * Chunk::DEPTH;
     const int neighborOffset = direction == FaceDirection::East ? 1 : -1;
     const int faceIndex = static_cast<int>(direction);
 
     for (int localX = 0; localX < Chunk::WIDTH; ++localX) {
         for (int z = 0; z < Chunk::DEPTH; ++z) {
             for (int y = 0; y < kSectionSize; ++y) {
-                const int worldX = baseX + localX;
-                const int worldY = baseY + y;
-                const int worldZ = baseZ + z;
-                const std::uint8_t blockId = world.getBlockID(worldX, worldY, worldZ);
-                const std::uint8_t neighborId = world.getBlockID(worldX + neighborOffset, worldY, worldZ);
+                const int globalY = baseY + y;
+                const std::uint8_t blockId = neighborhood.getBlockID(localX, globalY, z);
+                
+                int nx = localX + neighborOffset;
+                bool chunkLoaded = true;
+                if (nx < 0 && !neighborhood.west) chunkLoaded = false;
+                if (nx >= Chunk::WIDTH && !neighborhood.east) chunkLoaded = false;
 
-                mask[z + y * Chunk::DEPTH] =
-                    isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                if (!chunkLoaded) {
+                    mask[z + y * Chunk::DEPTH] = FaceMaskCell{};
+                } else {
+                    const std::uint8_t neighborId = neighborhood.getBlockID(nx, globalY, z);
+                    mask[z + y * Chunk::DEPTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                }
             }
         }
 
@@ -434,12 +461,19 @@ ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chu
         baseZ + static_cast<float>(Chunk::DEPTH)
     };
 
-    greedyMeshTopBottom(meshData, world, chunk, sectionIndex, FaceDirection::Down);
-    greedyMeshTopBottom(meshData, world, chunk, sectionIndex, FaceDirection::Up);
-    greedyMeshNorthSouth(meshData, world, chunk, sectionIndex, FaceDirection::North);
-    greedyMeshNorthSouth(meshData, world, chunk, sectionIndex, FaceDirection::South);
-    greedyMeshWestEast(meshData, world, chunk, sectionIndex, FaceDirection::West);
-    greedyMeshWestEast(meshData, world, chunk, sectionIndex, FaceDirection::East);
+    ChunkNeighborhood neighborhood;
+    neighborhood.center = world.getChunk(chunk.getX(), chunk.getZ());
+    neighborhood.north = world.getChunk(chunk.getX(), chunk.getZ() - 1);
+    neighborhood.south = world.getChunk(chunk.getX(), chunk.getZ() + 1);
+    neighborhood.west = world.getChunk(chunk.getX() - 1, chunk.getZ());
+    neighborhood.east = world.getChunk(chunk.getX() + 1, chunk.getZ());
+
+    greedyMeshTopBottom(meshData, neighborhood, sectionIndex, FaceDirection::Down);
+    greedyMeshTopBottom(meshData, neighborhood, sectionIndex, FaceDirection::Up);
+    greedyMeshNorthSouth(meshData, neighborhood, sectionIndex, FaceDirection::North);
+    greedyMeshNorthSouth(meshData, neighborhood, sectionIndex, FaceDirection::South);
+    greedyMeshWestEast(meshData, neighborhood, sectionIndex, FaceDirection::West);
+    greedyMeshWestEast(meshData, neighborhood, sectionIndex, FaceDirection::East);
 
     return meshData;
 }
