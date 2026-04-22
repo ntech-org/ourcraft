@@ -37,7 +37,10 @@ bool isGreedyRenderable(std::uint8_t blockId) {
     }
 
     const Block* block = Block::blocksList[blockId];
-    return block != nullptr && block->isGreedyMergeable();
+    if (block == nullptr) return false;
+    
+    BlockRenderLayer layer = block->getRenderLayer();
+    return (layer == BlockRenderLayer::Opaque || layer == BlockRenderLayer::Cutout) && block->isFullCube();
 }
 
 FaceMaskCell makeMaskCell(std::uint8_t blockId, int face) {
@@ -199,6 +202,30 @@ struct ChunkNeighborhood {
     }
 };
 
+bool shouldCullFace(std::uint8_t blockId, std::uint8_t neighborId) {
+    if (neighborId == 0) return false;
+    const Block* block = Block::blocksList[blockId];
+    const Block* neighbor = Block::blocksList[neighborId];
+    if (!block || !neighbor) return false;
+
+    // If neighbor is opaque and full cube, it always culls
+    if (neighbor->isOccluder()) return true;
+
+    // If both are transparent (Cutout)
+    if (block->getRenderLayer() == BlockRenderLayer::Cutout && 
+        neighbor->getRenderLayer() == BlockRenderLayer::Cutout) 
+    {
+        // Leaves do not cull other leaves to look "thick"
+        if (blockId == 18 && neighborId == 18) {
+            return false;
+        }
+        // Cull if they are the same block type (e.g. glass touching glass)
+        return blockId == neighborId;
+    }
+
+    return false;
+}
+
 void greedyMeshTopBottom(
     ChunkMeshData& meshData,
     const ChunkNeighborhood& neighborhood,
@@ -223,7 +250,7 @@ void greedyMeshTopBottom(
                 const std::uint8_t neighborId = neighborhood.getBlockID(x, globalY + neighborOffset, z);
 
                 mask[x + z * Chunk::WIDTH] =
-                    isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                    shouldCullFace(blockId, neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
             }
         }
 
@@ -299,7 +326,7 @@ void greedyMeshNorthSouth(
                 
                 int nz = localZ + neighborOffset;
                 const std::uint8_t neighborId = neighborhood.getBlockID(x, globalY, nz);
-                mask[x + y * Chunk::WIDTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                mask[x + y * Chunk::WIDTH] = shouldCullFace(blockId, neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
             }
         }
 
@@ -375,7 +402,7 @@ void greedyMeshWestEast(
                 
                 int nx = localX + neighborOffset;
                 const std::uint8_t neighborId = neighborhood.getBlockID(nx, globalY, z);
-                mask[z + y * Chunk::DEPTH] = isSolidOccluder(neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
+                mask[z + y * Chunk::DEPTH] = shouldCullFace(blockId, neighborId) ? FaceMaskCell{} : makeMaskCell(blockId, faceIndex);
             }
         }
 

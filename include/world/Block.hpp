@@ -87,7 +87,7 @@ public:
     virtual bool isFullCube() const;
     virtual bool isOccluder() const;
     virtual bool isGreedyMergeable() const;
-    bool isOpaqueCube() const;
+    virtual bool isOpaqueCube() const;
 
     const int blockID;
     int blockIndexInTexture;

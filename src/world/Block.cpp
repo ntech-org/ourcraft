@@ -77,6 +77,20 @@ public:
     }
 };
 
+class BlockLeaves : public Block {
+public:
+    BlockLeaves(int id) : Block(id, 52, Material::leaves) {}
+    bool isOpaqueCube() const override { return false; }
+    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
+};
+
+class BlockGlass : public Block {
+public:
+    BlockGlass(int id) : Block(id, 49, Material::glass) {}
+    bool isOpaqueCube() const override { return false; }
+    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
+};
+
 void Block::init() {
     stone = new Block(1, 1, Material::rock);
     grass = new BlockGrass(2);
@@ -95,9 +109,9 @@ void Block::init() {
     oreIron = new Block(15, 33, Material::rock);
     oreCoal = new Block(16, 34, Material::rock);
     wood = new BlockLog(17);
-    leaves = new Block(18, 52, Material::leaves);
+    leaves = new BlockLeaves(18);
     sponge = new Block(19, 48, Material::sponge);
-    glass = new Block(20, 49, Material::glass);
+    glass = new BlockGlass(20);
     cloth = new Block(35, 64, Material::cloth);
     flowerYellow = new Block(37, 13, Material::plants);
     flowerRed = new Block(38, 12, Material::plants);
