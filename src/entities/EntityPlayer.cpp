@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
-EntityPlayer::EntityPlayer(World& world) : Entity(world) {
+EntityPlayer::EntityPlayer(World& world) : EntityLiving(world) {
     yOffset = 1.62f;
     stepHeight = 0.5f;
     rotationYaw = -90.0f;

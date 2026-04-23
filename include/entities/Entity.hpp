@@ -2,6 +2,7 @@
 
 #include "physics/AxisAlignedBB.hpp"
 #include <vector>
+#include <cstdint>
 
 class World;
 
@@ -16,6 +17,7 @@ public:
     void setSize(float width, float height);
 
     World& worldObj;
+    int32_t entityID = -1;
     double prevPosX = 0.0, prevPosY = 0.0, prevPosZ = 0.0;
     double posX = 0.0, posY = 0.0, posZ = 0.0;
     double motionX = 0.0, motionY = 0.0, motionZ = 0.0;

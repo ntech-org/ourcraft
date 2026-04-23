@@ -12,6 +12,8 @@
 #include <vector>
 #include <shared_mutex>
 
+class Entity;
+
 class World {
 public:
     World();
@@ -48,6 +50,10 @@ public:
 
     const std::vector<std::shared_ptr<Chunk>>& getChunks() const { return m_chunks; }
 
+    void spawnEntity(std::unique_ptr<Entity> entity);
+    void removeEntity(int32_t id);
+    const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
+
 private:
     static int floorDiv(int value, int divisor);
     static int floorMod(int value, int divisor);
@@ -56,6 +62,9 @@ private:
 
     std::vector<std::shared_ptr<Chunk>> m_chunks;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>> m_chunkLookup;
+    std::vector<std::unique_ptr<Entity>> m_entities;
+    int32_t m_nextEntityID = 0;
+
     double m_worldTime = 6000.0;
     std::uint32_t m_skyColor = 8961023u;
     std::uint32_t m_fogColor = 12638463u;

@@ -1,5 +1,6 @@
 #include "world/World.hpp"
 #include "world/Block.hpp"
+#include "entities/Entity.hpp"
 #include <algorithm>
 #include <cmath>
 #include <glm/geometric.hpp>
@@ -220,6 +221,23 @@ void World::update(float deltaTime) {
     if (m_worldTime >= 24000.0) {
         m_worldTime = std::fmod(m_worldTime, 24000.0);
     }
+
+    for (auto& entity : m_entities) {
+        entity->onUpdate();
+    }
+}
+
+void World::spawnEntity(std::unique_ptr<Entity> entity) {
+    if (entity->entityID == -1) {
+        entity->entityID = m_nextEntityID++;
+    }
+    m_entities.push_back(std::move(entity));
+}
+
+void World::removeEntity(int32_t id) {
+    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) {
+        return e->entityID == id;
+    }), m_entities.end());
 }
 
 float World::getCelestialAngle(float partialTick) const {

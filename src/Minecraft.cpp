@@ -1,6 +1,7 @@
 #include "Minecraft.hpp"
 #include "world/Block.hpp"
 #include "world/InfdevWorldGenerator.hpp"
+#include "entities/EntityZombie.hpp"
 #include <iostream>
 #include <algorithm>
 #include <chrono>
@@ -17,6 +18,7 @@ Minecraft::~Minecraft() {
 }
 
 void Minecraft::init() {
+    NetworkManager::init();
     Block::init();
     m_renderEngine = std::make_unique<RenderEngine>();
     m_skyRenderer = std::make_unique<SkyRenderer>(*m_renderEngine);
@@ -28,6 +30,29 @@ void Minecraft::init() {
     m_basicShader->use();
     m_basicShader->setInt("texture1", 0);
     m_terrainTex = m_renderEngine->getTexture("/terrain.png");
+
+    m_entityShader = std::make_unique<Shader>("assets/shaders/entity.vert", "assets/shaders/entity.frag");
+    m_playerModel = std::make_unique<ModelBiped>();
+    m_zombieModel = std::make_unique<ModelZombie>();
+
+    // Start Integrated Server
+    m_server = std::make_unique<IntegratedServer>();
+    m_server->start();
+
+    // Connect Client
+    m_client = std::make_unique<Client>();
+    m_client->onPacketReceived = [this](const uint8_t* data, size_t size) {
+        this->onPacketReceived(data, size);
+    };
+
+    if (!m_client->connect("127.0.0.1", 25565)) {
+        throw std::runtime_error("Failed to connect to integrated server");
+    }
+
+    PacketLogin loginPacket;
+    loginPacket.username = "Player";
+    loginPacket.protocolVersion = 1;
+    m_client->sendPacket(loginPacket);
 
     m_world = std::make_unique<World>();
     m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(-1));
@@ -96,11 +121,22 @@ void Minecraft::run() {
 }
 
 void Minecraft::tick() {
+    m_client->poll();
+
     // Fixed rate logic (20 TPS)
     m_world->update(0.05f); // 1/20th of a second
     
     handleInput();
     m_player->onUpdate();
+
+    PacketPlayerPosition posPacket;
+    posPacket.x = m_player->posX;
+    posPacket.y = m_player->posY;
+    posPacket.z = m_player->posZ;
+    posPacket.yaw = m_player->rotationYaw;
+    posPacket.pitch = m_player->rotationPitch;
+    posPacket.onGround = m_player->onGround;
+    m_client->sendPacket(posPacket, false);
 }
 
 void Minecraft::render(float partialTicks) {
@@ -206,6 +242,84 @@ void Minecraft::render(float partialTicks) {
     m_frustum.update(projection * view);
     m_worldRenderer->updateDirtyMeshes(50);
     m_worldRenderer->render(m_frustum, *m_basicShader);
+
+    // Render entities
+    glDisable(GL_CULL_FACE); // Fix inside-out rendering causing upside-down illusion
+    m_entityShader->use();
+    m_entityShader->setMat4("projection", projection);
+    m_entityShader->setMat4("view", view);
+    m_entityShader->setInt("texture1", 0);
+    
+    for (const auto& entity : m_world->getEntities()) {
+        if (entity.get() == (Entity*)m_player.get()) continue; // Don't render self in first-person
+
+        float brightness = m_world->getBrightness(
+            (int)std::floor(entity->posX),
+            (int)std::floor(entity->posY),
+            (int)std::floor(entity->posZ)
+        );
+        m_entityShader->setVec3("colorTint", glm::vec3(brightness));
+
+        // Determine which model and texture to use
+        // For now, assume everything is a zombie
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/mob/zombie.png"));
+        
+        double ex = entity->prevPosX + (entity->posX - entity->prevPosX) * (double)partialTicks;
+        double ey = entity->prevPosY + (entity->posY - entity->prevPosY) * (double)partialTicks;
+        double ez = entity->prevPosZ + (entity->posZ - entity->prevPosZ) * (double)partialTicks;
+        
+        glm::mat4 modelMat = glm::mat4(1.0f);
+        modelMat = glm::translate(modelMat, glm::vec3(ex, ey, ez));
+        modelMat = glm::rotate(modelMat, glm::radians(180.0f - entity->rotationYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+        modelMat = glm::scale(modelMat, glm::vec3(-1.0f, -1.0f, 1.0f));
+        modelMat = glm::translate(modelMat, glm::vec3(0.0f, -24.0f * 0.0625f, 0.0f));
+        
+        float limbSwing = 0.0f;
+        float limbSwingAmount = 0.0f;
+        if (auto living = dynamic_cast<EntityLiving*>(entity.get())) {
+            limbSwing = living->limbSwing;
+            limbSwingAmount = living->limbSwingAmount;
+        }
+
+        m_zombieModel->render(*m_entityShader, modelMat, limbSwing, limbSwingAmount, (float)glfwGetTime(), 0.0f, entity->rotationPitch, 0.0625f);
+    }
+
+    // Render first-person arm
+    glClear(GL_DEPTH_BUFFER_BIT);
+    m_entityShader->use();
+    m_entityShader->setMat4("projection", projection);
+    m_entityShader->setMat4("view", glm::mat4(1.0f));
+    
+    float handBrightness = m_world->getBrightness(
+        (int)std::floor(m_player->posX),
+        (int)std::floor(m_player->posY),
+        (int)std::floor(m_player->posZ)
+    );
+    m_entityShader->setVec3("colorTint", glm::vec3(handBrightness));
+    m_renderEngine->bindTexture(m_renderEngine->getTexture("/char.png"));
+    
+    glm::mat4 armBase = glm::mat4(1.0f);
+
+    // Apply view bobbing translation
+    float swingProgress = m_player->limbSwingAmount; // Simplified swing/bob
+    float bob = std::sin(m_player->limbSwing * 0.6662f) * swingProgress * 0.1f;
+    float bobX = std::cos(m_player->limbSwing * 0.6662f) * swingProgress * 0.1f;
+    armBase = glm::translate(armBase, glm::vec3(bobX, bob, 0.0f));
+
+    // Java Infdev transforms for hand
+    armBase = glm::translate(armBase, glm::vec3(0.64f, -0.6f, -0.72f));
+    armBase = glm::rotate(armBase, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    
+    armBase = glm::translate(armBase, glm::vec3(-1.0f, 3.6f, 3.5f));
+    armBase = glm::rotate(armBase, glm::radians(120.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    armBase = glm::rotate(armBase, glm::radians(200.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    armBase = glm::rotate(armBase, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    armBase = glm::scale(armBase, glm::vec3(1.0f, 1.0f, 1.0f));
+    armBase = glm::translate(armBase, glm::vec3(5.6f, 0.0f, 0.0f));
+    
+    m_playerModel->renderFirstPersonArm(*m_entityShader, armBase, 0.0625f);
+    
+    glEnable(GL_CULL_FACE); // Re-enable culling
 }
 
 void Minecraft::handleInput() {
@@ -252,4 +366,47 @@ void Minecraft::mouseCallback(double xposIn, double yposIn) {
 
     if (m_player->rotationPitch > 89.9f) m_player->rotationPitch = 89.9f;
     if (m_player->rotationPitch < -89.9f) m_player->rotationPitch = -89.9f;
+}
+
+void Minecraft::onPacketReceived(const uint8_t* data, size_t size) {
+    const uint8_t* ptr = data;
+    PacketType type = (PacketType)Packet::readByte(ptr);
+
+    if (type == PacketType::LoginResponse) {
+        PacketLoginResponse packet;
+        packet.deserialize(ptr, size - 1);
+        m_playerID = packet.entityID;
+        m_player->entityID = m_playerID;
+    } else if (type == PacketType::SpawnEntity) {
+        PacketSpawnEntity packet;
+        packet.deserialize(ptr, size - 1);
+        
+        if (packet.id == m_playerID) return;
+        
+        std::unique_ptr<Entity> entity;
+        if (packet.type == 1) {
+            entity = std::make_unique<EntityZombie>(*m_world);
+        } else {
+            entity = std::make_unique<EntityPlayer>(*m_world);
+        }
+        entity->entityID = packet.id;
+        entity->setPosition(packet.x, packet.y, packet.z);
+        entity->rotationYaw = packet.yaw;
+        entity->rotationPitch = packet.pitch;
+        m_world->spawnEntity(std::move(entity));
+    } else if (type == PacketType::MoveEntity) {
+        PacketMoveEntity packet;
+        packet.deserialize(ptr, size - 1);
+        
+        if (packet.id == m_playerID) return;
+        
+        for (auto& entity : m_world->getEntities()) {
+            if (entity->entityID == packet.id) {
+                entity->setPosition(packet.x, packet.y, packet.z);
+                entity->rotationYaw = packet.yaw;
+                entity->rotationPitch = packet.pitch;
+                break;
+            }
+        }
+    }
 }

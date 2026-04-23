@@ -12,6 +12,12 @@
 #include "world/World.hpp"
 #include "util/Timer.hpp"
 #include "entities/EntityPlayer.hpp"
+#include "renderer/ModelBiped.hpp"
+#include "renderer/ModelZombie.hpp"
+#include "net/NetworkManager.hpp"
+#include "net/Client.hpp"
+#include "net/IntegratedServer.hpp"
+#include "net/Packets.hpp"
 
 class Minecraft {
 public:
@@ -27,6 +33,7 @@ private:
     void tick();
     void render(float partialTicks);
     void handleInput();
+    void onPacketReceived(const uint8_t* data, size_t size);
 
     GLFWwindow* m_window;
     int m_width;
@@ -36,9 +43,15 @@ private:
     std::unique_ptr<WorldRenderer> m_worldRenderer;
     std::unique_ptr<SkyRenderer> m_skyRenderer;
     std::unique_ptr<Shader> m_basicShader;
+    std::unique_ptr<Shader> m_entityShader;
     std::unique_ptr<World> m_world;
     std::unique_ptr<EntityPlayer> m_player;
+    std::unique_ptr<ModelBiped> m_playerModel;
+    std::unique_ptr<ModelZombie> m_zombieModel;
     
+    std::unique_ptr<IntegratedServer> m_server;
+    std::unique_ptr<Client> m_client;
+
     Timer m_timer;
     Camera m_camera;
     Frustum m_frustum;
@@ -48,6 +61,7 @@ private:
     float m_lastY;
 
     int m_terrainTex = 0;
+    int32_t m_playerID = -1;
     double m_titleTimer = 0.0;
     double m_lastFrameTime = 0.0;
     bool m_running = true;

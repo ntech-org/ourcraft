@@ -1,8 +1,8 @@
 #pragma once
 
-#include "entities/Entity.hpp"
+#include "entities/EntityLiving.hpp"
 
-class EntityPlayer : public Entity {
+class EntityPlayer : public EntityLiving {
 public:
     EntityPlayer(World& world);
     
