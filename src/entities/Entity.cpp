@@ -29,12 +29,16 @@ void Entity::onUpdate() {
     prevPosZ = posZ;
     prevRotationYaw = rotationYaw;
     prevRotationPitch = rotationPitch;
+    prevDistanceWalkedModified = distanceWalkedModified;
 }
 
 void Entity::moveEntity(double dx, double dy, double dz) {
     double origDX = dx;
     double origDY = dy;
     double origDZ = dz;
+
+    double oldX = posX;
+    double oldZ = posZ;
 
     AxisAlignedBB oldBB = boundingBox;
     std::vector<AxisAlignedBB> list = worldObj.getCollidingBoundingBoxes(boundingBox.addCoord(dx, dy, dz));
@@ -101,6 +105,10 @@ void Entity::moveEntity(double dx, double dy, double dz) {
     if (origDX != dx) motionX = 0.0;
     if (origDY != dy) motionY = 0.0;
     if (origDZ != dz) motionZ = 0.0;
+
+    double moveX = posX - oldX;
+    double moveZ = posZ - oldZ;
+    distanceWalkedModified += (float)(std::sqrt(moveX * moveX + moveZ * moveZ) * 0.6);
 
     ySize *= 0.4f;
 }

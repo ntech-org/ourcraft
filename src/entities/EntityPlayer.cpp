@@ -14,25 +14,27 @@ EntityPlayer::EntityPlayer(World& world) : EntityLiving(world) {
 }
 
 void EntityPlayer::onUpdate() {
-    Entity::onUpdate();
+    prevCameraYaw = cameraYaw;
+    prevCameraPitch = cameraPitch;
+    EntityLiving::onUpdate();
 
+    float speed = (float)std::sqrt(motionX * motionX + motionZ * motionZ);
+    float pitchTarget = (float)std::atan(-motionY * 0.2f) * 15.0f;
+    
+    if (speed > 0.1f) speed = 0.1f;
+    if (!onGround) speed = 0.0f;
+    if (onGround) pitchTarget = 0.0f;
+
+    cameraYaw += (speed - cameraYaw) * 0.4f;
+    cameraPitch += (pitchTarget - cameraPitch) * 0.8f;
+}
+
+void EntityPlayer::updateEntityActionState() {
     if (jumping && onGround) {
         motionY = 0.42;
     }
 
     moveRelative(moveStrafe, moveForward, onGround ? 0.1f : 0.02f);
-
-    moveEntity(motionX, motionY, motionZ);
-
-    motionX *= 0.91;
-    motionY *= 0.98;
-    motionZ *= 0.91;
-    motionY -= 0.08; // gravity
-
-    if (onGround) {
-        motionX *= 0.6;
-        motionZ *= 0.6;
-    }
 }
 
 void EntityPlayer::moveRelative(float strafe, float forward, float friction) {
@@ -48,6 +50,6 @@ void EntityPlayer::moveRelative(float strafe, float forward, float friction) {
     float sinYaw = std::sin(rotationYaw * glm::pi<float>() / 180.0f);
     float cosYaw = std::cos(rotationYaw * glm::pi<float>() / 180.0f);
 
-    motionX += (double)(forward * cosYaw + strafe * sinYaw);
-    motionZ += (double)(forward * sinYaw - strafe * cosYaw);
+    motionX += (double)(strafe * cosYaw - forward * sinYaw);
+    motionZ += (double)(forward * cosYaw + strafe * sinYaw);
 }

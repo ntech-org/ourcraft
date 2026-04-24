@@ -14,6 +14,7 @@
 #include "entities/EntityPlayer.hpp"
 #include "renderer/ModelBiped.hpp"
 #include "renderer/ModelZombie.hpp"
+#include "renderer/FontRenderer.hpp"
 #include "net/NetworkManager.hpp"
 #include "net/Client.hpp"
 #include "net/IntegratedServer.hpp"
@@ -48,6 +49,7 @@ private:
     std::unique_ptr<EntityPlayer> m_player;
     std::unique_ptr<ModelBiped> m_playerModel;
     std::unique_ptr<ModelZombie> m_zombieModel;
+    std::unique_ptr<FontRenderer> m_fontRenderer;
     
     std::unique_ptr<IntegratedServer> m_server;
     std::unique_ptr<Client> m_client;
@@ -64,5 +66,12 @@ private:
     int32_t m_playerID = -1;
     double m_titleTimer = 0.0;
     double m_lastFrameTime = 0.0;
+    float m_fps = 0.0f;
     bool m_running = true;
+
+    bool m_showDebug = false;
+    int m_cameraMode = 0; // 0 = 1st person, 1 = 3rd person back, 2 = 3rd person front
+    bool m_f3Pressed = false;
+    bool m_f5Pressed = false;
+    bool m_leftMousePressed = false;
 };

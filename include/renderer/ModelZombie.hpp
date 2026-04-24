@@ -6,8 +6,8 @@ class ModelZombie : public ModelBiped {
 public:
     ModelZombie() : ModelBiped() {}
 
-    void setRotationAngles(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale) {
-        ModelBiped::setRotationAngles(limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch, scale);
+    void setRotationAngles(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale, float onGround) override {
+        ModelBiped::setRotationAngles(limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch, scale, onGround);
         float f = std::sin(attackTime * glm::pi<float>() / 10.0f); // dummy attack time
         float f1 = std::sin((1.0f - (1.0f - attackTime) * (1.0f - attackTime)) * glm::pi<float>() / 10.0f);
         

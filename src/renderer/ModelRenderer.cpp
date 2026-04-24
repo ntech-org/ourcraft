@@ -45,10 +45,10 @@ void ModelRenderer::addBox(float x, float y, float z, int w, int h, int d, float
     float f_h = (float)h;
     float f_d = (float)d;
 
-    // Back
-    addQuad({x2, y1, z1}, {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, texU + f_d + f_w, texV + f_d, texU + f_d + f_w + f_w, texV + f_d + f_h);
-    // Front
-    addQuad({x1, y1, z2}, {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, texU + f_d, texV + f_d, texU + f_d + f_w, texV + f_d + f_h);
+    // Front (facing -Z, front of player)
+    addQuad({x1, y1, z1}, {x2, y1, z1}, {x2, y2, z1}, {x1, y2, z1}, texU + f_d, texV + f_d, texU + f_d + f_w, texV + f_d + f_h);
+    // Back (facing +Z, back of player)
+    addQuad({x2, y1, z2}, {x1, y1, z2}, {x1, y2, z2}, {x2, y2, z2}, texU + f_d + f_w + f_d, texV + f_d, texU + f_d + f_w + f_d + f_w, texV + f_d + f_h);
     // Top
     addQuad({x2, y1, z1}, {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, texU + f_d, texV, texU + f_d + f_w, texV + f_d);
     // Bottom

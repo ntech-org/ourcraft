@@ -25,6 +25,7 @@ public:
     float prevRotationYaw = 0.0f, prevRotationPitch = 0.0f;
     AxisAlignedBB boundingBox;
     bool onGround = false;
+    bool handlePhysics = true;
     bool isCollidedHorizontally = false;
     bool isCollided = false;
     float width = 0.6f;
@@ -33,6 +34,8 @@ public:
     float ySize = 0.0f;
     float stepHeight = 0.0f;
     float fallDistance = 0.0f;
+    float distanceWalkedModified = 0.0f;
+    float prevDistanceWalkedModified = 0.0f;
 
     virtual void preparePlayerToSpawn();
 };

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 IntegratedServer::IntegratedServer() {
     m_world = std::make_unique<World>();
@@ -46,8 +47,21 @@ void IntegratedServer::run() {
 
     auto lastTick = std::chrono::steady_clock::now();
     while (m_running) {
+        m_world->pollGeneratedChunks();
+
         auto now = std::chrono::steady_clock::now();
         if (now - lastTick >= std::chrono::milliseconds(50)) { // 20 TPS
+            // Request chunks around entities to ensure they don't fall through
+            for (const auto& entity : m_world->getEntities()) {
+                int cx = (int)std::floor(entity->posX / 16.0);
+                int cz = (int)std::floor(entity->posZ / 16.0);
+                for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dz = -1; dz <= 1; ++dz) {
+                        m_world->requestChunk(cx + dx, cz + dz);
+                    }
+                }
+            }
+
             m_world->update(0.05f);
             
             // Broadcast entity positions

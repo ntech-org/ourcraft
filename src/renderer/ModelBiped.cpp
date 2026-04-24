@@ -1,4 +1,5 @@
 #include "renderer/ModelBiped.hpp"
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <cmath>
@@ -36,8 +37,8 @@ ModelBiped::ModelBiped(float scale, float yOffset) {
     bipedLeftLeg->setRotationPoint(2.0f, 12.0f + yOffset, 0.0f);
 }
 
-void ModelBiped::render(Shader& shader, const glm::mat4& baseModel, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale) {
-    setRotationAngles(limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch, scale);
+void ModelBiped::render(Shader& shader, const glm::mat4& baseModel, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale, float onGround) {
+    setRotationAngles(limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch, scale, onGround);
     bipedHead->render(shader, baseModel, scale);
     bipedBody->render(shader, baseModel, scale);
     bipedRightArm->render(shader, baseModel, scale);
@@ -47,11 +48,13 @@ void ModelBiped::render(Shader& shader, const glm::mat4& baseModel, float limbSw
     bipedHeadwear->render(shader, baseModel, scale);
 }
 
-void ModelBiped::setRotationAngles(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale) {
+void ModelBiped::setRotationAngles(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale, float onGround) {
     bipedHead->rotateAngleY = netHeadYaw / (180.0f / glm::pi<float>());
     bipedHead->rotateAngleX = headPitch / (180.0f / glm::pi<float>());
     bipedHeadwear->rotateAngleY = bipedHead->rotateAngleY;
     bipedHeadwear->rotateAngleX = bipedHead->rotateAngleX;
+
+    bipedBody->rotateAngleY = 0.0f;
 
     bipedRightArm->rotateAngleX = std::cos(limbSwing * 0.6662f + glm::pi<float>()) * 1.4f * limbSwingAmount;
     bipedRightArm->rotateAngleZ = 0.0f;
@@ -60,6 +63,36 @@ void ModelBiped::setRotationAngles(float limbSwing, float limbSwingAmount, float
 
     bipedRightLeg->rotateAngleX = std::cos(limbSwing * 0.6662f) * 1.4f * limbSwingAmount;
     bipedLeftLeg->rotateAngleX = std::cos(limbSwing * 0.6662f + glm::pi<float>()) * 1.4f * limbSwingAmount;
+
+    bipedRightArm->rotateAngleY = 0.0f;
+    bipedLeftArm->rotateAngleY = 0.0f;
+
+    bipedRightArm->rotationPointZ = 0.0f;
+    bipedRightArm->rotationPointX = -5.0f;
+    bipedLeftArm->rotationPointZ = 0.0f;
+    bipedLeftArm->rotationPointX = 5.0f;
+
+    if (onGround > 0.0f) {
+        float f = onGround;
+        bipedBody->rotateAngleY = std::sin(std::sqrt(f) * glm::pi<float>() * 2.0f) * 0.2f;
+        bipedRightArm->rotationPointZ = std::sin(bipedBody->rotateAngleY) * 5.0f;
+        bipedRightArm->rotationPointX = -std::cos(bipedBody->rotateAngleY) * 5.0f;
+        bipedLeftArm->rotationPointZ = -std::sin(bipedBody->rotateAngleY) * 5.0f;
+        bipedLeftArm->rotationPointX = std::cos(bipedBody->rotateAngleY) * 5.0f;
+
+        bipedRightArm->rotateAngleY += bipedBody->rotateAngleY;
+        bipedLeftArm->rotateAngleY += bipedBody->rotateAngleY;
+        bipedLeftArm->rotateAngleX += bipedBody->rotateAngleY;
+        
+        f = 1.0f - onGround;
+        f *= f * f;
+        f = 1.0f - f;
+        float f1 = std::sin(f * glm::pi<float>());
+        float f2 = std::sin(onGround * glm::pi<float>()) * -(bipedHead->rotateAngleX - 0.7f) * 0.75f;
+        bipedRightArm->rotateAngleX -= f1 * 1.2f + f2;
+        bipedRightArm->rotateAngleY += bipedBody->rotateAngleY * 2.0f;
+        bipedRightArm->rotateAngleZ = std::sin(onGround * glm::pi<float>()) * -0.4f;
+    }
 
     bipedRightArm->rotateAngleZ += std::cos(ageInTicks * 0.09f) * 0.05f + 0.05f;
     bipedLeftArm->rotateAngleZ -= std::cos(ageInTicks * 0.09f) * 0.05f + 0.05f;
@@ -71,6 +104,5 @@ void ModelBiped::renderFirstPersonArm(Shader& shader, const glm::mat4& baseModel
     bipedRightArm->rotateAngleX = 0.0f;
     bipedRightArm->rotateAngleY = 0.0f;
     bipedRightArm->rotateAngleZ = 0.0f;
-    
     bipedRightArm->render(shader, baseModel, scale);
 }

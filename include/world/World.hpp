@@ -54,6 +54,8 @@ public:
     void removeEntity(int32_t id);
     const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
 
+    bool isRemote = false;
+
 private:
     static int floorDiv(int value, int divisor);
     static int floorMod(int value, int divisor);
