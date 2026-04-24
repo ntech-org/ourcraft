@@ -24,27 +24,27 @@ ChunkMesh& ChunkMesh::operator=(ChunkMesh&& other) noexcept {
     return *this;
 }
 
-void ChunkMesh::upload(const ChunkMeshData& meshData) {
+void ChunkMesh::upload(const ChunkMeshData::Pass& pass) {
     ensureAllocated();
 
-    m_indexCount = static_cast<GLsizei>(meshData.indices.size());
-    m_triangleCount = meshData.indices.size() / 3;
+    m_indexCount = static_cast<GLsizei>(pass.indices.size());
+    m_triangleCount = pass.indices.size() / 3;
 
     glBindVertexArray(m_vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(meshData.vertices.size() * sizeof(TerrainVertex)),
-        meshData.vertices.data(),
+        static_cast<GLsizeiptr>(pass.vertices.size() * sizeof(TerrainVertex)),
+        pass.vertices.data(),
         GL_STATIC_DRAW
     );
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(
         GL_ELEMENT_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(meshData.indices.size() * sizeof(std::uint32_t)),
-        meshData.indices.data(),
+        static_cast<GLsizeiptr>(pass.indices.size() * sizeof(std::uint32_t)),
+        pass.indices.data(),
         GL_STATIC_DRAW
     );
 
@@ -105,6 +105,15 @@ void ChunkMesh::ensureAllocated() {
 
     glEnableVertexAttribArray(4);
     glVertexAttribIPointer(4, 1, GL_UNSIGNED_INT, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, faceId)));
+
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, flowRotation)));
+
+    glEnableVertexAttribArray(6);
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, liquidType)));
+
+    glEnableVertexAttribArray(7);
+    glVertexAttribPointer(7, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, isUnderwater)));
 
     glBindVertexArray(0);
 }

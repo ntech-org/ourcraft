@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Material.hpp"
+#include <glm/vec3.hpp>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,8 @@ enum class BlockRenderShape {
 
 class World;
 class AxisAlignedBB;
+class JavaRandom;
+class Entity;
 
 class Block {
 public:
@@ -94,6 +97,13 @@ public:
 
     virtual void getCollisionBoxes(World& world, int x, int y, int z, const AxisAlignedBB& mask, std::vector<AxisAlignedBB>& list) const;
     virtual AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const;
+
+    virtual void updateTick(World& world, int x, int y, int z, JavaRandom& random) const {}
+    virtual void onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {}
+    virtual void onBlockAdded(World& world, int x, int y, int z) const {}
+    virtual int tickRate() const { return 10; }
+    virtual bool shouldSideBeRendered(const class IBlockAccess& world, int x, int y, int z, int side) const;
+    virtual void velocityToAddToEntity(World& world, int x, int y, int z, Entity* entity, glm::vec3& velocity) const {}
 
     const int blockID;
     int blockIndexInTexture;

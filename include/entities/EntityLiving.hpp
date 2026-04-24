@@ -22,6 +22,7 @@ public:
     
     int deathTime = 0;
     int attackTime = 0;
+    bool jumping = false;
     
     virtual void swing();
     

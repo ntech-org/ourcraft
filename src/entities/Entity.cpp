@@ -1,5 +1,6 @@
 #include "entities/Entity.hpp"
 #include "world/World.hpp"
+#include "world/Material.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -122,4 +123,20 @@ void Entity::preparePlayerToSpawn() {
         posY += 1.0;
     }
     motionX = motionY = motionZ = 0.0;
+}
+
+bool Entity::handleWaterMovement() {
+    if (worldObj.handleMaterialAcceleration(boundingBox.expand(0.0, -0.1, 0.0), Material::water, this)) {
+        inWater = true;
+        fallDistance = 0.0f;
+    } else {
+        inWater = false;
+    }
+    return inWater;
+}
+
+bool Entity::isOffsetPositionInLiquid(double dx, double dy, double dz) {
+    AxisAlignedBB offsetBB = boundingBox.getOffsetBoundingBox(dx, dy, dz);
+    if (!worldObj.getCollidingBoundingBoxes(offsetBB).empty()) return false;
+    return !worldObj.getIsAnyLiquid(offsetBB);
 }

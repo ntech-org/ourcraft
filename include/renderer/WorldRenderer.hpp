@@ -44,6 +44,7 @@ private:
         int sectionIndex = 0;
         std::uint32_t uploadedVersion = 0;
         ChunkMesh mesh;
+        ChunkMesh translucentMesh;
         AABB bounds {};
         bool isBuilding = false;
     };

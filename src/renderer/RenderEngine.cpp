@@ -1,4 +1,5 @@
 #include "renderer/RenderEngine.hpp"
+#include "renderer/TextureFX.hpp"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
 #include <iostream>
@@ -31,6 +32,28 @@ void RenderEngine::bindTexture(int textureID) {
     }
 }
 
+void RenderEngine::registerTextureFX(std::unique_ptr<TextureFX> fx) {
+    textureFXList.push_back(std::move(fx));
+}
+
+void RenderEngine::updateTextureFX() {
+    if (textureFXList.empty()) return;
+
+    int terrainID = getTexture("/terrain.png");
+    if (terrainID < 0) return;
+    
+    glBindTexture(GL_TEXTURE_2D, (GLuint)terrainID);
+
+    for (auto& fx : textureFXList) {
+        fx->onTick();
+        
+        int tx = (fx->iconIndex % 16) * 16;
+        int ty = (fx->iconIndex / 16) * 16;
+        
+        glTexSubImage2D(GL_TEXTURE_2D, 0, tx, ty, 16, 16, GL_RGBA, GL_UNSIGNED_BYTE, fx->imageData.data());
+    }
+}
+
 int RenderEngine::loadTexture(const std::string& name) {
     // Search in assets/
     std::string path = "assets" + name;
@@ -49,7 +72,6 @@ int RenderEngine::loadTexture(const std::string& name) {
     }
 
     int width, height, nrChannels;
-    // Minecraft textures often have transparency, so we want 4 channels
     stbi_set_flip_vertically_on_load(false); 
     unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 4);
     
@@ -62,14 +84,12 @@ int RenderEngine::loadTexture(const std::string& name) {
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     
-    // Minecraft uses Nearest filtering for that pixelated look
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    // glGenerateMipmap(GL_TEXTURE_2D); // Usually not used in old MC, but can be added
 
     stbi_image_free(data);
     

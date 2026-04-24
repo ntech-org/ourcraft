@@ -35,6 +35,7 @@ void EntityLiving::onUpdate() {
     renderYawOffset = rotationYaw - yawDiff;
     renderYawOffset += yawDiff * 0.1f; // Body slowly turns to follow head
 
+    handleWaterMovement();
     updateEntityActionState();
 
     prevSwingProgress = swingProgress;
@@ -48,16 +49,43 @@ void EntityLiving::onUpdate() {
     swingProgress = (float)swingProgressInt / 8.0f;
 
     if (handlePhysics) {
-        moveEntity(motionX, motionY, motionZ);
+        handleWaterMovement();
         
-        motionX *= 0.91;
-        motionY *= 0.98;
-        motionZ *= 0.91;
-        motionY -= 0.08; // gravity
+        if (inWater) {
+            // Infdev Water Physics
+            float waterDrag = 0.8f;
+            float acceleration = 0.02f;
+            
+            // Buoyancy is added before drag in the original logic
+            if (jumping) {
+                motionY += 0.04f;
+            }
+            
+            moveEntity(motionX, motionY, motionZ);
+            
+            motionX *= waterDrag;
+            motionY *= waterDrag;
+            motionZ *= waterDrag;
+            motionY -= 0.02f; // Sinking force
 
-        if (onGround) {
-            motionX *= 0.6;
-            motionZ *= 0.6;
+            if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
+                motionY = 0.30000001192092896;
+            }
+        } else {
+            // Infdev Ground/Air Physics
+            moveEntity(motionX, motionY, motionZ);
+            
+            float drag = 0.91f;
+            if (onGround) {
+                // Ground drag depends on the block below, 0.6 is default (sand/dirt/stone)
+                drag = 0.6f * 0.91f;
+            }
+            
+            motionX *= drag;
+            motionY *= 0.98f;
+            motionZ *= drag;
+            
+            motionY -= 0.08f; // Gravity
         }
     }
 

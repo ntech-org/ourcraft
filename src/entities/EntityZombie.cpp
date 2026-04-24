@@ -6,6 +6,13 @@ EntityZombie::EntityZombie(World& world) : EntityLiving(world) {
 }
 
 void EntityZombie::updateEntityActionState() {
+    // Make them bounce in water
+    if (inWater) {
+        jumping = true;
+    } else {
+        jumping = (float)std::rand() / (float)RAND_MAX < 0.01f;
+    }
+
     // Very simple random movement for now
     if ((float)std::rand() / (float)RAND_MAX < 0.05f) {
         rotationYaw = (float)std::rand() / (float)RAND_MAX * 360.0f;

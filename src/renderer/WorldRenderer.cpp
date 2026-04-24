@@ -80,10 +80,6 @@ void WorldRenderer::rebuildSectionList() {
 
 void WorldRenderer::updateDirtyMeshes(int limit) {
     m_stats.sectionCount = m_sections.size();
-    m_stats.meshBuilds = 0;
-    m_stats.meshBuildMs = 0.0;
-
-    // Process finished meshes
     while (true) {
         MeshResult result;
         {
@@ -96,11 +92,8 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
         auto it = m_sections.find(result.key);
         if (it != m_sections.end()) {
             it->second.bounds = result.meshData.bounds;
-            if (result.meshData.empty()) {
-                it->second.mesh.clear();
-            } else {
-                it->second.mesh.upload(result.meshData);
-            }
+            it->second.mesh.upload(result.meshData.opaque);
+            it->second.translucentMesh.upload(result.meshData.translucent);
             it->second.uploadedVersion = result.version;
             it->second.isBuilding = false;
         }
@@ -109,33 +102,21 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
         m_stats.meshBuildMs += result.buildMs;
     }
 
-    // Dispatch new dirty meshes
     int buildsThisFrame = 0;
     for (auto& [key, entry] : m_sections) {
-        if (!entry.chunk->isSectionDirty(entry.sectionIndex) || 
-            entry.isBuilding || 
-            (entry.chunk->getState() != ChunkState::Decorated && entry.chunk->getState() != ChunkState::Generated && entry.chunk->getState() != ChunkState::Decorating)) 
-        {
-            continue;
-        }
+        if (!entry.chunk->isSectionDirty(entry.sectionIndex) || entry.isBuilding) continue;
+        if (entry.chunk->getState() != ChunkState::Decorated && entry.chunk->getState() != ChunkState::Generated) continue;
 
         entry.isBuilding = true;
         entry.chunk->clearSectionDirty(entry.sectionIndex);
 
-        MeshTask task;
-        task.key = key;
-        task.chunk = entry.chunk;
-        task.sectionIndex = entry.sectionIndex;
-
+        MeshTask task { key, entry.chunk, entry.sectionIndex };
         {
             std::lock_guard<std::mutex> lock(m_taskMutex);
             m_taskQueue.push(task);
         }
         m_cv.notify_one();
-
-        if (limit > 0 && ++buildsThisFrame >= limit) {
-            break;
-        }
+        if (limit > 0 && ++buildsThisFrame >= limit) break;
     }
 }
 
@@ -146,35 +127,33 @@ void WorldRenderer::render(const Frustum& frustum, Shader& shader) {
 
     shader.use();
 
+    // Pass 1: Opaque
+    glDisable(GL_BLEND);
     for (const auto& [key, entry] : m_sections) {
-        if (!entry.mesh.hasGeometry()) {
-            continue;
-        }
-
-        if (!frustum.intersects(entry.bounds)) {
-            continue;
-        }
-
-        ++m_stats.visibleSections;
-        ++m_stats.drawCalls;
-        m_stats.triangles += entry.mesh.getTriangleCount();
+        if (!entry.mesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
         entry.mesh.draw();
+        m_stats.visibleSections++; m_stats.drawCalls++; m_stats.triangles += entry.mesh.getTriangleCount();
     }
+
+    // Pass 2: Translucent
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE); // Disable depth write to allow alpha stacking
+    for (const auto& [key, entry] : m_sections) {
+        if (!entry.translucentMesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
+        entry.translucentMesh.draw();
+        m_stats.visibleSections++; m_stats.drawCalls++; m_stats.triangles += entry.translucentMesh.getTriangleCount();
+    }
+    glDepthMask(GL_TRUE);
 }
 
 void WorldRenderer::removeFarSections(int playerCX, int playerCZ, int keepDistance) {
     auto it = m_sections.begin();
     while (it != m_sections.end()) {
-        std::shared_ptr<Chunk> chunk = it->second.chunk;
-        int cx = chunk->getX();
-        int cz = chunk->getZ();
-        if (std::abs(cx - playerCX) > keepDistance || std::abs(cz - playerCZ) > keepDistance) {
-            it = m_sections.erase(it);
-        } else {
-            ++it;
-        }
+        int cx = it->second.chunk->getX(), cz = it->second.chunk->getZ();
+        if (std::abs(cx - playerCX) > keepDistance || std::abs(cz - playerCZ) > keepDistance) it = m_sections.erase(it);
+        else ++it;
     }
-    m_stats.sectionCount = m_sections.size();
 }
 
 std::uint64_t WorldRenderer::sectionKey(int cx, int cz, int sectionIndex) {

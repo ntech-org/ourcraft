@@ -12,7 +12,6 @@ public:
 
     float moveForward = 0.0f;
     float moveStrafe = 0.0f;
-    bool jumping = false;
 
     float cameraYaw = 0.0f;
     float prevCameraYaw = 0.0f;

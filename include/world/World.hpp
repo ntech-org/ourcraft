@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Chunk.hpp"
+#include "world/IBlockAccess.hpp"
 #include "world/WorldGenerator.hpp"
 #include "world/ChunkLoader.hpp"
 #include "physics/AxisAlignedBB.hpp"
@@ -11,10 +12,27 @@
 #include <unordered_set>
 #include <vector>
 #include <shared_mutex>
+#include <set>
 
 class Entity;
 
-class World {
+struct NextTickListEntry {
+    int x, y, z;
+    int blockID;
+    uint64_t scheduledTime;
+
+    bool operator<(const NextTickListEntry& other) const {
+        if (scheduledTime != other.scheduledTime) {
+            return scheduledTime < other.scheduledTime;
+        }
+        if (x != other.x) return x < other.x;
+        if (y != other.y) return y < other.y;
+        if (z != other.z) return z < other.z;
+        return blockID < other.blockID;
+    }
+};
+
+class World : public IBlockAccess {
 public:
     World();
 
@@ -34,8 +52,21 @@ public:
 
     uint8_t getBlockID(int worldX, int worldY, int worldZ) const;
     void setBlockID(int worldX, int worldY, int worldZ, uint8_t id);
+    void setBlockWithNotify(int worldX, int worldY, int worldZ, uint8_t id);
+    void setBlockAndMetadataWithNotify(int worldX, int worldY, int worldZ, uint8_t id, uint8_t meta);
+
+    uint8_t getBlockMetadata(int worldX, int worldY, int worldZ) const;
+    void setBlockMetadataWithNotify(int worldX, int worldY, int worldZ, uint8_t meta);
+
+    const class Material& getBlockMaterial(int worldX, int worldY, int worldZ) const;
+
+    void scheduleBlockUpdate(int worldX, int worldY, int worldZ, int blockID, int delay);
+    void notifyBlocksOfNeighborChange(int worldX, int worldY, int worldZ, int blockID);
+    void notifyBlockChange(int x, int y, int z, int blockID);
 
     std::vector<AxisAlignedBB> getCollidingBoundingBoxes(const AxisAlignedBB& bb);
+    bool handleMaterialAcceleration(const AxisAlignedBB& bb, const class Material& mat, Entity* entity);
+    bool getIsAnyLiquid(const AxisAlignedBB& bb);
 
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;
@@ -74,6 +105,9 @@ private:
     std::unique_ptr<WorldGenerator> m_generator;
     std::unique_ptr<ChunkLoader> m_loader;
     mutable std::shared_mutex m_chunkMutex;
+
+    std::set<NextTickListEntry> m_scheduledTickSet;
+    uint64_t m_tickCount = 0;
 
 public:
     std::unordered_set<std::uint64_t> m_pendingChunks;

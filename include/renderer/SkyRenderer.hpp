@@ -17,7 +17,7 @@ public:
     SkyRenderer(const SkyRenderer&) = delete;
     SkyRenderer& operator=(const SkyRenderer&) = delete;
 
-    void render(const World& world, const Camera& camera, const glm::mat4& projection, const glm::mat4& view, float fogMultiplier = 1.0f);
+    void render(const World& world, const Camera& camera, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor);
 
 private:
     struct SkyVertex {

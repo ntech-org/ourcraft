@@ -1,4 +1,6 @@
 #include "world/Block.hpp"
+#include "world/BlockFluid.hpp"
+#include "world/IBlockAccess.hpp"
 #include "physics/AxisAlignedBB.hpp"
 
 Block* Block::blocksList[256] = { nullptr };
@@ -100,10 +102,10 @@ void Block::init() {
     planks = new Block(5, 4, Material::wood);
     sapling = new Block(6, 15, Material::plants);
     bedrock = new Block(7, 17, Material::rock);
-    waterMoving = new Block(8, 12 * 16 + 13, Material::water); 
-    waterStill = new Block(9, 12 * 16 + 13, Material::water);
-    lavaMoving = new Block(10, 14 * 16 + 13, Material::lava);
-    lavaStill = new Block(11, 14 * 16 + 13, Material::lava);
+    waterMoving = new BlockFlowing(8, Material::water); 
+    waterStill = new BlockStationary(9, Material::water);
+    lavaMoving = new BlockFlowing(10, Material::lava);
+    lavaStill = new BlockStationary(11, Material::lava);
     sand = new Block(12, 18, Material::sand);
     gravel = new Block(13, 19, Material::sand);
     oreGold = new Block(14, 32, Material::rock);
@@ -146,6 +148,11 @@ void Block::init() {
     minecartTrack = new Block(66, 128, Material::iron);
     stairCompactStone = new Block(67, 16, Material::rock);
     signWall = new Block(68, 4, Material::wood);
+
+    lightOpacity[8] = 3;
+    lightOpacity[9] = 3;
+    lightOpacity[10] = 3;
+    lightOpacity[11] = 3;
 }
 
 Block::Block(int id, int tex, const Material& mat) 
@@ -182,6 +189,15 @@ bool Block::isGreedyMergeable() const {
 }
 
 bool Block::isOpaqueCube() const {
+    return true;
+}
+
+bool Block::shouldSideBeRendered(const IBlockAccess& world, int x, int y, int z, int side) const {
+    uint8_t bid = world.getBlockID(x, y, z);
+    if (bid == 0) return true;
+    if (Block::blocksList[bid]) {
+        return !Block::blocksList[bid]->isFullCube();
+    }
     return true;
 }
 

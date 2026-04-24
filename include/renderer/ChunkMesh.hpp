@@ -12,15 +12,23 @@ struct TerrainVertex {
     std::uint32_t color;
     std::uint32_t textureIndex;
     std::uint32_t faceId;
+    float flowRotation;
+    float liquidType; // 0: None, 1: Water, 2: Lava
+    float isUnderwater;
 };
 
 struct ChunkMeshData {
-    std::vector<TerrainVertex> vertices;
-    std::vector<std::uint32_t> indices;
-    std::size_t quadCount = 0;
+    struct Pass {
+        std::vector<TerrainVertex> vertices;
+        std::vector<std::uint32_t> indices;
+        std::size_t quadCount = 0;
+    };
+
+    Pass opaque;
+    Pass translucent;
     AABB bounds {};
 
-    bool empty() const { return indices.empty(); }
+    bool empty() const { return opaque.indices.empty() && translucent.indices.empty(); }
 };
 
 class ChunkMesh {
@@ -34,7 +42,7 @@ public:
     ChunkMesh(ChunkMesh&& other) noexcept;
     ChunkMesh& operator=(ChunkMesh&& other) noexcept;
 
-    void upload(const ChunkMeshData& meshData);
+    void upload(const ChunkMeshData::Pass& pass);
     void clear();
     void draw() const;
 

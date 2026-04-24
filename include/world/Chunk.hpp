@@ -30,6 +30,9 @@ public:
     void setBlockID(int x, int y, int z, uint8_t id);
     void setBlockIDSafe(int x, int y, int z, uint8_t id);
 
+    uint8_t getBlockMetadata(int x, int y, int z) const;
+    void setBlockMetadata(int x, int y, int z, uint8_t meta);
+
     int getX() const { return m_x; }
     int getZ() const { return m_z; }
 
@@ -55,6 +58,7 @@ public:
 private:
     int m_x, m_z;
     std::vector<uint8_t> m_blocks;
+    std::vector<uint8_t> m_metadata;
     std::array<bool, SECTION_COUNT> m_sectionDirty {};
     std::array<uint32_t, SECTION_COUNT> m_sectionVersions {};
     

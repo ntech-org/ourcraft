@@ -30,11 +30,14 @@ void EntityPlayer::onUpdate() {
 }
 
 void EntityPlayer::updateEntityActionState() {
-    if (jumping && onGround) {
+    if (jumping && onGround && !inWater) {
         motionY = 0.42;
     }
 
-    moveRelative(moveStrafe, moveForward, onGround ? 0.1f : 0.02f);
+    float speed = onGround ? 0.1f : 0.02f;
+    if (inWater) speed = 0.02f;
+
+    moveRelative(moveStrafe, moveForward, speed);
 }
 
 void EntityPlayer::moveRelative(float strafe, float forward, float friction) {
