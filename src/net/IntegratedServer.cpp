@@ -85,14 +85,15 @@ void IntegratedServer::run() {
                 int px = (int)std::floor(player->posX / 16.0);
                 int pz = (int)std::floor(player->posZ / 16.0);
                 int viewRadius = 8;
+                int requestRadius = 10;
 
                 // Collect chunks to potentially send (static to reuse memory)
                 struct SortablePos { int x, z; int distSq; };
                 static std::vector<SortablePos> candidates;
                 candidates.clear();
 
-                for (int dx = -viewRadius; dx <= viewRadius; ++dx) {
-                    for (int dz = -viewRadius; dz <= viewRadius; ++dz) {
+                for (int dx = -requestRadius; dx <= requestRadius; ++dx) {
+                    for (int dz = -requestRadius; dz <= requestRadius; ++dz) {
                         candidates.push_back({px + dx, pz + dz, dx*dx + dz*dz});
                     }
                 }
@@ -104,15 +105,20 @@ void IntegratedServer::run() {
                 const int chunkLimitPerTick = 8; 
 
                 for (const auto& pos : candidates) {
-                    if (chunksSentThisTick >= chunkLimitPerTick) break;
-
+                    bool inView = std::abs(pos.x - px) <= viewRadius && std::abs(pos.z - pz) <= viewRadius;
+                    
                     uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(pos.x)) << 32) | static_cast<uint32_t>(pos.z);
 
                     auto chunk = m_world->getChunk(pos.x, pos.z);
                     if (!chunk) {
-                        m_world->requestChunk(pos.x, pos.z);
+                        if (inView || (std::abs(pos.x - px) <= requestRadius && std::abs(pos.z - pz) <= requestRadius)) {
+                            m_world->requestChunk(pos.x, pos.z);
+                        }
                         continue;
                     }
+                    
+                    if (!inView) continue;
+                    if (chunksSentThisTick >= chunkLimitPerTick) break;
 
                     ChunkState currentState = chunk->getState();
                     if (currentState < ChunkState::Lighted) continue;

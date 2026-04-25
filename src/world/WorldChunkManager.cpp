@@ -1,4 +1,5 @@
 #include "world/World.hpp"
+#include "world/Block.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -82,6 +83,18 @@ bool World::pollGeneratedChunks() {
             addChunk(chunk);
             worldChanged = true;
             
+            // Wake up fluids and neighbors
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
+                    for (int y = 0; y < Chunk::HEIGHT; ++y) {
+                        uint8_t id = chunk->getBlockID(x, y, z);
+                        if (id >= 8 && id <= 11) { // Any fluid
+                            scheduleBlockUpdate(cx * 16 + x, y, cz * 16 + z, id, Block::blocksList[id]->tickRate());
+                        }
+                    }
+                }
+            }
+
             // Fully finished! Touch all neighbors to fix boundaries
             chunk->generateBitmask();
             for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
@@ -95,46 +108,53 @@ bool World::pollGeneratedChunks() {
                 std::lock_guard<std::mutex> lock(m_completeChunksMutex);
                 m_completeChunks.push_back(chunk);
             }
+            checkChunkProgression(cx, cz);
         } else if (state == ChunkState::Lighted) {
-            // Initial lighting done, now check for decoration
-            for (int dx = -1; dx <= 0; ++dx) {
-                for (int dz = -1; dz <= 0; ++dz) {
-                    auto c00 = getChunk(cx + dx, cz + dz), c10 = getChunk(cx + dx + 1, cz + dz);
-                    auto c01 = getChunk(cx + dx, cz + dz + 1), c11 = getChunk(cx + dx + 1, cz + dz + 1);
-                    if (c00 && c10 && c01 && c11 && 
-                        c00->getState() == ChunkState::Lighted && 
-                        (c10->getState() >= ChunkState::Lighted) && 
-                        (c01->getState() >= ChunkState::Lighted) && 
-                        (c11->getState() >= ChunkState::Lighted)) {
-                        c00->setState(ChunkState::Decorating);
-                        m_loader->requestDecoration(c00, c10, c01, c11);
-                    }
-                }
-            }
-            // Trigger first mesh build
+            checkChunkProgression(cx, cz);
             for (int i = 0; i < Chunk::SECTION_COUNT; ++i) chunk->touchSection(i);
         } else if (state == ChunkState::Decorated) {
-            for (int dx = 0; dx <= 1; ++dx) {
-                for (int dz = 0; dz <= 1; ++dz) {
-                    int tx = cx + dx, tz = cz + dz;
-                    auto target = getChunk(tx, tz);
-                    if (target && target->getState() == ChunkState::Decorated) {
-                        auto c00 = getChunk(tx, tz), c_10 = getChunk(tx - 1, tz);
-                        auto c0_1 = getChunk(tx, tz - 1), c_1_1 = getChunk(tx - 1, tz - 1);
-                        if (c00 && c_10 && c0_1 && c_1_1 &&
-                            c00->getState() >= ChunkState::Decorated &&
-                            c_10->getState() >= ChunkState::Decorated &&
-                            c0_1->getState() >= ChunkState::Decorated &&
-                            c_1_1->getState() >= ChunkState::Decorated) {
-                            target->setState(ChunkState::LightingFinal);
-                            m_loader->requestLighting(target);
-                        }
-                    }
+            checkChunkProgression(cx, cz);
+        }
+    }
+    return worldChanged;
+}
+
+void World::checkChunkProgression(int cx, int cz) {
+    // Check for decoration (2x2 area)
+    for (int dx = -1; dx <= 0; ++dx) {
+        for (int dz = -1; dz <= 0; ++dz) {
+            auto c00 = getChunk(cx + dx, cz + dz), c10 = getChunk(cx + dx + 1, cz + dz);
+            auto c01 = getChunk(cx + dx, cz + dz + 1), c11 = getChunk(cx + dx + 1, cz + dz + 1);
+            if (c00 && c10 && c01 && c11 && 
+                c00->getState() == ChunkState::Lighted && 
+                c10->getState() >= ChunkState::Lighted && 
+                c01->getState() >= ChunkState::Lighted && 
+                c11->getState() >= ChunkState::Lighted) {
+                c00->setState(ChunkState::Decorating);
+                m_loader->requestDecoration(c00, c10, c01, c11);
+            }
+        }
+    }
+    
+    // Check for final lighting (2x2 area)
+    for (int dx = 0; dx <= 1; ++dx) {
+        for (int dz = 0; dz <= 1; ++dz) {
+            int tx = cx + dx, tz = cz + dz;
+            auto target = getChunk(tx, tz);
+            if (target && target->getState() == ChunkState::Decorated) {
+                auto c00 = getChunk(tx, tz), c_10 = getChunk(tx - 1, tz);
+                auto c0_1 = getChunk(tx, tz - 1), c_1_1 = getChunk(tx - 1, tz - 1);
+                if (c00 && c_10 && c0_1 && c_1_1 &&
+                    c00->getState() >= ChunkState::Decorated &&
+                    c_10->getState() >= ChunkState::Decorated &&
+                    c0_1->getState() >= ChunkState::Decorated &&
+                    c_1_1->getState() >= ChunkState::Decorated) {
+                    target->setState(ChunkState::LightingFinal);
+                    m_loader->requestLighting(target);
                 }
             }
         }
     }
-    return worldChanged;
 }
 
 void World::unloadFarChunks(int playerCX, int playerCZ, int keepDistance) {

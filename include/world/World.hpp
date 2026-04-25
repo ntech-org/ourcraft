@@ -60,6 +60,7 @@ public:
     void saveChunk(std::shared_ptr<Chunk> chunk);
     void saveAllChunks();
     bool pollGeneratedChunks();
+    void checkChunkProgression(int cx, int cz);
     void unloadFarChunks(int playerCX, int playerCZ, int keepDistance);
 
     std::shared_ptr<Chunk> getChunk(int chunkX, int chunkZ);
@@ -106,7 +107,7 @@ public:
     bool handleMaterialAcceleration(const AxisAlignedBB& bb, const class Material& mat, Entity* entity);
     bool getIsAnyLiquid(const AxisAlignedBB& bb);
 
-    HitResult rayTraceBlocks(glm::vec3 start, glm::vec3 end);
+    HitResult rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiquids = false);
 
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;

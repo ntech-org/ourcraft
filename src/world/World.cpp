@@ -228,7 +228,7 @@ void World::update(float dt) {
     }
 }
 
-HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end) {
+HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiquids) {
     if (std::isnan(start.x) || std::isnan(start.y) || std::isnan(start.z)) return {HitType::NONE};
     if (std::isnan(end.x) || std::isnan(end.y) || std::isnan(end.z)) return {HitType::NONE};
 
@@ -240,7 +240,11 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end) {
     int z2 = (int)std::floor(end.z);
 
     uint8_t id = getBlockID(x1, y1, z1);
-    if (id > 0) return {HitType::BLOCK, x1, y1, z1, -1, start};
+    if (id > 0) {
+        if (!ignoreLiquids || Block::blocksList[id]->blockMaterial.isSolid()) {
+            return {HitType::BLOCK, x1, y1, z1, -1, start};
+        }
+    }
 
     int count = 200;
     while (count-- >= 0) {
@@ -276,7 +280,9 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end) {
         
         uint8_t hitID = getBlockID(x1, y1, z1);
         if (hitID > 0) {
-            return {HitType::BLOCK, x1, y1, z1, side, start};
+            if (!ignoreLiquids || Block::blocksList[hitID]->blockMaterial.isSolid()) {
+                return {HitType::BLOCK, x1, y1, z1, side, start};
+            }
         }
 
         if (x1 == x2 && y1 == y2 && z1 == z2) break;

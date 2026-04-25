@@ -132,7 +132,7 @@ void Minecraft::tick() {
         );
 
         glm::vec3 endPos = eyePos + lookDir * reach;
-        HitResult hit = m_world->rayTraceBlocks(eyePos, endPos);
+        HitResult hit = m_world->rayTraceBlocks(eyePos, endPos, true);
 
         if (m_inputHandler->isLeftClick()) {
             m_player->swing();
