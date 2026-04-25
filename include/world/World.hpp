@@ -15,6 +15,7 @@
 #include <set>
 #include <mutex>
 #include <functional>
+#include <deque>
 
 class Entity;
 
@@ -69,11 +70,13 @@ public:
                                    std::vector<std::pair<int, int>>& outToRequest);
 
     uint8_t getBlockID(int worldX, int worldY, int worldZ) const;
-    void setBlockID(int worldX, int worldY, int worldZ, uint8_t id);
+    bool setBlockID(int worldX, int worldY, int worldZ, uint8_t id);
+    bool setBlockIDAndMetadata(int x, int y, int z, uint8_t id, uint8_t meta);
     void setBlockWithNotify(int worldX, int worldY, int worldZ, uint8_t id);
     void setBlockAndMetadataWithNotify(int worldX, int worldY, int worldZ, uint8_t id, uint8_t meta);
 
     uint8_t getBlockMetadata(int worldX, int worldY, int worldZ) const;
+    void setBlockMetadata(int x, int y, int z, uint8_t meta);
     void setBlockMetadataWithNotify(int worldX, int worldY, int worldZ, uint8_t meta);
 
     const class Material& getBlockMaterial(int worldX, int worldY, int worldZ) const;
@@ -124,10 +127,15 @@ public:
     const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
 
     bool isRemote = false;
+    bool m_editingBlocks = false;
     std::function<void(int, int, int, uint8_t, uint8_t)> onBlockChanged;
 
 private:
-    static int floorDiv(int value, int divisor);
+    struct BlockUpdate { int x, y, z; int id; };
+    std::deque<BlockUpdate> m_notificationQueue;
+    bool m_processingNotifications = false;
+
+    void notifyBlockOfNeighborChange(int x, int y, int z, int neighborID);    static int floorDiv(int value, int divisor);
     static int floorMod(int value, int divisor);
     static std::uint64_t chunkKey(int chunkX, int chunkZ);
     static glm::vec3 unpackColor(std::uint32_t rgb);

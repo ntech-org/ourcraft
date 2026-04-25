@@ -26,7 +26,7 @@ public:
     bool canBlockGrass() const { return m_blocksGrass; }
 
     bool operator==(const Material& other) const {
-        return m_liquid == other.m_liquid && m_solid == other.m_solid && m_blocksGrass == other.m_blocksGrass;
+        return this == &other;
     }
     bool operator!=(const Material& other) const {
         return !(*this == other);

@@ -31,7 +31,7 @@ void BlockFluid::checkForHarden(World& world, int x, int y, int z) const {
             int meta = world.getBlockMetadata(x, y, z);
             if (meta == 0) {
                 world.setBlockWithNotify(x, y, z, Block::obsidian->blockID);
-            } else if (meta <= 4) {
+            } else if (meta > 0) {
                 world.setBlockWithNotify(x, y, z, Block::cobblestone->blockID);
             }
             triggerLavaMixEffects(world, x, y, z);
@@ -40,7 +40,7 @@ void BlockFluid::checkForHarden(World& world, int x, int y, int z) const {
 }
 
 void BlockFluid::triggerLavaMixEffects(World& world, int x, int y, int z) const {
-    // Missing: sound and particles
+    // Sound and particles could be added here
 }
 
 int BlockFluid::getFlowDecay(World& world, int x, int y, int z) const {
@@ -137,11 +137,18 @@ glm::vec3 BlockFluid::getFlowVector(const IBlockAccess& world, int x, int y, int
         if (shouldSideBeRendered(world, x + 1, y + 1, z, 5)) hasFreeSide = true;
         
         if (hasFreeSide) {
-            vector = glm::normalize(vector) + glm::vec3(0, -6, 0);
+            if (vector.x != 0.0f || vector.z != 0.0f) {
+                vector = glm::normalize(vector) + glm::vec3(0, -6, 0);
+            } else {
+                vector = glm::vec3(0, -6, 0);
+            }
         }
     }
     
-    return glm::normalize(vector);
+    if (vector.x != 0.0f || vector.z != 0.0f || vector.y != 0.0f) {
+        return glm::normalize(vector);
+    }
+    return vector;
 }
 
 double BlockFluid::getFlowDirection(const IBlockAccess& world, int x, int y, int z, const Material& mat) {
@@ -153,7 +160,7 @@ double BlockFluid::getFlowDirection(const IBlockAccess& world, int x, int y, int
     }
     
     if (vector.x == 0.0f && vector.z == 0.0f) return -1000.0;
-    return std::atan2(vector.z, vector.x) - (3.14159265 / 2.0);
+    return std::atan2(vector.x, vector.z);
 }
 
 // BlockFlowing implementation
@@ -167,8 +174,17 @@ void BlockFlowing::onBlockAdded(World& world, int x, int y, int z) const {
     }
 }
 
+void BlockFlowing::onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {
+    BlockFluid::onNeighborBlockChange(world, x, y, z, neighborID);
+    if (world.getBlockID(x, y, z) == blockID) {
+        world.scheduleBlockUpdate(x, y, z, blockID, tickRate());
+    }
+}
+
 void BlockFlowing::updateTick(World& world, int x, int y, int z, JavaRandom& random) const {
     int decay = getFlowDecay(world, x, y, z);
+    if (decay < 0) return;
+
     int fluidType = (blockMaterial == Material::lava ? 2 : 1);
     bool flag = true;
     
@@ -185,14 +201,17 @@ void BlockFlowing::updateTick(World& world, int x, int y, int z, JavaRandom& ran
             newDecay = -1;
         }
         
-        if (getFlowDecay(world, x, y + 1, z) >= 0) {
-            int topDecay = getFlowDecay(world, x, y + 1, z);
+        int topDecay = getFlowDecay(world, x, y + 1, z);
+        if (topDecay >= 0) {
             if (topDecay >= 8) newDecay = topDecay;
             else newDecay = topDecay + 8;
         }
         
         if (numAdjacentSources >= 2 && blockMaterial == Material::water) {
-            newDecay = 0;
+            const Material& belowMat = world.getBlockMaterial(x, y - 1, z);
+            if (belowMat.isSolid() || belowMat == blockMaterial) {
+                newDecay = 0;
+            }
         }
         
         if (blockMaterial == Material::lava && decay < 8 && newDecay < 8 && newDecay > decay && random.nextInt(4) != 0) {
@@ -207,17 +226,23 @@ void BlockFlowing::updateTick(World& world, int x, int y, int z, JavaRandom& ran
             } else {
                 world.setBlockMetadataWithNotify(x, y, z, decay);
                 world.scheduleBlockUpdate(x, y, z, blockID, tickRate());
-                world.notifyBlocksOfNeighborChange(x, y, z, blockID);
+                world.notifyBlockChange(x, y, z, blockID);
             }
         } else if (flag) {
-            // Stationary change logic
-            world.setBlockAndMetadataWithNotify(x, y, z, blockID + 1, decay);
+            // SILENT conversion to stationary
+            world.setBlockIDAndMetadata(x, y, z, blockID + 1, decay);
         }
     } else {
-        world.setBlockAndMetadataWithNotify(x, y, z, blockID + 1, decay);
+        // SILENT conversion to stationary
+        world.setBlockIDAndMetadata(x, y, z, blockID + 1, decay);
     }
     
     if (liquidCanDisplaceBlock(world, x, y - 1, z)) {
+        if (blockMaterial == Material::lava && world.getBlockMaterial(x, y - 1, z) == Material::water) {
+            world.setBlockWithNotify(x, y - 1, z, Block::stone->blockID);
+            triggerLavaMixEffects(world, x, y - 1, z);
+            return;
+        }
         if (decay >= 8) {
             world.setBlockAndMetadataWithNotify(x, y - 1, z, blockID, decay);
         } else {
@@ -240,10 +265,15 @@ void BlockFlowing::flowIntoBlock(World& world, int x, int y, int z, int meta) co
     if (liquidCanDisplaceBlock(world, x, y, z)) {
         int id = world.getBlockID(x, y, z);
         if (id > 0) {
+            if (blockMaterial == Material::lava && world.getBlockMaterial(x, y, z) == Material::water) {
+                world.setBlockWithNotify(x, y, z, Block::cobblestone->blockID);
+                triggerLavaMixEffects(world, x, y, z);
+                return;
+            }
             if (blockMaterial == Material::lava) {
                 triggerLavaMixEffects(world, x, y, z);
             } else {
-                // Block::blocksList[id]->dropBlockAsItem(...)
+                // Drop as item if needed
             }
         }
         world.setBlockAndMetadataWithNotify(x, y, z, blockID, meta);
@@ -264,7 +294,8 @@ int BlockFlowing::calculateFlowCost(World& world, int x, int y, int z, int dista
         
         if (!blockBlocksFlow(world, nx, y, nz) && (world.getBlockMaterial(nx, y, nz) != blockMaterial || world.getBlockMetadata(nx, y, nz) != 0)) {
             if (!blockBlocksFlow(world, nx, y - 1, nz)) return distance;
-            if (distance < 4) {
+            int maxDistance = (blockMaterial == Material::lava ? 3 : 5);
+            if (distance < maxDistance) {
                 int nCost = calculateFlowCost(world, nx, y, nz, distance + 1, i);
                 if (nCost < cost) cost = nCost;
             }
@@ -296,27 +327,42 @@ std::vector<bool> BlockFlowing::getOptimalFlowDirections(World& world, int x, in
     for (int i = 1; i < 4; ++i) if (flowCost[i] < minCost) minCost = flowCost[i];
     
     std::vector<bool> result(4);
-    for (int i = 0; i < 4; ++i) result[i] = (flowCost[i] == minCost && minCost < 1000);
+    if (minCost < 1000) {
+        for (int i = 0; i < 4; ++i) result[i] = (flowCost[i] == minCost);
+    } else {
+        for (int i = 0; i < 4; ++i) {
+            int nx = x;
+            int nz = z;
+            if (i == 0) nx--;
+            if (i == 1) nx++;
+            if (i == 2) nz--;
+            if (i == 3) nz++;
+            result[i] = (!blockBlocksFlow(world, nx, y, nz) && (world.getBlockMaterial(nx, y, nz) != blockMaterial || world.getBlockMetadata(nx, y, nz) != 0));
+        }
+    }
     return result;
 }
 
 bool BlockFlowing::blockBlocksFlow(World& world, int x, int y, int z) const {
     int id = world.getBlockID(x, y, z);
-    if (id == Block::doorWood->blockID || id == Block::signStanding->blockID || id == Block::ladder->blockID) return true;
+    if (id == 64 || id == 63 || id == 65 || id == 68) return true; // door, sign, ladder, wall sign
     if (id == 0) return false;
-    return Block::blocksList[id]->blockMaterial.isSolid();
+    return world.getBlockMaterial(x, y, z).isSolid();
 }
 
 int BlockFlowing::getSmallestFlowDecay(World& world, int x, int y, int z, int currentSmallest, int& numAdjacentSources) const {
     int decay = getFlowDecay(world, x, y, z);
     if (decay < 0) return currentSmallest;
     if (decay == 0) numAdjacentSources++;
-    if (decay >= 8) decay = 0;
-    return (currentSmallest >= 0 && decay >= currentSmallest) ? currentSmallest : decay;
+    
+    int val = decay;
+    if (val >= 8) val = 0;
+    
+    return (currentSmallest >= 0 && val >= currentSmallest) ? currentSmallest : val;
 }
 
 bool BlockFlowing::liquidCanDisplaceBlock(World& world, int x, int y, int z) const {
-    Material mat = world.getBlockMaterial(x, y, z);
+    const Material& mat = world.getBlockMaterial(x, y, z);
     if (mat == blockMaterial) return false;
     if (mat == Material::lava) return false;
     return !blockBlocksFlow(world, x, y, z);
@@ -326,11 +372,28 @@ bool BlockFlowing::liquidCanDisplaceBlock(World& world, int x, int y, int z) con
 
 BlockStationary::BlockStationary(int id, const Material& mat) : BlockFluid(id, mat) {}
 
+void BlockStationary::onBlockAdded(World& world, int x, int y, int z) const {
+    BlockFluid::onBlockAdded(world, x, y, z);
+    if (world.getBlockID(x, y, z) == blockID) {
+        int meta = world.getBlockMetadata(x, y, z);
+        world.setBlockIDAndMetadata(x, y, z, blockID - 1, meta);
+        world.scheduleBlockUpdate(x, y, z, blockID - 1, tickRate());
+    }
+}
+
 void BlockStationary::onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {
     BlockFluid::onNeighborBlockChange(world, x, y, z, neighborID);
     if (world.getBlockID(x, y, z) == blockID) {
         int meta = world.getBlockMetadata(x, y, z);
-        world.setBlockAndMetadataWithNotify(x, y, z, blockID - 1, meta);
+        // SILENT conversion to flowing
+        world.setBlockIDAndMetadata(x, y, z, blockID - 1, meta);
         world.scheduleBlockUpdate(x, y, z, blockID - 1, tickRate());
     }
+}
+
+void BlockStationary::updateTick(World& world, int x, int y, int z, JavaRandom& random) const {
+    if (blockMaterial == Material::water)
+        ((BlockFlowing*)Block::waterMoving)->updateTick(world, x, y, z, random);
+    else
+        ((BlockFlowing*)Block::lavaMoving)->updateTick(world, x, y, z, random);
 }

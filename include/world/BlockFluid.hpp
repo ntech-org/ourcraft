@@ -36,6 +36,7 @@ public:
     BlockFlowing(int id, const Material& mat);
 
     void onBlockAdded(World& world, int x, int y, int z) const override;
+    void onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const override;
     void updateTick(World& world, int x, int y, int z, JavaRandom& random) const override;
 
 private:
@@ -51,5 +52,7 @@ class BlockStationary : public BlockFluid {
 public:
     BlockStationary(int id, const Material& mat);
 
+    void onBlockAdded(World& world, int x, int y, int z) const override;
     void onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const override;
+    void updateTick(World& world, int x, int y, int z, JavaRandom& random) const override;
 };

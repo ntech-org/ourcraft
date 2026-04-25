@@ -21,7 +21,7 @@ bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
     const Block* b = Block::blocksList[bid], * n = Block::blocksList[nid];
     if (!b || !n) return false;
     if (n->isOccluder()) return true;
-    if (b->blockID == n->blockID) return true;
+    if (b->blockMaterial == n->blockMaterial) return true;
     return false;
 }
 
@@ -50,7 +50,9 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
         int gy = by + y;
         for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
             uint8_t bid = n.getBlockID(x, gy, z); if (bid < 8 || bid > 11) continue;
-            const Block* b = Block::blocksList[bid]; const Material& mat = b->blockMaterial;
+            const Block* b = Block::blocksList[bid]; 
+            if (!b) continue;
+            const Material& mat = b->blockMaterial;
             float h00 = getCornerHeight(n, x, gy, z, mat), h01 = getCornerHeight(n, x, gy, z + 1, mat), h11 = getCornerHeight(n, x + 1, gy, z + 1, mat), h10 = getCornerHeight(n, x + 1, gy, z, mat);
             float fx = (float)(bx + x), fy = (float)gy, fz = (float)(bz + z);
             bool water = (bid == 8 || bid == 9); float liq = water ? 1.0f : 2.0f, d0 = getWaterDepth(n, x, gy, z), d1 = getWaterDepth(n, x, gy + 1, z);

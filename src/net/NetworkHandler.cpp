@@ -117,7 +117,13 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
         m_world.m_pendingRequests.erase(key);
         m_world.m_pendingChunks.erase(key);
 
-        auto chunk = std::make_shared<Chunk>(packet.x, packet.z);
+        std::shared_ptr<Chunk> chunk = m_world.getChunk(packet.x, packet.z);
+        bool isNew = false;
+        if (!chunk) {
+            chunk = std::make_shared<Chunk>(packet.x, packet.z);
+            isNew = true;
+        }
+
         std::memcpy(chunk->getBlocks(), packet.blocks.data(), packet.blocks.size());
         std::memcpy(chunk->getMetadata(), packet.metadata.data(), packet.metadata.size());
         std::memcpy(chunk->getSkylight(), packet.skylight.data(), packet.skylight.size());
@@ -135,8 +141,11 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
 
         chunk->setState(ChunkState::Complete);
         chunk->generateHeightMap();
+        chunk->generateBitmask();
         
-        m_world.addChunk(chunk);
+        if (isNew) {
+            m_world.addChunk(chunk);
+        }
         
         // Mark all sections as dirty so they rebuild meshes
         for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {

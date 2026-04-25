@@ -21,14 +21,14 @@ uint8_t World::getBlockID(int x, int y, int z) const {
     return chunk ? chunk->getBlockID(x & 15, y, z & 15) : 0;
 }
 
-void World::setBlockID(int x, int y, int z, uint8_t id) {
-    if (y < 0 || y >= Chunk::HEIGHT) return;
+bool World::setBlockID(int x, int y, int z, uint8_t id) {
+    if (y < 0 || y >= Chunk::HEIGHT) return false;
     auto chunk = getChunk(x >> 4, z >> 4);
-    if (!chunk) return;
+    if (!chunk) return false;
     int lx = x & 15, lz = z & 15;
     
     uint8_t oldID = chunk->getBlockID(lx, y, lz);
-    if (oldID == id) return;
+    if (oldID == id) return false;
     
     int oldOpacity = Block::lightOpacity[oldID];
     int oldBlockLight = Block::lightValue[oldID];
@@ -47,6 +47,12 @@ void World::setBlockID(int x, int y, int z, uint8_t id) {
     else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
 
     updateLightForBlockChange(x, y, z, oldOpacity, Block::lightOpacity[id], oldBlockLight, Block::lightValue[id], oldSkyLight);
+
+    if (id > 0 && Block::blocksList[id]) {
+        Block::blocksList[id]->onBlockAdded(*this, x, y, z);
+    }
+
+    return true;
 }
 
 void World::setBlockWithNotify(int x, int y, int z, uint8_t id) { setBlockID(x, y, z, id); notifyBlockChange(x, y, z, id); }
@@ -77,6 +83,10 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     
     updateLightForBlockChange(x, y, z, oldOpacity, Block::lightOpacity[id], oldBlockLight, Block::lightValue[id], oldSkyLight);
 
+    if (id > 0 && Block::blocksList[id]) {
+        Block::blocksList[id]->onBlockAdded(*this, x, y, z);
+    }
+
     notifyBlockChange(x, y, z, id);
 }
 
@@ -84,6 +94,52 @@ uint8_t World::getBlockMetadata(int x, int y, int z) const {
     if (y < 0 || y >= Chunk::HEIGHT) return 0;
     auto chunk = getChunk(x >> 4, z >> 4);
     return chunk ? chunk->getBlockMetadata(x & 15, y, z & 15) : 0;
+}
+bool World::setBlockIDAndMetadata(int x, int y, int z, uint8_t id, uint8_t meta) {
+    if (y < 0 || y >= Chunk::HEIGHT) return false;
+    auto chunk = getChunk(x >> 4, z >> 4);
+    if (!chunk) return false;
+    int lx = x & 15, lz = z & 15;
+
+    uint8_t oldID = chunk->getBlockID(lx, y, lz);
+    uint8_t oldMeta = chunk->getBlockMetadata(lx, y, lz);
+    if (oldID == id && oldMeta == meta) return false;
+
+    int oldOpacity = Block::lightOpacity[oldID];
+    int oldBlockLight = Block::lightValue[oldID];
+    int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
+
+    int si = Chunk::getSectionIndex(y);
+    chunk->setBlockID(lx, y, lz, id); 
+    chunk->setBlockMetadata(lx, y, lz, meta);
+
+    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+        onBlockChanged(x, y, z, id, meta);
+    }
+
+    if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
+    else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
+    if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
+    else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
+
+    int newOpacity = Block::lightOpacity[id];
+    int newBlockLight = Block::lightValue[id];
+    if (newOpacity != oldOpacity || newBlockLight != oldBlockLight || id == 0) {
+        updateLightForBlockChange(x, y, z, oldOpacity, newOpacity, oldBlockLight, newBlockLight, oldSkyLight);
+    }
+
+    if (id > 0 && Block::blocksList[id]) {
+        Block::blocksList[id]->onBlockAdded(*this, x, y, z);
+    }
+
+    return true;
+}
+
+void World::setBlockMetadata(int x, int y, int z, uint8_t meta) {
+    if (y < 0 || y >= Chunk::HEIGHT) return;
+    auto chunk = getChunk(x >> 4, z >> 4);
+    if (!chunk) return;
+    chunk->setBlockMetadata(x & 15, y, z & 15, meta);
 }
 
 void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
@@ -108,15 +164,33 @@ void World::scheduleBlockUpdate(int x, int y, int z, int id, int delay) {
     m_scheduledTickSet.insert(e);
 }
 
-void World::notifyBlocksOfNeighborChange(int x, int y, int z, int id) {
-    auto nc = [&](int nx, int ny, int nz) {
-        uint8_t nid = getBlockID(nx, ny, nz);
-        if (nid > 0 && Block::blocksList[nid]) Block::blocksList[nid]->onNeighborBlockChange(*this, nx, ny, nz, id);
-    };
-    nc(x - 1, y, z); nc(x + 1, y, z); nc(x, y - 1, z); nc(x, y + 1, z); nc(x, y, z - 1); nc(x, y, z + 1);
+void World::notifyBlockOfNeighborChange(int x, int y, int z, int id) {
+    if (!m_editingBlocks) {
+        uint8_t nid = getBlockID(x, y, z);
+        if (nid > 0 && Block::blocksList[nid]) {
+            Block::blocksList[nid]->onNeighborBlockChange(*this, x, y, z, id);
+        }
+    }
 }
 
-void World::notifyBlockChange(int x, int y, int z, int id) { notifyBlocksOfNeighborChange(x, y, z, id); }
+void World::notifyBlockChange(int x, int y, int z, int id) {
+    m_notificationQueue.push_back({x, y, z, id});
+    if (m_processingNotifications) return;
+
+    m_processingNotifications = true;
+    while (!m_notificationQueue.empty()) {
+        BlockUpdate u = m_notificationQueue.front();
+        m_notificationQueue.pop_front();
+        
+        notifyBlockOfNeighborChange(u.x - 1, u.y, u.z, u.id);
+        notifyBlockOfNeighborChange(u.x + 1, u.y, u.z, u.id);
+        notifyBlockOfNeighborChange(u.x, u.y - 1, u.z, u.id);
+        notifyBlockOfNeighborChange(u.x, u.y + 1, u.z, u.id);
+        notifyBlockOfNeighborChange(u.x, u.y, u.z - 1, u.id);
+        notifyBlockOfNeighborChange(u.x, u.y, u.z + 1, u.id);
+    }
+    m_processingNotifications = false;
+}
 
 void World::update(float dt) {
     m_worldTime = std::fmod(m_worldTime + dt * 20.0, 24000.0);
@@ -130,7 +204,15 @@ void World::update(float dt) {
                 if (it->scheduledTime > m_tickCount) break;
                 NextTickListEntry e = *it; m_scheduledTickSet.erase(it);
                 uint8_t cid = getBlockID(e.x, e.y, e.z);
-                if (cid == e.blockID && cid > 0 && Block::blocksList[cid]) Block::blocksList[cid]->updateTick(*this, e.x, e.y, e.z, rand);
+                if (cid > 0 && Block::blocksList[cid]) {
+                    bool canTick = (cid == e.blockID);
+                    if (!canTick) {
+                        // Allow fluid updates if the ID changed between moving and still
+                        if ((e.blockID == 8 || e.blockID == 9) && (cid == 8 || cid == 9)) canTick = true;
+                        if ((e.blockID == 10 || e.blockID == 11) && (cid == 10 || cid == 11)) canTick = true;
+                    }
+                    if (canTick) Block::blocksList[cid]->updateTick(*this, e.x, e.y, e.z, rand);
+                }
             }
         }
     }

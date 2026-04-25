@@ -12,21 +12,25 @@ struct Neighborhood : public IBlockAccess {
 
     uint8_t getBlockID(int x, int y, int z) const override {
         if (y < 0 || y >= 128) return 0;
-        int cx = 1, cz = 1;
-        if (x < 0) { cx--; x += 16; } else if (x >= 16) { cx++; x -= 16; }
-        if (z < 0) { cz--; z += 16; } else if (z >= 16) { cz++; z -= 16; }
-        return chunks[cx][cz] ? chunks[cx][cz]->getBlockID(x, y, z) : 0;
+        int ncx = (x >> 4) + 1;
+        int ncz = (z >> 4) + 1;
+        if (ncx < 0 || ncx > 2 || ncz < 0 || ncz > 2) return 0;
+        const Chunk* c = chunks[ncx][ncz].get();
+        return c ? c->getBlockID(x & 15, y, z & 15) : 0;
     }
     uint8_t getBlockMetadata(int x, int y, int z) const override {
         if (y < 0 || y >= 128) return 0;
-        int cx = 1, cz = 1;
-        if (x < 0) { cx--; x += 16; } else if (x >= 16) { cx++; x -= 16; }
-        if (z < 0) { cz--; z += 16; } else if (z >= 16) { cz++; z -= 16; }
-        return chunks[cx][cz] ? chunks[cx][cz]->getBlockMetadata(x, y, z) : 0;
+        int ncx = (x >> 4) + 1;
+        int ncz = (z >> 4) + 1;
+        if (ncx < 0 || ncx > 2 || ncz < 0 || ncz > 2) return 0;
+        const Chunk* c = chunks[ncx][ncz].get();
+        return c ? c->getBlockMetadata(x & 15, y, z & 15) : 0;
     }
     const Material& getBlockMaterial(int x, int y, int z) const override {
         uint8_t id = getBlockID(x, y, z);
-        return id == 0 ? Material::air : Block::blocksList[id]->blockMaterial;
+        if (id == 0) return Material::air;
+        Block* b = Block::blocksList[id];
+        return b ? b->blockMaterial : Material::air;
     }
     std::pair<int, int> getLightPair(int x, int y, int z) const override {
         int sky = 15;
