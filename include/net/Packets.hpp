@@ -170,14 +170,11 @@ public:
             }
         }
 
-        // 2. Metadata (bitpacked)
+        // 2. Metadata (already packed in memory)
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
-                for(int j = 0; j < 4096; j += 2) {
-                    uint8_t m1 = m[i * 4096 + j] & 0x0F;
-                    uint8_t m2 = m[i * 4096 + j + 1] & 0x0F;
-                    uncompressed.push_back(m1 | (m2 << 4));
-                }
+                const uint8_t* src = m + i * 2048;
+                uncompressed.insert(uncompressed.end(), src, src + 2048);
             }
         }
 
@@ -220,7 +217,7 @@ public:
         Compression::decompress(compressedPtr, compressedSize, decompressed, totalExpected);
 
         blocks.assign(16 * 128 * 16, 0);
-        metadata.assign(16 * 128 * 16, 0);
+        metadata.assign(16 * 128 * 16 / 2, 0);
         skylight.assign(16 * 128 * 16 / 2, 0);
         blocklight.assign(16 * 128 * 16 / 2, 0);
 
@@ -237,11 +234,8 @@ public:
         // 2. Metadata
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
-                for(int j = 0; j < 4096; j += 2) {
-                    uint8_t packed = *ptr++;
-                    metadata[i * 4096 + j] = packed & 0x0F;
-                    metadata[i * 4096 + j + 1] = (packed >> 4) & 0x0F;
-                }
+                std::memcpy(metadata.data() + i * 2048, ptr, 2048);
+                ptr += 2048;
             }
         }
 

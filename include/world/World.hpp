@@ -121,7 +121,7 @@ public:
     double getWorldTime() const { return m_worldTime; }
     void setWorldTime(double time) { m_worldTime = time; }
 
-    const std::vector<std::shared_ptr<Chunk>>& getChunks() const { return m_chunks; }
+    std::vector<std::shared_ptr<Chunk>> getAllChunks() const;
     std::vector<std::shared_ptr<Chunk>> popNewChunks();
     std::vector<std::shared_ptr<Chunk>> popCompleteChunks();
     std::vector<int32_t> popRemovedEntities();
@@ -162,6 +162,7 @@ private:
     std::unique_ptr<WorldGenerator> m_generator;
     std::unique_ptr<ChunkLoader> m_loader;
     mutable std::shared_mutex m_chunkMutex;
+    mutable std::mutex m_pendingMutex;
 
     std::set<NextTickListEntry> m_scheduledTickSet;
     uint64_t m_tickCount = 0;

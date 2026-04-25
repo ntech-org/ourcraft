@@ -38,9 +38,11 @@ public:
     float distanceWalkedModified = 0.0f;
     float prevDistanceWalkedModified = 0.0f;
     bool inWater = false;
+    bool inLava = false;
 
     virtual void preparePlayerToSpawn();
     bool handleWaterMovement();
+    bool handleLavaMovement();
     bool isOffsetPositionInLiquid(double dx, double dy, double dz);
 
     virtual void fall(float distance);

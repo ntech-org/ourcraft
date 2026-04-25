@@ -147,6 +147,16 @@ bool Entity::handleWaterMovement() {
     return inWater;
 }
 
+bool Entity::handleLavaMovement() {
+    if (worldObj.handleMaterialAcceleration(boundingBox.expand(0.0, -0.1, 0.0), Material::lava, this)) {
+        inLava = true;
+        fallDistance = 0.0f;
+    } else {
+        inLava = false;
+    }
+    return inLava;
+}
+
 bool Entity::isOffsetPositionInLiquid(double dx, double dy, double dz) {
     AxisAlignedBB offsetBB = boundingBox.getOffsetBoundingBox(dx, dy, dz);
     if (!worldObj.getCollidingBoundingBoxes(offsetBB).empty()) return false;

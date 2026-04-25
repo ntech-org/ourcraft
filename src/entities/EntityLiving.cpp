@@ -1,5 +1,7 @@
 #include "entities/EntityLiving.hpp"
 #include "world/World.hpp"
+#include "world/Block.hpp"
+#include "world/BlockFluid.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -38,8 +40,6 @@ void EntityLiving::onUpdate() {
 
     if (hurtTime > 0) hurtTime--;
 
-    handleWaterMovement();
-
     updateEntityActionState();
 
     prevSwingProgress = swingProgress;
@@ -52,68 +52,100 @@ void EntityLiving::onUpdate() {
     }
     swingProgress = (float)swingProgressInt / 8.0f;
 
+    handleWaterMovement();
+    handleLavaMovement();
+
     if (handlePhysics) {
         bool chunkLoaded = worldObj.isChunkLoaded((int)std::floor(posX / 16.0), (int)std::floor(posZ / 16.0));
-        
+
         if (!chunkLoaded) {
             motionX = 0;
             motionY = 0;
             motionZ = 0;
         } else {
-            handleWaterMovement();
-            
             if (inWater) {
-            // Infdev Water Physics
-            float waterDrag = 0.8f;
-            float acceleration = 0.02f;
-            
-            // Buoyancy is added before drag in the original logic
-            if (jumping) {
-                motionY += 0.04f;
-            }
-            
-            moveEntity(motionX, motionY, motionZ);
-            
-            motionX *= waterDrag;
-            motionY *= waterDrag;
-            motionZ *= waterDrag;
-            
-            if (isFlying) {
-                // Sinking suppressed
-            } else {
-                motionY -= 0.02f; // Sinking force
-            }
+                // Infdev Water Physics
+                float waterDrag = 0.8f;
 
+                // Buoyancy based on liquid level:
+                // In deep water (decay low), buoyancy is stable (around 0.04f).
+                // In shallow water (decay high), buoyancy is boosted to allow jumping out.
+                int decay = ((BlockFluid*)Block::waterMoving)->getEffectiveFlowDecay(worldObj, (int)std::floor(posX), (int)std::floor(posY), (int)std::floor(posZ));
 
-            if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
-                motionY = 0.30000001192092896;
-            }
-        } else {
-            // Infdev Ground/Air Physics
-            moveEntity(motionX, motionY, motionZ);
-            
-            float drag = 0.91f;
-            if (onGround) {
-                // Ground drag depends on the block below, 0.6 is default (sand/dirt/stone)
-                drag = 0.6f * 0.91f;
-            }
-            
-            motionX *= drag;
-            motionY *= 0.98f;
-            motionZ *= drag;
-            
-            if (isFlying) {
-                // Gravity suppressed
-            } else {
-                motionY -= 0.08f; // Gravity
+                // Base buoyancy of 0.04f.
+                // As decay increases (getting shallower), add a jump boost up to 0.16f.
+                float jumpBoost = (decay < 0 ? 0.0f : (0.16f * ((float)decay / 8.0f)));
+                float buoyancy = 0.04f + jumpBoost;
+
+                if (jumping) {
+                    motionY += buoyancy;
+                }
+
+                moveEntity(motionX, motionY, motionZ);
+
+                motionX *= waterDrag;
+                motionY *= waterDrag;
+                motionZ *= waterDrag;
+
+                if (isFlying) {
+                    // Sinking suppressed
+                } else {
+                    motionY -= 0.02f; // Sinking force
+                }
+
+                if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
+                    motionY = 0.30000001192092896;
+                    }
+            } else if (inLava) {
+                // Infdev Lava Physics
+                float lavaDrag = 0.5f;
+
+                int decay = ((BlockFluid*)Block::lavaMoving)->getEffectiveFlowDecay(worldObj, (int)std::floor(posX), (int)std::floor(posY), (int)std::floor(posZ));
+                float jumpBoost = (decay < 0 ? 0.0f : (0.16f * ((float)decay / 8.0f)));
+                float buoyancy = 0.04f + jumpBoost;
+
+                if (jumping) {
+                    motionY += buoyancy;
+                }            moveEntity(motionX, motionY, motionZ);
+
+                motionX *= lavaDrag;
+                motionY *= lavaDrag;
+                motionZ *= lavaDrag;
+
+                if (isFlying) {
+                    // Sinking suppressed
+                } else {
+                    motionY -= 0.02f; // Sinking force
+                }
+
+                if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
+                    motionY = 0.30000001192092896;
+                }
+            } else {            // Infdev Ground/Air Physics
+                moveEntity(motionX, motionY, motionZ);
+
+                float drag = 0.91f;
+                if (onGround) {
+                    // Ground drag depends on the block below, 0.6 is default (sand/dirt/stone)
+                    drag = 0.6f * 0.91f;
+                }
+
+                motionX *= drag;
+                motionY *= 0.98f;
+                motionZ *= drag;
+
+                if (isFlying) {
+                    // Gravity suppressed
+                } else {
+                    motionY -= 0.08f; // Gravity
+                }
             }
         }
     }
-}
 
-prevLimbSwing = limbSwing;
+    prevLimbSwing = limbSwing;
     prevLimbSwingAmount = limbSwingAmount;
-    
+
     float f = dist * 4.0f;
     if (f > 1.0f) f = 1.0f;
     limbSwingAmount += (f - limbSwingAmount) * 0.4f;
@@ -144,4 +176,3 @@ void EntityLiving::fall(float distance) {
         attackEntityFrom(nullptr, damage);
     }
 }
-

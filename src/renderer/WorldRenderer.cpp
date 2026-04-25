@@ -56,7 +56,7 @@ void WorldRenderer::meshWorkerLoop() {
 
 void WorldRenderer::rebuildSectionList() {
     m_sections.clear();
-    for (const auto& chunk : m_world.getChunks()) {
+    for (const auto& chunk : m_world.getAllChunks()) {
         addSectionsForChunk(chunk);
     }
 }
@@ -141,7 +141,6 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
                 }
                 m_cv.notify_one();
                 if (++buildsStarted >= limit) {
-                    ++it;
                     break;
                 }
             }

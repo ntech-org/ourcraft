@@ -36,15 +36,17 @@ void World::removeChunk(int chunkX, int chunkZ) {
 
 void World::requestChunk(int chunkX, int chunkZ) {
     std::uint64_t key = chunkKey(chunkX, chunkZ);
-    if (isChunkLoaded(chunkX, chunkZ) || isChunkPending(chunkX, chunkZ)) return;
+    
+    {
+        std::lock_guard<std::mutex> lock(m_pendingMutex);
+        if (isChunkLoaded(chunkX, chunkZ) || m_pendingChunks.count(key) > 0 || m_pendingRequests.count(key) > 0) return;
 
-    if (isRemote) {
-        if (m_pendingRequests.find(key) == m_pendingRequests.end()) {
+        if (isRemote) {
             m_pendingRequests.insert(key);
+            return;
         }
-        return;
+        m_pendingChunks.insert(key);
     }
-    m_pendingChunks.insert(key);
     m_loader->requestChunk(chunkX, chunkZ);
 }
 
@@ -72,14 +74,20 @@ bool World::pollGeneratedChunks() {
         ChunkState state = chunk->getState();
 
         if (state == ChunkState::Generated) {
-            m_pendingChunks.erase(chunkKey(cx, cz));
+            {
+                std::lock_guard<std::mutex> lock(m_pendingMutex);
+                m_pendingChunks.erase(chunkKey(cx, cz));
+            }
             chunk->generateBitmask();
             addChunk(chunk);
             worldChanged = true;
             m_loader->requestLighting(chunk);
         } else if (state == ChunkState::Complete) {
             // This chunk was likely loaded from disk already complete
-            m_pendingChunks.erase(chunkKey(cx, cz));
+            {
+                std::lock_guard<std::mutex> lock(m_pendingMutex);
+                m_pendingChunks.erase(chunkKey(cx, cz));
+            }
             addChunk(chunk);
             worldChanged = true;
             
@@ -170,6 +178,11 @@ void World::unloadFarChunks(int playerCX, int playerCZ, int keepDistance) {
     }
 }
 
+std::vector<std::shared_ptr<Chunk>> World::getAllChunks() const {
+    std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
+    return m_chunks;
+}
+
 std::shared_ptr<Chunk> World::getChunk(int chunkX, int chunkZ) {
     std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
     auto it = m_chunkLookup.find(chunkKey(chunkX, chunkZ));
@@ -190,7 +203,8 @@ bool World::isChunkLoaded(int chunkX, int chunkZ) const {
 }
 
 bool World::isChunkPending(int chunkX, int chunkZ) const {
-    return m_pendingChunks.count(chunkKey(chunkX, chunkZ)) > 0;
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+    return m_pendingChunks.count(chunkKey(chunkX, chunkZ)) > 0 || m_pendingRequests.count(chunkKey(chunkX, chunkZ)) > 0;
 }
 
 std::vector<std::shared_ptr<Chunk>> World::popNewChunks() {

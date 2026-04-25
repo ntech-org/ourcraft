@@ -22,12 +22,12 @@ public:
 
     static float getPercentAir(int meta);
     static double getFlowDirection(const IBlockAccess& world, int x, int y, int z, const Material& mat);
+    int getEffectiveFlowDecay(const IBlockAccess& world, int x, int y, int z) const;
 
 protected:
     void checkForHarden(World& world, int x, int y, int z) const;
     void triggerLavaMixEffects(World& world, int x, int y, int z) const;
     int getFlowDecay(World& world, int x, int y, int z) const;
-    int getEffectiveFlowDecay(const IBlockAccess& world, int x, int y, int z) const;
     glm::vec3 getFlowVector(const IBlockAccess& world, int x, int y, int z) const;
 };
 

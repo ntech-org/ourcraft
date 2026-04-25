@@ -168,6 +168,8 @@ void Block::init() {
     lightOpacity[65] = 0; // ladder
     lightOpacity[66] = 0; // rail
 
+    lightValue[10] = 15; // Lava Moving
+    lightValue[11] = 15; // Lava Still
     lightValue[50] = 14; // Torch
     lightValue[51] = 15; // Fire
     lightValue[62] = 13; // Active Furnace

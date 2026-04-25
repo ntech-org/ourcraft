@@ -189,7 +189,7 @@ void IntegratedServer::run() {
                 unloadTimer = 0;
                 
                 std::vector<std::pair<int, int>> toUnload;
-                for (const auto& chunk : m_world->getChunks()) {
+                for (const auto& chunk : m_world->getAllChunks()) {
                     bool keep = false;
                     for (auto& [peer, session] : m_players) {
                         Entity* player = nullptr;

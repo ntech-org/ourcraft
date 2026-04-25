@@ -70,6 +70,9 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     int lx = x & 15, lz = z & 15;
     
     uint8_t oldID = chunk->getBlockID(lx, y, lz);
+    uint8_t oldMeta = chunk->getBlockMetadata(lx, y, lz);
+    if (oldID == id && oldMeta == meta) return;
+
     int oldOpacity = Block::lightOpacity[oldID];
     int oldBlockLight = Block::lightValue[oldID];
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);

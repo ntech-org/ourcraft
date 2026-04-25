@@ -151,15 +151,21 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
             m_world.addChunk(chunk);
         }
         
+        // Cache neighbors to avoid repeated lookups in the loop
+        auto nW = m_world.getChunk(packet.x - 1, packet.z);
+        auto nE = m_world.getChunk(packet.x + 1, packet.z);
+        auto nN = m_world.getChunk(packet.x, packet.z - 1);
+        auto nS = m_world.getChunk(packet.x, packet.z + 1);
+
         // Mark all sections as dirty so they rebuild meshes
         for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
             chunk->markSectionDirtyInternal(i);
             
             // Also touch neighbors to fix seams/lighting at boundaries
-            if (auto n = m_world.getChunk(packet.x - 1, packet.z)) n->touchSection(i);
-            if (auto n = m_world.getChunk(packet.x + 1, packet.z)) n->touchSection(i);
-            if (auto n = m_world.getChunk(packet.x, packet.z - 1)) n->touchSection(i);
-            if (auto n = m_world.getChunk(packet.x, packet.z + 1)) n->touchSection(i);
+            if (nW) nW->touchSection(i);
+            if (nE) nE->touchSection(i);
+            if (nN) nN->touchSection(i);
+            if (nS) nS->touchSection(i);
         }
     } else if (type == PacketType::BlockChange) {
         PacketBlockChange packet;
