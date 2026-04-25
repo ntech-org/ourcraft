@@ -34,6 +34,10 @@ void NetworkHandler::update() {
     m_client->poll();
 }
 
+void NetworkHandler::stopServer() {
+    m_server.reset();
+}
+
 void NetworkHandler::sendPlayerPosition(const EntityPlayer& player) {
     PacketPlayerPosition posPacket;
     posPacket.x = player.posX;

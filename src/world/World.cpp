@@ -8,6 +8,12 @@
 
 World::World() : m_worldTime(6000.0) {}
 
+World::~World() {
+    if (m_loader) {
+        m_loader->stopWorldAccess();
+    }
+}
+
 void World::setGenerator(std::unique_ptr<WorldGenerator> generator) {
     m_generator = std::move(generator);
     if (!isRemote) {
@@ -287,17 +293,6 @@ void World::removeEntity(int32_t id) {
     m_removedEntities.push_back(id);
 }
 
-std::vector<int32_t> World::popRemovedEntities() {
-    std::lock_guard<std::mutex> lock(m_removedEntitiesMutex);
-    std::vector<int32_t> r = std::move(m_removedEntities);
-    m_removedEntities.clear();
-    return r;
-}
-
-int World::floorDiv(int v, int d) { int q = v / d, r = v % d; if (r != 0 && ((r < 0) != (d < 0))) --q; return q; }
-int World::floorMod(int v, int d) { int r = v % d; return r < 0 ? r + d : r; }
-std::uint64_t World::chunkKey(int cx, int cz) { return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(cx)) << 32) | static_cast<std::uint32_t>(cz); }
-
 int World::getSavedLightValue(LightType type, int x, int y, int z) const {
     if (y < 0) return 0;
     if (y >= Chunk::HEIGHT) return (type == LightType::Sky) ? 15 : 0;
@@ -551,10 +546,26 @@ void World::calculateInitialSkylight(Chunk& chunk) {
     };
 
     for (int i = 0; i < 16; ++i) {
-        seedBoundary(neighborW, cx - 1, cz + i); seedBoundary(neighborE, cx + 16, cz + i);
-        seedBoundary(neighborN, cx + i, cz - 1); seedBoundary(neighborS, cx + i, cz + 16);
-        seedOurBoundary(cx, cz + i); seedOurBoundary(cx + 15, cz + i);
-        seedOurBoundary(cx + i, cz); seedOurBoundary(cx + i, cz + 15);
+        // Boundary seeding: Seed our boundary from neighbors AND seed neighbors from our boundary
+        auto seedBoth = [&](Chunk* nChunk, int myX, int myZ, int nX, int nZ) {
+            for (int y = 0; y < Chunk::HEIGHT; ++y) {
+                // If neighbor has light, it might flow into us
+                if (nChunk) {
+                    int nIdx = ((nX & 15) << 11) | ((nZ & 15) << 7) | y;
+                    if (nChunk->getLightInternal(LightType::Sky, nIdx) > 0) skyQueue.push_back({nX, y, nZ});
+                    if (nChunk->getLightInternal(LightType::Block, nIdx) > 0) blockQueue.push_back({nX, y, nZ});
+                }
+                // If we have light, it might flow into neighbor
+                int myIdx = ((myX & 15) << 11) | ((myZ & 15) << 7) | y;
+                if (chunk.getLightInternal(LightType::Sky, myIdx) > 0) skyQueue.push_back({myX, y, myZ});
+                if (chunk.getLightInternal(LightType::Block, myIdx) > 0) blockQueue.push_back({myX, y, myZ});
+            }
+        };
+
+        seedBoth(neighborW, cx, cz + i, cx - 1, cz + i);
+        seedBoth(neighborE, cx + 15, cz + i, cx + 16, cz + i);
+        seedBoth(neighborN, cx + i, cz, cx + i, cz - 1);
+        seedBoth(neighborS, cx + i, cz + 15, cx + i, cz + 16);
     }
     
     propagateLight(LightType::Sky, skyQueue); propagateLight(LightType::Block, blockQueue);

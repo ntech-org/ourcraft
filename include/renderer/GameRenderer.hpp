@@ -17,12 +17,14 @@
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
+class GuiScreen;
+
 class GameRenderer {
 public:
     GameRenderer(GLFWwindow* window, World& world, EntityPlayer& player);
     ~GameRenderer();
 
-    void render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps);
+    void render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps, std::shared_ptr<GuiScreen> currentScreen = nullptr);
     void resize(int width, int height);
 
     struct ProfilerResult {
@@ -41,6 +43,12 @@ public:
     WorldRenderer& getWorldRenderer() { return *m_worldRenderer; }
     Camera& getCamera() { return m_camera; }
     ProfilerResult& getProfiler() { return m_profiler; }
+    FontRenderer& getFontRenderer() { return *m_fontRenderer; }
+    Shader& getUIShader() { return *m_uiShader; }
+
+    float getScaledWidth() const { return m_scaledWidth; }
+    float getScaledHeight() const { return m_scaledHeight; }
+    int getGuiScale() const { return m_guiScale; }
 
 private:
     void setupFog(const glm::vec3& fogColor, float py, bool inWater, bool inLava);

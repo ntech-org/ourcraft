@@ -10,7 +10,7 @@
 
 IntegratedServer::IntegratedServer() {
     m_world = std::make_unique<World>();
-    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(-1));
+    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
     
     m_world->onBlockChanged = [this](int x, int y, int z, uint8_t id, uint8_t meta) {
         PacketBlockChange packet;
@@ -38,6 +38,14 @@ void IntegratedServer::start() {
 void IntegratedServer::stop() {
     if (!m_running) return;
     m_running = false;
+    
+    if (m_world) {
+        m_world->saveAllChunks();
+        // Give it a bit of time to process saves if needed, or wait for loader
+        // Actually World::pollGeneratedChunks is usually called in run loop.
+        // We'll just let it finish the loop.
+    }
+
     if (m_thread.joinable()) {
         m_thread.join();
     }
@@ -53,11 +61,16 @@ void IntegratedServer::run() {
     };
 
     auto lastTick = std::chrono::steady_clock::now();
+    int tickCounter = 0;
     while (m_running) {
         m_world->pollGeneratedChunks();
 
         auto now = std::chrono::steady_clock::now();
         if (now - lastTick >= std::chrono::milliseconds(50)) { // 20 TPS
+            tickCounter++;
+            if (tickCounter % 6000 == 0) { // Every 5 minutes
+                m_world->saveAllChunks();
+            }
             // Server-Authoritative Automatic Chunk Pushing (Rate-Limited & Distance-Sorted)
             for (auto& [peer, session] : m_players) {
                 Entity* player = nullptr;
@@ -102,7 +115,7 @@ void IntegratedServer::run() {
                     }
 
                     ChunkState currentState = chunk->getState();
-                    if (currentState < ChunkState::Generated) continue;
+                    if (currentState < ChunkState::Lighted) continue;
 
                     auto it = session.sentChunks.find(key);
                     bool shouldSend = false;

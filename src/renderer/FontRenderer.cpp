@@ -51,3 +51,9 @@ void FontRenderer::drawString(Shader& shader, const std::string& text, float x, 
     }
     t->draw();
 }
+
+int FontRenderer::getStringWidth(const std::string& text) {
+    // Basic implementation: every char is 8 pixels wide.
+    // In original MC it samples char widths from the texture.
+    return (int)text.length() * 8;
+}

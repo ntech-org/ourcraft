@@ -22,6 +22,7 @@ public:
 
     bool isLeftClick() { bool r = m_leftClick; m_leftClick = false; return r; }
     bool isRightClick() { bool r = m_rightClick; m_rightClick = false; return r; }
+    bool isEscPressed() { bool r = m_escPressed; m_escPressed = false; return r; }
 
 private:
     GLFWwindow* m_window;
@@ -49,6 +50,8 @@ private:
     bool m_rightMousePressed = false;
     bool m_leftClick = false;
     bool m_rightClick = false;
+    bool m_escPressed = false;
+    bool m_escWasPressed = false; // To handle press/release
 
     bool m_spacePressed = false;
     int m_spaceTapTicks = 0;

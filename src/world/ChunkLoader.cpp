@@ -2,6 +2,7 @@
 #include "world/World.hpp"
 
 ChunkLoader::ChunkLoader(WorldGenerator& generator, World* world) : m_generator(generator), m_world(world), m_running(true) {
+    m_saveHandler = std::make_unique<SaveHandler>("world");
     unsigned int numThreads = std::thread::hardware_concurrency();
     if (numThreads == 0) numThreads = 8; // Better fallback
 
@@ -48,6 +49,14 @@ void ChunkLoader::requestLighting(std::shared_ptr<Chunk> chunk) {
     m_cv.notify_one();
 }
 
+void ChunkLoader::requestSave(std::shared_ptr<Chunk> chunk) {
+    {
+        std::lock_guard<std::mutex> lock(m_requestMutex);
+        m_requestQueue.push({ChunkTaskType::Save, chunk->getX(), chunk->getZ(), chunk, nullptr, nullptr, nullptr});
+    }
+    m_cv.notify_one();
+}
+
 bool ChunkLoader::tryPopResult(std::shared_ptr<Chunk>& outChunk) {
     std::lock_guard<std::mutex> lock(m_resultMutex);
     if (m_resultQueue.empty()) return false;
@@ -57,21 +66,24 @@ bool ChunkLoader::tryPopResult(std::shared_ptr<Chunk>& outChunk) {
 }
 
 void ChunkLoader::workerLoop() {
-    while (m_running) {
+    while (true) {
         ChunkTask task;
         {
             std::unique_lock<std::mutex> lock(m_requestMutex);
             m_cv.wait(lock, [this] { return !m_requestQueue.empty() || !m_running; });
-            if (!m_running) break;
+            if (!m_running && m_requestQueue.empty()) break;
             task = std::move(m_requestQueue.front());
             m_requestQueue.pop();
         }
 
         if (task.type == ChunkTaskType::Generate) {
             auto chunk = std::make_shared<Chunk>(task.x, task.z);
-            chunk->setState(ChunkState::Generating);
-            m_generator.generateChunk(*chunk);
-            chunk->setState(ChunkState::Generated);
+            
+            if (!m_saveHandler->loadChunk(*chunk)) {
+                chunk->setState(ChunkState::Generating);
+                m_generator.generateChunk(*chunk);
+                chunk->setState(ChunkState::Generated);
+            }
 
             std::lock_guard<std::mutex> lock(m_resultMutex);
             m_resultQueue.push(std::move(chunk));
@@ -89,11 +101,14 @@ void ChunkLoader::workerLoop() {
             if (m_world) {
                 m_world->calculateInitialSkylight(*task.chunk);
             }
-            // If we were Decorated, we are now Complete. Otherwise we are Lighted (waiting for decoration).
-            task.chunk->setState(oldState == ChunkState::Decorated ? ChunkState::Complete : ChunkState::Lighted);
+            // If we were Decorated or already in FinalLighting, we are now Complete. 
+            // Otherwise we are Lighted (waiting for decoration).
+            task.chunk->setState((oldState == ChunkState::Decorated || oldState == ChunkState::LightingFinal) ? ChunkState::Complete : ChunkState::Lighted);
             
             std::lock_guard<std::mutex> lock(m_resultMutex);
             m_resultQueue.push(std::move(task.chunk));
+        } else if (task.type == ChunkTaskType::Save) {
+            m_saveHandler->saveChunk(*task.chunk);
         }
     }
 }

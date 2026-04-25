@@ -10,10 +10,13 @@
 #include <memory>
 #include <vector>
 
+#include "world/storage/SaveHandler.hpp"
+
 enum class ChunkTaskType {
     Generate,
     Decorate,
-    Lighting
+    Lighting,
+    Save
 };
 
 struct ChunkTask {
@@ -36,6 +39,8 @@ public:
                            std::shared_ptr<Chunk> chunkS,
                            std::shared_ptr<Chunk> chunkSE);
     void requestLighting(std::shared_ptr<Chunk> chunk);
+    void requestSave(std::shared_ptr<Chunk> chunk);
+    void stopWorldAccess() { m_world = nullptr; }
     
     bool tryPopResult(std::shared_ptr<Chunk>& outChunk);
 
@@ -44,6 +49,7 @@ private:
 
     WorldGenerator& m_generator;
     class World* m_world;
+    std::unique_ptr<SaveHandler> m_saveHandler;
     std::queue<ChunkTask> m_requestQueue;
     std::queue<std::shared_ptr<Chunk>> m_resultQueue;
     

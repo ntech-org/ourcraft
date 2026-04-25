@@ -29,6 +29,8 @@ void Application::init() {
     glfwSetFramebufferSizeCallback(m_window, framebuffer_size_callback);
     glfwSetCursorPosCallback(m_window, mouse_callback);
     glfwSetScrollCallback(m_window, scroll_callback);
+    glfwSetMouseButtonCallback(m_window, mouse_button_callback);
+    glfwSetKeyCallback(m_window, key_callback);
     glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 
@@ -74,10 +76,32 @@ void Application::scroll_callback(GLFWwindow* window, double xoffset, double yof
     }
 }
 
+void Application::mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    auto app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (app->m_game) {
+        app->mouseButtonCallback(button, action, mods);
+    }
+}
+
+void Application::key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    auto app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (app->m_game) {
+        app->keyCallback(key, scancode, action, mods);
+    }
+}
+
 void Application::mouseCallback(double xpos, double ypos) {
     if (m_game) m_game->mouseCallback(xpos, ypos);
 }
 
 void Application::scrollCallback(double xoffset, double yoffset) {
     if (m_game) m_game->scrollCallback(xoffset, yoffset);
+}
+
+void Application::mouseButtonCallback(int button, int action, int mods) {
+    if (m_game) m_game->mouseButtonCallback(button, action, mods);
+}
+
+void Application::keyCallback(int key, int scancode, int action, int mods) {
+    if (m_game) m_game->keyCallback(key, scancode, action, mods);
 }

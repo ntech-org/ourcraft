@@ -3,6 +3,7 @@
 #include "world/Block.hpp"
 #include "world/Material.hpp"
 #include "renderer/TextureFX.hpp"
+#include "gui/GuiScreen.hpp"
 
 #include "entities/EntityLiving.hpp"
 #include "InputHandler.hpp"
@@ -58,7 +59,7 @@ void GameRenderer::resize(int width, int height) {
 
 
 
-void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps) {
+void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps, std::shared_ptr<GuiScreen> currentScreen) {
     double frameStart = glfwGetTime();
     m_world.pollGeneratedChunks();
     for (auto& newChunk : m_world.popNewChunks()) {
@@ -166,6 +167,22 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 
     double uiStart = glfwGetTime();
     renderUI(showDebug, showProfiler, fps, cameraMode);
+    
+    if (currentScreen) {
+        double mx, my;
+        glfwGetCursorPos(m_window, &mx, &my);
+        
+        int ww, wh, fw, fh;
+        glfwGetWindowSize(m_window, &ww, &wh);
+        glfwGetFramebufferSize(m_window, &fw, &fh);
+        mx *= (double)fw / (double)ww;
+        my *= (double)fh / (double)wh;
+        
+        mx /= (double)m_guiScale;
+        my /= (double)m_guiScale;
+        currentScreen->drawScreen((int)mx, (int)my, partialTicks);
+    }
+
     m_profiler.uiTime = (glfwGetTime() - uiStart) * 1000.0;
 
     m_profiler.frameTime = (glfwGetTime() - frameStart) * 1000.0;
@@ -509,4 +526,3 @@ void GameRenderer::drawTexturedModalRect(float x, float y, int u, int v, int wid
     t->addVertexWithUV(x, y, 0.0f, (float)u * f, (float)v * f);
     t->draw();
 }
-

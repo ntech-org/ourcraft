@@ -15,6 +15,7 @@ enum class ChunkState {
     Lighted,
     Decorating,
     Decorated,
+    LightingFinal,
     Complete
 };
 

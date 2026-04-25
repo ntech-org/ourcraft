@@ -16,6 +16,7 @@ public:
 
     bool connect(const std::string& address, int port);
     void update();
+    void stopServer();
     void sendPlayerPosition(const EntityPlayer& player);
     void sendDigging(DiggingAction action, int x, int y, int z, int face);
     void sendPlacement(int x, int y, int z, int face, int id, int meta);

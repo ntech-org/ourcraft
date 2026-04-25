@@ -1,0 +1,34 @@
+#pragma once
+#include "gui/Gui.hpp"
+#include "gui/GuiButton.hpp"
+#include <vector>
+#include <memory>
+
+class Minecraft;
+
+class GuiScreen : public Gui {
+public:
+    virtual ~GuiScreen() = default;
+
+    virtual void initGui() {}
+    virtual void onGuiClosed() {}
+    virtual void updateScreen() {}
+    virtual void drawScreen(int mouseX, int mouseY, float partialTicks);
+    
+    virtual void keyTyped(int key, int scancode, int action, int mods);
+    virtual void mouseClicked(int mouseX, int mouseY, int button);
+    
+    void setWorldAndResolution(Minecraft* mc, float width, float height);
+    
+    static bool isCtrlKeyDown();
+    static bool isShiftKeyDown();
+
+protected:
+    virtual void actionPerformed(GuiButton* button) {}
+    
+    void drawDefaultBackground();
+
+    Minecraft* mc = nullptr;
+    float width, height;
+    std::vector<std::unique_ptr<GuiButton>> controlList;
+};

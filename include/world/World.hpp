@@ -50,12 +50,15 @@ struct HitResult {
 class World : public IBlockAccess {
 public:
     World();
+    ~World();
 
     void setGenerator(std::unique_ptr<WorldGenerator> generator);
 
     void addChunk(std::shared_ptr<Chunk> chunk);
     void removeChunk(int chunkX, int chunkZ);
     void requestChunk(int chunkX, int chunkZ);
+    void saveChunk(std::shared_ptr<Chunk> chunk);
+    void saveAllChunks();
     bool pollGeneratedChunks();
     void unloadFarChunks(int playerCX, int playerCZ, int keepDistance);
 

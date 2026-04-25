@@ -2,6 +2,8 @@
 #include "world/Block.hpp"
 #include "world/InfdevWorldGenerator.hpp"
 #include "renderer/Tessellator.hpp"
+#include "gui/GuiMainMenu.hpp"
+#include "gui/GuiIngameMenu.hpp"
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -13,29 +15,71 @@ Minecraft::Minecraft(GLFWwindow* window, int width, int height)
     init();
 }
 
-Minecraft::~Minecraft() {}
+Minecraft::~Minecraft() {
+    if (m_gameState != GameState::MainMenu) {
+        saveAndQuit();
+    }
+}
 
 void Minecraft::init() {
     Block::init();
 
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
-    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
 
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
-    m_player->preparePlayerToSpawn();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player);
+
+    displayGuiScreen(std::make_shared<GuiMainMenu>());
+}
+
+void Minecraft::saveAndQuit() {
+    if (m_networkHandler) m_networkHandler->stopServer();
+    m_networkHandler.reset();
+    
+    // Re-initialize client to clean state
+    m_world = std::make_unique<World>();
+    m_world->isRemote = true;
+    m_player = std::make_unique<EntityPlayer>(*m_world);
+    m_player->isLocalPlayer = true;
+    m_player->setPosition(0.0, 128.0, 0.0);
+    
+    m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
+    m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player);
+    
+    m_gameState = GameState::MainMenu;
+    displayGuiScreen(std::make_shared<GuiMainMenu>());
+}
+
+void Minecraft::startSingleplayer() {
+    // In case we were already in a world, the above ensures we are clean.
+    // Note: World/Renderer/Player are already initialized by init() or saveAndQuit().
+    
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
 
     if (!m_networkHandler->connect("127.0.0.1", 25565)) {
-        throw std::runtime_error("Failed to connect to integrated server");
+        // Failed
     }
 
     m_gameRenderer->getWorldRenderer().rebuildSectionList();
+    
+    m_gameState = GameState::InGame;
+    displayGuiScreen(nullptr);
+}
+
+void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
+    if (m_currentScreen) m_currentScreen->onGuiClosed();
+    m_currentScreen = screen;
+    if (m_currentScreen) {
+        glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        m_currentScreen->setWorldAndResolution(this, m_gameRenderer->getScaledWidth(), m_gameRenderer->getScaledHeight());
+    } else {
+        glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
 }
 
 void Minecraft::run() {
@@ -56,7 +100,8 @@ void Minecraft::run() {
                                m_inputHandler->isDebugVisible(),
                                m_inputHandler->isChunkBoundariesVisible(),
                                m_inputHandler->isProfilerVisible(),
-                               m_fps);
+                               m_fps,
+                               m_currentScreen);
 
         glfwSwapBuffers(m_window);
         glfwPollEvents();
@@ -64,74 +109,115 @@ void Minecraft::run() {
 }
 
 void Minecraft::tick() {
-    m_world->update(0.05f);
-    m_networkHandler->update();
-    m_inputHandler->update();
+    if (m_currentScreen) {
+        m_currentScreen->updateScreen();
+    } else {
+        m_world->update(0.05f);
+        m_networkHandler->update();
+        m_inputHandler->update();
 
-    // Raycast for block picking
-    float reach = 5.0f;
-    glm::vec3 eyePos = glm::vec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
-    float yaw = glm::radians(m_player->rotationYaw);
-    float pitch = glm::radians(m_player->rotationPitch);
-    glm::vec3 lookDir = glm::vec3(
-        -std::sin(yaw) * std::cos(pitch),
-        std::sin(pitch),
-        std::cos(yaw) * std::cos(pitch)
-    );
-
-    glm::vec3 endPos = eyePos + lookDir * reach;
-    HitResult hit = m_world->rayTraceBlocks(eyePos, endPos);
-
-    if (m_inputHandler->isLeftClick()) {
-        m_player->swing();
-        if (hit.type == HitType::BLOCK) {
-            m_world->setBlockWithNotify(hit.x, hit.y, hit.z, 0);
-            m_networkHandler->sendDigging(DiggingAction::FINISH, hit.x, hit.y, hit.z, hit.sideHit);
+        if (m_inputHandler->isEscPressed()) {
+            displayGuiScreen(std::make_shared<GuiIngameMenu>());
         }
-    }
+
+        // Raycast for block picking
+        float reach = 5.0f;
+        glm::vec3 eyePos = glm::vec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
+        float yaw = glm::radians(m_player->rotationYaw);
+        float pitch = glm::radians(m_player->rotationPitch);
+        glm::vec3 lookDir = glm::vec3(
+            -std::sin(yaw) * std::cos(pitch),
+            std::sin(pitch),
+            std::cos(yaw) * std::cos(pitch)
+        );
+
+        glm::vec3 endPos = eyePos + lookDir * reach;
+        HitResult hit = m_world->rayTraceBlocks(eyePos, endPos);
+
+        if (m_inputHandler->isLeftClick()) {
+            m_player->swing();
+            if (hit.type == HitType::BLOCK) {
+                m_world->setBlockWithNotify(hit.x, hit.y, hit.z, 0);
+                m_networkHandler->sendDigging(DiggingAction::FINISH, hit.x, hit.y, hit.z, hit.sideHit);
+            }
+        }
 
 
-    if (m_inputHandler->isRightClick()) {
-        if (hit.type == HitType::BLOCK) {
-            int x = hit.x, y = hit.y, z = hit.z;
-            int face = hit.sideHit;
-            if (face == 0) y--; else if (face == 1) y++;
-            else if (face == 2) z--; else if (face == 3) z++;
-            else if (face == 4) x--; else if (face == 5) x++;
+        if (m_inputHandler->isRightClick()) {
+            if (hit.type == HitType::BLOCK) {
+                int x = hit.x, y = hit.y, z = hit.z;
+                int face = hit.sideHit;
+                if (face == 0) y--; else if (face == 1) y++;
+                else if (face == 2) z--; else if (face == 3) z++;
+                else if (face == 4) x--; else if (face == 5) x++;
 
-            AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
-            if (!m_player->boundingBox.intersectsWith(blockBB)) {
-                int itemID = m_player->inventory.getCurrentItemID();
-                if (itemID > 0) {
-                    m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
-                    m_player->swing();
-                    m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
+                AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
+                if (!m_player->boundingBox.intersectsWith(blockBB)) {
+                    int itemID = m_player->inventory.getCurrentItemID();
+                    if (itemID > 0) {
+                        m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
+                        m_player->swing();
+                        m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
+                    }
                 }
             }
         }
+
+
+
+        if (m_inputHandler->shouldReloadChunks()) {
+            m_gameRenderer->getWorldRenderer().rebuildSectionList();
+        }
+
+        m_player->onUpdate();
+        m_gameRenderer->getRenderEngine().updateTextureFX();
+        m_networkHandler->sendPlayerPosition(*m_player);
     }
-
-
-
-    if (m_inputHandler->shouldReloadChunks()) {
-        m_gameRenderer->getWorldRenderer().rebuildSectionList();
-    }
-
-    m_player->onUpdate();
-    m_gameRenderer->getRenderEngine().updateTextureFX();
-    m_networkHandler->sendPlayerPosition(*m_player);
 }
 
 
 void Minecraft::resize(int width, int height) {
     m_width = width; m_height = height;
     m_gameRenderer->resize(width, height);
+    if (m_currentScreen) {
+        m_currentScreen->setWorldAndResolution(this, m_gameRenderer->getScaledWidth(), m_gameRenderer->getScaledHeight());
+    }
 }
 
 void Minecraft::mouseCallback(double xpos, double ypos) {
+    if (m_currentScreen) return;
     m_inputHandler->handleMouse(xpos, ypos);
 }
 
 void Minecraft::scrollCallback(double xoffset, double yoffset) {
+    if (m_currentScreen) return;
     m_inputHandler->handleScroll(xoffset, yoffset);
+}
+
+void Minecraft::mouseButtonCallback(int button, int action, int mods) {
+    if (m_currentScreen && action == GLFW_PRESS) {
+        auto screen = m_currentScreen; // Hold reference to prevent crash if screen is changed
+        
+        double mx, my;
+        glfwGetCursorPos(m_window, &mx, &my);
+        
+        // Convert screen units to framebuffer pixels
+        int ww, wh, fw, fh;
+        glfwGetWindowSize(m_window, &ww, &wh);
+        glfwGetFramebufferSize(m_window, &fw, &fh);
+        
+        mx *= (double)fw / (double)ww;
+        my *= (double)fh / (double)wh;
+        
+        mx /= (double)m_gameRenderer->getGuiScale();
+        my /= (double)m_gameRenderer->getGuiScale();
+        
+        screen->mouseClicked((int)mx, (int)my, button);
+    }
+}
+
+void Minecraft::keyCallback(int key, int scancode, int action, int mods) {
+    if (m_currentScreen) {
+        m_currentScreen->keyTyped(key, scancode, action, mods);
+    }
 }

@@ -120,6 +120,12 @@ void InputHandler::update() {
         m_rightClick = true;
     }
     m_rightMousePressed = rightMouse;
+
+    bool esc = glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    if (esc && !m_escWasPressed) {
+        m_escPressed = true;
+    }
+    m_escWasPressed = esc;
 }
 
 
