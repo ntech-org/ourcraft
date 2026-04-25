@@ -27,6 +27,7 @@ public:
     static Block* blocksList[256];
     static bool opaqueCubeLookup[256];
     static int lightOpacity[256];
+    static int lightValue[256];
 
     static const Block* stone;
     static const Block* grass;

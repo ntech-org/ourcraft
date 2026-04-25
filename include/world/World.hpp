@@ -13,6 +13,7 @@
 #include <vector>
 #include <shared_mutex>
 #include <set>
+#include <mutex>
 
 class Entity;
 
@@ -48,7 +49,10 @@ public:
 
     bool isChunkLoaded(int chunkX, int chunkZ) const;
     bool isChunkPending(int chunkX, int chunkZ) const;
-
+    
+    // Fast bulk check
+    void getLoadedAndPendingChunks(int playerCX, int playerCZ, int radius, 
+                                   std::vector<std::pair<int, int>>& outToRequest);
 
     uint8_t getBlockID(int worldX, int worldY, int worldZ) const;
     void setBlockID(int worldX, int worldY, int worldZ, uint8_t id);
@@ -59,6 +63,19 @@ public:
     void setBlockMetadataWithNotify(int worldX, int worldY, int worldZ, uint8_t meta);
 
     const class Material& getBlockMaterial(int worldX, int worldY, int worldZ) const;
+
+    int getSavedLightValue(LightType type, int x, int y, int z) const;
+    void setLightValue(LightType type, int x, int y, int z, int val);
+    
+    struct LightNode { int x, y, z; };
+    struct LightRemovalNode { int x, y, z, val; };
+    
+    void propagateLight(LightType type, std::vector<LightNode>& queue);
+    void unpropagateLight(LightType type, std::vector<LightRemovalNode>& removeQueue, std::vector<LightNode>& addQueue);
+
+    void updateLightForBlockChange(int x, int y, int z, int oldOpacity, int newOpacity, int oldBlockLight, int newBlockLight, int oldSkyLight);
+
+    void calculateInitialSkylight(Chunk& chunk);
 
     void scheduleBlockUpdate(int worldX, int worldY, int worldZ, int blockID, int delay);
     void notifyBlocksOfNeighborChange(int worldX, int worldY, int worldZ, int blockID);
@@ -80,6 +97,7 @@ public:
     double getWorldTime() const { return m_worldTime; }
 
     const std::vector<std::shared_ptr<Chunk>>& getChunks() const { return m_chunks; }
+    std::vector<std::shared_ptr<Chunk>> popNewChunks();
 
     void spawnEntity(std::unique_ptr<Entity> entity);
     void removeEntity(int32_t id);
@@ -94,6 +112,8 @@ private:
     static glm::vec3 unpackColor(std::uint32_t rgb);
 
     std::vector<std::shared_ptr<Chunk>> m_chunks;
+    std::vector<std::shared_ptr<Chunk>> m_newChunks;
+    std::mutex m_newChunksMutex;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>> m_chunkLookup;
     std::vector<std::unique_ptr<Entity>> m_entities;
     int32_t m_nextEntityID = 0;

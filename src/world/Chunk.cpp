@@ -1,8 +1,12 @@
 #include "world/Chunk.hpp"
+#include "world/Block.hpp"
 
 Chunk::Chunk(int x, int z) : m_x(x), m_z(z) {
     m_blocks.resize(SIZE, 0);
     m_metadata.resize(SIZE, 0);
+    m_skylight.resize(SIZE / 2, 0);
+    m_blocklight.resize(SIZE / 2, 0);
+    m_heightMap.resize(WIDTH * DEPTH, 0);
     m_sectionDirty.fill(true);
     m_sectionVersions.fill(1);
 }
@@ -28,12 +32,42 @@ void Chunk::setBlockMetadata(int x, int y, int z, uint8_t meta) {
     markSectionDirty(sectionIndex);
 }
 
+int Chunk::getLight(LightType type, int x, int y, int z) const {
+    if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || z < 0 || z >= DEPTH) return 0;
+    const std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_lightMutex));
+    return getLightValue(data, getIndex(x, y, z));
+}
+
+void Chunk::setLight(LightType type, int x, int y, int z, int val) {
+    if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || z < 0 || z >= DEPTH) return;
+    std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
+    {
+        std::lock_guard<std::mutex> lock(m_lightMutex);
+        setLightValue(data, getIndex(x, y, z), val);
+    }
+
+    const int sectionIndex = getSectionIndex(y);
+    markSectionDirty(sectionIndex);
+}
+
 void Chunk::setBlockID(int x, int y, int z, uint8_t id) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || z < 0 || z >= DEPTH) return;
     uint8_t& block = m_blocks[getIndex(x, y, z)];
     if (block == id) return;
 
+    int oldOpacity = Block::lightOpacity[block];
     block = id;
+    int newOpacity = Block::lightOpacity[id];
+
+    if (oldOpacity != newOpacity) {
+        int h = getHeight(x, z);
+        if (y >= h - 1) {
+            int ty = HEIGHT - 1;
+            while (ty >= 0 && Block::lightOpacity[getBlockID(x, ty, z)] == 0) ty--;
+            setHeight(x, z, ty + 1);
+        }
+    }
 
     const int sectionIndex = getSectionIndex(y);
     markSectionDirty(sectionIndex);
@@ -48,11 +82,23 @@ void Chunk::setBlockID(int x, int y, int z, uint8_t id) {
 
 void Chunk::setBlockIDSafe(int x, int y, int z, uint8_t id) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || z < 0 || z >= DEPTH) return;
+    int oldOpacity, newOpacity;
     {
         std::lock_guard<std::mutex> lock(m_blockMutex);
         uint8_t& block = m_blocks[getIndex(x, y, z)];
         if (block == id) return;
+        oldOpacity = Block::lightOpacity[block];
         block = id;
+        newOpacity = Block::lightOpacity[id];
+    }
+
+    if (oldOpacity != newOpacity) {
+        int h = getHeight(x, z);
+        if (y >= h - 1) {
+            int ty = HEIGHT - 1;
+            while (ty >= 0 && Block::lightOpacity[getBlockID(x, ty, z)] == 0) ty--;
+            setHeight(x, z, ty + 1);
+        }
     }
 
     const int sectionIndex = getSectionIndex(y);
@@ -63,6 +109,18 @@ void Chunk::setBlockIDSafe(int x, int y, int z, uint8_t id) {
     }
     if (y % SECTION_HEIGHT == SECTION_HEIGHT - 1 && sectionIndex + 1 < SECTION_COUNT) {
         markSectionDirty(sectionIndex + 1);
+    }
+}
+
+void Chunk::generateHeightMap() {
+    for (int x = 0; x < WIDTH; ++x) {
+        for (int z = 0; z < DEPTH; ++z) {
+            int y = HEIGHT - 1;
+            while (y >= 0 && Block::lightOpacity[getBlockID(x, y, z)] == 0) {
+                y--;
+            }
+            setHeight(x, z, y + 1);
+        }
     }
 }
 
@@ -80,6 +138,12 @@ uint32_t Chunk::getSectionVersion(int sectionIndex) const {
 
 void Chunk::touchSection(int sectionIndex) {
     markSectionDirty(sectionIndex);
+}
+
+void Chunk::markSectionDirtyInternal(int sectionIndex) {
+    if (sectionIndex < 0 || sectionIndex >= SECTION_COUNT) return;
+    m_sectionDirty[sectionIndex] = true;
+    ++m_sectionVersions[sectionIndex];
 }
 
 void Chunk::markSectionDirty(int sectionIndex) {

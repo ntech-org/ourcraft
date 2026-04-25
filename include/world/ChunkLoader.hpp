@@ -12,7 +12,8 @@
 
 enum class ChunkTaskType {
     Generate,
-    Decorate
+    Decorate,
+    Lighting
 };
 
 struct ChunkTask {
@@ -26,7 +27,7 @@ struct ChunkTask {
 
 class ChunkLoader {
 public:
-    ChunkLoader(WorldGenerator& generator);
+    ChunkLoader(WorldGenerator& generator, class World* world = nullptr);
     ~ChunkLoader();
 
     void requestChunk(int x, int z);
@@ -34,6 +35,7 @@ public:
                            std::shared_ptr<Chunk> chunkE,
                            std::shared_ptr<Chunk> chunkS,
                            std::shared_ptr<Chunk> chunkSE);
+    void requestLighting(std::shared_ptr<Chunk> chunk);
     
     bool tryPopResult(std::shared_ptr<Chunk>& outChunk);
 
@@ -41,6 +43,7 @@ private:
     void workerLoop();
 
     WorldGenerator& m_generator;
+    class World* m_world;
     std::queue<ChunkTask> m_requestQueue;
     std::queue<std::shared_ptr<Chunk>> m_resultQueue;
     

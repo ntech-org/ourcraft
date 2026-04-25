@@ -1,5 +1,6 @@
 #pragma once
 
+#include "world/IBlockAccess.hpp"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -10,8 +11,11 @@ enum class ChunkState {
     Empty,
     Generating,
     Generated,
+    Lighting,
+    Lighted,
     Decorating,
-    Decorated
+    Decorated,
+    Complete
 };
 
 class Chunk {
@@ -33,10 +37,36 @@ public:
     uint8_t getBlockMetadata(int x, int y, int z) const;
     void setBlockMetadata(int x, int y, int z, uint8_t meta);
 
+    int getLight(LightType type, int x, int y, int z) const;
+    void setLight(LightType type, int x, int y, int z, int val);
+
+    // Internal high-speed accessors (no locking, no dirty flagging)
+    inline int getLightInternal(LightType type, int index) const {
+        const std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
+        int byteIndex = index >> 1;
+        return (index & 1) == 0 ? (data[byteIndex] & 0x0F) : ((data[byteIndex] >> 4) & 0x0F);
+    }
+
+    inline void setLightInternal(LightType type, int index, int val) {
+        std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
+        int byteIndex = index >> 1;
+        if ((index & 1) == 0) {
+            data[byteIndex] = (data[byteIndex] & 0xF0) | (val & 0x0F);
+        } else {
+            data[byteIndex] = (data[byteIndex] & 0x0F) | ((val & 0x0F) << 4);
+        }
+    }
+
+    void markSectionDirtyInternal(int sectionIndex);
+
     int getX() const { return m_x; }
     int getZ() const { return m_z; }
 
     const uint8_t* getBlocks() const { return m_blocks.data(); }
+    int getHeight(int x, int z) const { return m_heightMap[x + z * WIDTH]; }
+    void setHeight(int x, int z, int h) { m_heightMap[x + z * WIDTH] = (uint8_t)h; }
+    void generateHeightMap();
+    
     bool isSectionDirty(int sectionIndex) const;
     void clearSectionDirty(int sectionIndex);
     uint32_t getSectionVersion(int sectionIndex) const;
@@ -46,6 +76,7 @@ public:
     void setState(ChunkState state) { m_state = state; }
 
     std::mutex& getBlockMutex() { return m_blockMutex; }
+    std::mutex& getLightMutex() { return m_lightMutex; }
 
     static constexpr int getSectionIndex(int y) {
         return y / SECTION_HEIGHT;
@@ -59,14 +90,32 @@ private:
     int m_x, m_z;
     std::vector<uint8_t> m_blocks;
     std::vector<uint8_t> m_metadata;
+    std::vector<uint8_t> m_skylight;
+    std::vector<uint8_t> m_blocklight;
+    std::vector<uint8_t> m_heightMap;
     std::array<bool, SECTION_COUNT> m_sectionDirty {};
     std::array<uint32_t, SECTION_COUNT> m_sectionVersions {};
     
     std::mutex m_blockMutex;
+    std::mutex m_lightMutex;
     std::atomic<ChunkState> m_state { ChunkState::Empty };
 
     static inline int getIndex(int x, int y, int z) {
         return (x << 11) | (z << 7) | y;
+    }
+
+    static inline int getLightValue(const std::vector<uint8_t>& data, int index) {
+        int byteIndex = index >> 1;
+        return (index & 1) == 0 ? (data[byteIndex] & 0x0F) : ((data[byteIndex] >> 4) & 0x0F);
+    }
+
+    static inline void setLightValue(std::vector<uint8_t>& data, int index, int val) {
+        int byteIndex = index >> 1;
+        if ((index & 1) == 0) {
+            data[byteIndex] = (data[byteIndex] & 0xF0) | (val & 0x0F);
+        } else {
+            data[byteIndex] = (data[byteIndex] & 0x0F) | ((val & 0x0F) << 4);
+        }
     }
 
     void markSectionDirty(int sectionIndex);

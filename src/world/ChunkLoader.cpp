@@ -1,6 +1,7 @@
 #include "world/ChunkLoader.hpp"
+#include "world/World.hpp"
 
-ChunkLoader::ChunkLoader(WorldGenerator& generator) : m_generator(generator), m_running(true) {
+ChunkLoader::ChunkLoader(WorldGenerator& generator, World* world) : m_generator(generator), m_world(world), m_running(true) {
     unsigned int numThreads = std::thread::hardware_concurrency();
     if (numThreads == 0) numThreads = 4; // Fallback
 
@@ -39,6 +40,14 @@ void ChunkLoader::requestDecoration(std::shared_ptr<Chunk> chunk,
     m_cv.notify_one();
 }
 
+void ChunkLoader::requestLighting(std::shared_ptr<Chunk> chunk) {
+    {
+        std::lock_guard<std::mutex> lock(m_requestMutex);
+        m_requestQueue.push({ChunkTaskType::Lighting, chunk->getX(), chunk->getZ(), chunk, nullptr, nullptr, nullptr});
+    }
+    m_cv.notify_one();
+}
+
 bool ChunkLoader::tryPopResult(std::shared_ptr<Chunk>& outChunk) {
     std::lock_guard<std::mutex> lock(m_resultMutex);
     if (m_resultQueue.empty()) return false;
@@ -71,6 +80,18 @@ void ChunkLoader::workerLoop() {
             m_generator.decorateChunk(*task.chunk, task.chunkE.get(), task.chunkS.get(), task.chunkSE.get());
             task.chunk->setState(ChunkState::Decorated);
 
+            std::lock_guard<std::mutex> lock(m_resultMutex);
+            m_resultQueue.push(std::move(task.chunk));
+        } else if (task.type == ChunkTaskType::Lighting) {
+            // Lighting can happen after Generated or after Decorated
+            ChunkState oldState = task.chunk->getState();
+            task.chunk->setState(ChunkState::Lighting);
+            if (m_world) {
+                m_world->calculateInitialSkylight(*task.chunk);
+            }
+            // If we were Decorated, we are now Complete. Otherwise we are Lighted (waiting for decoration).
+            task.chunk->setState(oldState == ChunkState::Decorated ? ChunkState::Complete : ChunkState::Lighted);
+            
             std::lock_guard<std::mutex> lock(m_resultMutex);
             m_resultQueue.push(std::move(task.chunk));
         }

@@ -1,5 +1,6 @@
 #include "InputHandler.hpp"
 #include <algorithm>
+#include <iostream>
 
 InputHandler::InputHandler(GLFWwindow* window, EntityPlayer& player)
     : m_window(window), m_player(player) 
@@ -21,12 +22,37 @@ void InputHandler::update() {
     
     m_player.jumping = (glfwGetKey(m_window, GLFW_KEY_SPACE) == GLFW_PRESS);
 
-    // F3 Toggle
+    // F3 and F3 + Keys
     bool f3 = glfwGetKey(m_window, GLFW_KEY_F3) == GLFW_PRESS;
-    if (f3 && !m_f3Pressed) {
-        m_showDebug = !m_showDebug;
+    bool g = glfwGetKey(m_window, GLFW_KEY_G) == GLFW_PRESS;
+    bool p = glfwGetKey(m_window, GLFW_KEY_P) == GLFW_PRESS;
+    bool a = glfwGetKey(m_window, GLFW_KEY_A) == GLFW_PRESS;
+
+    if (f3) {
+        if (g && !m_gPressed) {
+            m_showChunkBoundaries = !m_showChunkBoundaries;
+            std::cout << "[Debug] Chunk boundaries: " << (m_showChunkBoundaries ? "ON" : "OFF") << std::endl;
+        }
+        if (p && !m_pPressed) {
+            m_showProfiler = !m_showProfiler;
+            std::cout << "[Debug] Profiler: " << (m_showProfiler ? "ON" : "OFF") << std::endl;
+        }
+        if (a && !m_aPressed) {
+            m_reloadChunks = true;
+            std::cout << "[Debug] Reloading all chunks..." << std::endl;
+        }
+    } else {
+        if (m_f3Pressed) {
+            if (!m_gPressed && !m_pPressed && !m_aPressed) {
+                m_showDebug = !m_showDebug;
+            }
+        }
     }
+    
     m_f3Pressed = f3;
+    m_gPressed = g;
+    m_pPressed = p;
+    m_aPressed = a;
 
     // F5 Toggle
     bool f5 = glfwGetKey(m_window, GLFW_KEY_F5) == GLFW_PRESS;
@@ -41,6 +67,13 @@ void InputHandler::update() {
         m_player.swing();
     }
     m_leftMousePressed = leftMouse;
+}
+
+void InputHandler::handleKey(int key, int scancode, int action, int mods) {
+    // Optional: add more robust key handling here if needed
+}
+
+void InputHandler::handleMouseButton(int button, int action, int mods) {
 }
 
 void InputHandler::handleMouse(double xposIn, double yposIn) {

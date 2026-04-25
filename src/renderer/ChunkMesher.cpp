@@ -1,10 +1,15 @@
 #include "renderer/ChunkMesher.hpp"
 #include "world/World.hpp"
 #include "world/Block.hpp"
+#include <algorithm>
 
 namespace {
 struct Neighborhood : public IBlockAccess {
     std::shared_ptr<const Chunk> chunks[3][3];
+    const World& world;
+    int baseCX, baseCZ;
+    Neighborhood(const World& w, int cx, int cz) : world(w), baseCX(cx), baseCZ(cz) {}
+
     uint8_t getBlockID(int x, int y, int z) const override {
         if (y < 0 || y >= 128) return 0;
         int cx = 1, cz = 1;
@@ -23,6 +28,50 @@ struct Neighborhood : public IBlockAccess {
         uint8_t id = getBlockID(x, y, z);
         return id == 0 ? Material::air : Block::blocksList[id]->blockMaterial;
     }
+    float getBrightness(int x, int y, int z) const override {
+        static float lightBrightnessTable[16];
+        static bool initialized = false;
+        if (!initialized) {
+            float var0 = 0.05f;
+            for (int i = 0; i <= 15; ++i) {
+                float var2 = 1.0f - static_cast<float>(i) / 15.0f;
+                lightBrightnessTable[i] = (1.0f - var2) / (var2 * 3.0f + 1.0f) * (1.0f - var0) + var0;
+            }
+            initialized = true;
+        }
+
+        int sky = 15;
+        int block = 0;
+
+        if (y >= 0 && y < 128) {
+            int cx_off = (x >= 0 ? x / 16 : (x - 15) / 16) - baseCX;
+            int cz_off = (z >= 0 ? z / 16 : (z - 15) / 16) - baseCZ;
+            int lx = x & 15;
+            int lz = z & 15;
+            
+            if (cx_off >= -1 && cx_off <= 1 && cz_off >= -1 && cz_off <= 1) {
+                auto& chunk = chunks[cx_off + 1][cz_off + 1];
+                if (chunk) {
+                    sky = chunk->getLightInternal(LightType::Sky, (lx << 11) | (lz << 7) | y);
+                    block = chunk->getLightInternal(LightType::Block, (lx << 11) | (lz << 7) | y);
+                } else {
+                    sky = world.getSavedLightValue(LightType::Sky, x, y, z);
+                    block = world.getSavedLightValue(LightType::Block, x, y, z);
+                }
+            } else {
+                sky = world.getSavedLightValue(LightType::Sky, x, y, z);
+                block = world.getSavedLightValue(LightType::Block, x, y, z);
+            }
+        } else {
+            sky = world.getSavedLightValue(LightType::Sky, x, y, z);
+            block = world.getSavedLightValue(LightType::Block, x, y, z);
+        }
+
+        float daylight = world.getDaylightStrength();
+        float skyBr = lightBrightnessTable[sky] * daylight;
+        float blockBr = lightBrightnessTable[block];
+        return std::max(skyBr, blockBr);
+    }
 };
 }
 
@@ -30,7 +79,11 @@ ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chu
     ChunkMeshData md; int cx = chunk.getX(), cz = chunk.getZ();
     float bx = (float)(cx * 16), by = (float)(si * 16), bz = (float)(cz * 16);
     md.bounds.min = {bx, by, bz}; md.bounds.max = {bx + 16, by + 16, bz + 16};
-    Neighborhood n; for (int dx = -1; dx <= 1; ++dx) for (int dz = -1; dz <= 1; ++dz) n.chunks[dx+1][dz+1] = world.getChunk(cx + dx, cz + dz);
+    Neighborhood n(world, cx, cz); 
+    for (int dx = -1; dx <= 1; ++dx) 
+        for (int dz = -1; dz <= 1; ++dz) 
+            n.chunks[dx+1][dz+1] = world.getChunk(cx + dx, cz + dz);
+    
     greedyMeshTopBottom(md, n, si, cx, cz, false); greedyMeshTopBottom(md, n, si, cx, cz, true);
     greedyMeshNorthSouth(md, n, si, cx, cz, false); greedyMeshNorthSouth(md, n, si, cx, cz, true);
     greedyMeshWestEast(md, n, si, cx, cz, false); greedyMeshWestEast(md, n, si, cx, cz, true);

@@ -1,10 +1,17 @@
 #include "world/World.hpp"
 #include <cmath>
+#include <algorithm>
 
 void World::addChunk(std::shared_ptr<Chunk> chunk) {
-    std::unique_lock<std::shared_mutex> lock(m_chunkMutex);
-    m_chunkLookup[chunkKey(chunk->getX(), chunk->getZ())] = chunk;
-    m_chunks.push_back(std::move(chunk));
+    {
+        std::unique_lock<std::shared_mutex> lock(m_chunkMutex);
+        m_chunkLookup[chunkKey(chunk->getX(), chunk->getZ())] = chunk;
+        m_chunks.push_back(chunk);
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_newChunksMutex);
+        m_newChunks.push_back(chunk);
+    }
 }
 
 void World::requestChunk(int chunkX, int chunkZ) {
@@ -14,30 +21,42 @@ void World::requestChunk(int chunkX, int chunkZ) {
 }
 
 bool World::pollGeneratedChunks() {
-    bool changed = false;
+    bool worldChanged = false;
     std::shared_ptr<Chunk> chunk;
-    while (m_loader->tryPopResult(chunk)) {
+    int processed = 0;
+    while (processed < 128 && m_loader->tryPopResult(chunk)) {
+        processed++;
         int cx = chunk->getX(), cz = chunk->getZ();
-        if (chunk->getState() == ChunkState::Generated) {
+        ChunkState state = chunk->getState();
+
+        if (state == ChunkState::Generated) {
             m_pendingChunks.erase(chunkKey(cx, cz));
             addChunk(chunk);
-            changed = true;
-            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
-                if (auto n = getChunk(cx - 1, cz)) n->touchSection(i);
-                if (auto n = getChunk(cx + 1, cz)) n->touchSection(i);
-                if (auto n = getChunk(cx, cz - 1)) n->touchSection(i);
-                if (auto n = getChunk(cx, cz + 1)) n->touchSection(i);
-            }
+            worldChanged = true;
+            m_loader->requestLighting(chunk);
+        } else if (state == ChunkState::Lighted) {
+            // Initial lighting done, now check for decoration
             for (int dx = -1; dx <= 0; ++dx) {
                 for (int dz = -1; dz <= 0; ++dz) {
                     auto c00 = getChunk(cx + dx, cz + dz), c10 = getChunk(cx + dx + 1, cz + dz);
                     auto c01 = getChunk(cx + dx, cz + dz + 1), c11 = getChunk(cx + dx + 1, cz + dz + 1);
-                    if (c00 && c10 && c01 && c11 && c00->getState() == ChunkState::Generated && c10->getState() == ChunkState::Generated && c01->getState() == ChunkState::Generated && c11->getState() == ChunkState::Generated) {
-                        c00->setState(ChunkState::Decorating); m_loader->requestDecoration(c00, c10, c01, c11);
+                    if (c00 && c10 && c01 && c11 && 
+                        c00->getState() == ChunkState::Lighted && 
+                        (c10->getState() >= ChunkState::Lighted) && 
+                        (c01->getState() >= ChunkState::Lighted) && 
+                        (c11->getState() >= ChunkState::Lighted)) {
+                        c00->setState(ChunkState::Decorating);
+                        m_loader->requestDecoration(c00, c10, c01, c11);
                     }
                 }
             }
-        } else if (chunk->getState() == ChunkState::Decorated) {
+            // Trigger first mesh build
+            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) chunk->touchSection(i);
+        } else if (state == ChunkState::Decorated) {
+            // Decoration done, now final lighting pass to fix shadows from trees etc.
+            m_loader->requestLighting(chunk);
+        } else if (state == ChunkState::Complete) {
+            // Fully finished! Touch all neighbors to fix boundaries
             for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
                 if (auto n = getChunk(cx - 1, cz)) n->touchSection(i);
                 if (auto n = getChunk(cx + 1, cz)) n->touchSection(i);
@@ -47,7 +66,7 @@ bool World::pollGeneratedChunks() {
             }
         }
     }
-    return changed;
+    return worldChanged;
 }
 
 void World::unloadFarChunks(int playerCX, int playerCZ, int keepDistance) {
@@ -59,6 +78,28 @@ void World::unloadFarChunks(int playerCX, int playerCZ, int keepDistance) {
             m_chunkLookup.erase(chunkKey(cx, cz)); it = m_chunks.erase(it);
         } else ++it;
     }
+}
+
+void World::getLoadedAndPendingChunks(int playerCX, int playerCZ, int radius, std::vector<std::pair<int, int>>& outToRequest) {
+    std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
+    for (int dx = -radius; dx <= radius; ++dx) {
+        for (int dz = -radius; dz <= radius; ++dz) {
+            int cx = playerCX + dx;
+            int cz = playerCZ + dz;
+            uint64_t key = chunkKey(cx, cz);
+            if (m_chunkLookup.find(key) == m_chunkLookup.end() && m_pendingChunks.find(key) == m_pendingChunks.end()) {
+                outToRequest.push_back({cx, cz});
+            }
+        }
+    }
+    
+    std::sort(outToRequest.begin(), outToRequest.end(), [playerCX, playerCZ](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+        int dxa = a.first - playerCX;
+        int dza = a.second - playerCZ;
+        int dxb = b.first - playerCX;
+        int dzb = b.second - playerCZ;
+        return (dxa * dxa + dza * dza) < (dxb * dxb + dzb * dzb);
+    });
 }
 
 bool World::isChunkLoaded(int cx, int cz) const {
@@ -80,4 +121,11 @@ std::shared_ptr<const Chunk> World::getChunk(int cx, int cz) const {
     std::shared_lock<std::shared_mutex> lock(m_chunkMutex);
     auto it = m_chunkLookup.find(chunkKey(cx, cz));
     return it == m_chunkLookup.end() ? nullptr : it->second;
+}
+
+std::vector<std::shared_ptr<Chunk>> World::popNewChunks() {
+    std::lock_guard<std::mutex> lock(m_newChunksMutex);
+    std::vector<std::shared_ptr<Chunk>> n = std::move(m_newChunks);
+    m_newChunks.clear();
+    return n;
 }

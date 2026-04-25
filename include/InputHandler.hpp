@@ -13,6 +13,9 @@ public:
     void handleMouseButton(int button, int action, int mods);
 
     bool isDebugVisible() const { return m_showDebug; }
+    bool isChunkBoundariesVisible() const { return m_showChunkBoundaries; }
+    bool isProfilerVisible() const { return m_showProfiler; }
+    bool shouldReloadChunks() { bool r = m_reloadChunks; m_reloadChunks = false; return r; }
     int getCameraMode() const { return m_cameraMode; }
 
 private:
@@ -24,9 +27,15 @@ private:
     float m_lastY = 0.0f;
 
     bool m_showDebug = false;
+    bool m_showChunkBoundaries = false;
+    bool m_showProfiler = false;
+    bool m_reloadChunks = false;
     int m_cameraMode = 0; // 0 = 1st person, 1 = 3rd person back, 2 = 3rd person front
     
     bool m_f3Pressed = false;
     bool m_f5Pressed = false;
+    bool m_gPressed = false;
+    bool m_pPressed = false;
+    bool m_aPressed = false;
     bool m_leftMousePressed = false;
 };

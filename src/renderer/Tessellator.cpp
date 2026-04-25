@@ -141,54 +141,43 @@ void Tessellator::addVertexWithUV(double x, double y, double z, double u, double
 }
 
 void Tessellator::addVertex(double x, double y, double z) {
-    ++addedVertices;
-
-    if (drawMode == GL_QUADS && convertQuadsToTriangles && addedVertices % 4 == 0) {
-        // Quad to Triangle conversion (0, 1, 2, 3) -> (0, 1, 2), (0, 2, 3)
-        // The Java code does something like this:
-        for (int i = 0; i < 2; ++i) {
-            int offset = 8 * (3 - i);
-            if (hasTexture) {
-                rawBuffer[rawBufferIndex + 3] = rawBuffer[rawBufferIndex - offset + 3];
-                rawBuffer[rawBufferIndex + 4] = rawBuffer[rawBufferIndex - offset + 4];
-            }
-            if (hasColor) {
-                rawBuffer[rawBufferIndex + 5] = rawBuffer[rawBufferIndex - offset + 5];
-            }
-            rawBuffer[rawBufferIndex + 0] = rawBuffer[rawBufferIndex - offset + 0];
-            rawBuffer[rawBufferIndex + 1] = rawBuffer[rawBufferIndex - offset + 1];
-            rawBuffer[rawBufferIndex + 2] = rawBuffer[rawBufferIndex - offset + 2];
-
-            rawBufferIndex += 8;
-            ++vertexCount;
+    if (drawMode == GL_QUADS && convertQuadsToTriangles && addedVertices % 4 == 3) {
+        // When we are about to add the 4th vertex of a quad,
+        // we first duplicate vertex 0 and vertex 2 to form two triangles.
+        // Current buffer has: [V0, V1, V2]
+        // We want: [V0, V1, V2, V0, V2, V3]
+        
+        // Copy V0 (at rawBufferIndex - 24)
+        for (int j = 0; j < 8; ++j) {
+            rawBuffer[rawBufferIndex + j] = rawBuffer[rawBufferIndex - 24 + j];
         }
+        rawBufferIndex += 8;
+        vertexCount++;
+
+        // Copy V2 (at rawBufferIndex - 16)
+        for (int j = 0; j < 8; ++j) {
+            rawBuffer[rawBufferIndex + j] = rawBuffer[rawBufferIndex - 16 + j];
+        }
+        rawBufferIndex += 8;
+        vertexCount++;
     }
 
     FloatInt fi;
-
     if (hasTexture) {
-        fi.f = textureU;
-        rawBuffer[rawBufferIndex + 3] = fi.i;
-        fi.f = textureV;
-        rawBuffer[rawBufferIndex + 4] = fi.i;
+        fi.f = textureU; rawBuffer[rawBufferIndex + 3] = fi.i;
+        fi.f = textureV; rawBuffer[rawBufferIndex + 4] = fi.i;
     }
+    if (hasColor) rawBuffer[rawBufferIndex + 5] = color;
 
-    if (hasColor) {
-        rawBuffer[rawBufferIndex + 5] = color;
-    }
-
-    // Position
-    fi.f = (float)(x + xOffset);
-    rawBuffer[rawBufferIndex + 0] = fi.i;
-    fi.f = (float)(y + yOffset);
-    rawBuffer[rawBufferIndex + 1] = fi.i;
-    fi.f = (float)(z + zOffset);
-    rawBuffer[rawBufferIndex + 2] = fi.i;
+    fi.f = (float)(x + xOffset); rawBuffer[rawBufferIndex + 0] = fi.i;
+    fi.f = (float)(y + yOffset); rawBuffer[rawBufferIndex + 1] = fi.i;
+    fi.f = (float)(z + zOffset); rawBuffer[rawBufferIndex + 2] = fi.i;
 
     rawBufferIndex += 8;
-    ++vertexCount;
+    vertexCount++;
+    addedVertices++;
 
-    if (vertexCount % 4 == 0 && rawBufferIndex >= bufferSize - 32) {
+    if (rawBufferIndex >= bufferSize - 64) {
         draw();
         isDrawing = true;
     }

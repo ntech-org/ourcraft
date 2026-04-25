@@ -1,6 +1,7 @@
 #include "Minecraft.hpp"
 #include "world/Block.hpp"
 #include "world/InfdevWorldGenerator.hpp"
+#include "renderer/Tessellator.hpp"
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -8,6 +9,7 @@
 Minecraft::Minecraft(GLFWwindow* window, int width, int height)
     : m_window(window), m_width(width), m_height(height), m_timer(20.0f)
 {
+    Tessellator::init();
     init();
 }
 
@@ -15,10 +17,10 @@ Minecraft::~Minecraft() {}
 
 void Minecraft::init() {
     Block::init();
-    
+
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
-    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(-1));
+    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
 
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->setPosition(8.0, 80.0, 8.0);
@@ -54,9 +56,16 @@ void Minecraft::run() {
         m_fps = frameDelta > 0.0 ? (float)(1.0 / frameDelta) : 0.0f;
 
         m_timer.updateTimer();
+        double updateStart = glfwGetTime();
         for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
+        m_gameRenderer->getProfiler().updateTime = (glfwGetTime() - updateStart) * 1000.0;
 
-        m_gameRenderer->render(m_timer.renderPartialTicks, m_inputHandler->getCameraMode(), m_inputHandler->isDebugVisible(), m_fps);
+        m_gameRenderer->render(m_timer.renderPartialTicks, 
+                               m_inputHandler->getCameraMode(), 
+                               m_inputHandler->isDebugVisible(), 
+                               m_inputHandler->isChunkBoundariesVisible(),
+                               m_inputHandler->isProfilerVisible(),
+                               m_fps);
 
         glfwSwapBuffers(m_window);
         glfwPollEvents();
@@ -67,6 +76,11 @@ void Minecraft::tick() {
     m_world->update(0.05f);
     m_networkHandler->update();
     m_inputHandler->update();
+    
+    if (m_inputHandler->shouldReloadChunks()) {
+        m_gameRenderer->getWorldRenderer().rebuildSectionList();
+    }
+
     m_player->onUpdate();
     m_gameRenderer->getRenderEngine().updateTextureFX();
     m_networkHandler->sendPlayerPosition(*m_player);

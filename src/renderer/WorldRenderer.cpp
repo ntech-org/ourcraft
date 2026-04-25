@@ -1,4 +1,5 @@
 #include "renderer/WorldRenderer.hpp"
+#include "renderer/Tessellator.hpp"
 #include "renderer/ChunkMesher.hpp"
 #include "renderer/Shader.hpp"
 #include "world/Chunk.hpp"
@@ -54,33 +55,40 @@ void WorldRenderer::meshWorkerLoop() {
 }
 
 void WorldRenderer::rebuildSectionList() {
-    for (const auto& chunkPtr : m_world.getChunks()) {
-        std::shared_ptr<Chunk> chunk = chunkPtr;
-        for (int sectionIndex = 0; sectionIndex < Chunk::SECTION_COUNT; ++sectionIndex) {
-            std::uint64_t key = sectionKey(chunk->getX(), chunk->getZ(), sectionIndex);
-            if (m_sections.find(key) == m_sections.end()) {
-                SectionRenderEntry entry;
-                entry.chunk = chunk;
-                entry.sectionIndex = sectionIndex;
-                const float baseX = static_cast<float>(chunk->getX() * Chunk::WIDTH);
-                const float baseY = static_cast<float>(Chunk::getSectionMinY(sectionIndex));
-                const float baseZ = static_cast<float>(chunk->getZ() * Chunk::DEPTH);
-                entry.bounds.min = {baseX, baseY, baseZ};
-                entry.bounds.max = {
-                    baseX + static_cast<float>(Chunk::WIDTH),
-                    baseY + static_cast<float>(Chunk::SECTION_HEIGHT),
-                    baseZ + static_cast<float>(Chunk::DEPTH)
-                };
-                m_sections[key] = std::move(entry);
-            }
+    m_sections.clear();
+    for (const auto& chunk : m_world.getChunks()) {
+        addSectionsForChunk(chunk);
+    }
+}
+
+void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
+    if (!chunk || chunk->getState() == ChunkState::Empty) return;
+    
+    for (int sectionIndex = 0; sectionIndex < Chunk::SECTION_COUNT; ++sectionIndex) {
+        std::uint64_t key = sectionKey(chunk->getX(), chunk->getZ(), sectionIndex);
+        if (m_sections.find(key) == m_sections.end()) {
+            SectionRenderEntry entry;
+            entry.chunk = chunk;
+            entry.sectionIndex = sectionIndex;
+            const float baseX = static_cast<float>(chunk->getX() * Chunk::WIDTH);
+            const float baseY = static_cast<float>(Chunk::getSectionMinY(sectionIndex));
+            const float baseZ = static_cast<float>(chunk->getZ() * Chunk::DEPTH);
+            entry.bounds.min = {baseX, baseY, baseZ};
+            entry.bounds.max = {
+                baseX + static_cast<float>(Chunk::WIDTH),
+                baseY + static_cast<float>(Chunk::SECTION_HEIGHT),
+                baseZ + static_cast<float>(Chunk::DEPTH)
+            };
+            m_sections[key] = std::move(entry);
         }
     }
     m_stats.sectionCount = m_sections.size();
 }
 
 void WorldRenderer::updateDirtyMeshes(int limit) {
-    m_stats.sectionCount = m_sections.size();
-    while (true) {
+    // 1. Process background results with a budget
+    int resultsProcessed = 0;
+    while (resultsProcessed < 64) { // Increased GL upload budget to 64 per frame
         MeshResult result;
         {
             std::lock_guard<std::mutex> lock(m_resultMutex);
@@ -100,23 +108,29 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
 
         ++m_stats.meshBuilds;
         m_stats.meshBuildMs += result.buildMs;
+        resultsProcessed++;
     }
 
-    int buildsThisFrame = 0;
+    // 2. Scan for new dirty sections if we have budget
+    if (limit <= 0) return;
+
+    int buildsStarted = 0;
     for (auto& [key, entry] : m_sections) {
-        if (!entry.chunk->isSectionDirty(entry.sectionIndex) || entry.isBuilding) continue;
-        if (entry.chunk->getState() != ChunkState::Decorated && entry.chunk->getState() != ChunkState::Generated) continue;
+        if (entry.chunk->isSectionDirty(entry.sectionIndex) && !entry.isBuilding) {
+            ChunkState state = entry.chunk->getState();
+            if (state != ChunkState::Empty && state != ChunkState::Generating) {
+                entry.isBuilding = true;
+                entry.chunk->clearSectionDirty(entry.sectionIndex);
 
-        entry.isBuilding = true;
-        entry.chunk->clearSectionDirty(entry.sectionIndex);
-
-        MeshTask task { key, entry.chunk, entry.sectionIndex };
-        {
-            std::lock_guard<std::mutex> lock(m_taskMutex);
-            m_taskQueue.push(task);
+                MeshTask task { key, entry.chunk, entry.sectionIndex };
+                {
+                    std::lock_guard<std::mutex> lock(m_taskMutex);
+                    m_taskQueue.push(task);
+                }
+                m_cv.notify_one();
+                if (++buildsStarted >= limit) break;
+            }
         }
-        m_cv.notify_one();
-        if (limit > 0 && ++buildsThisFrame >= limit) break;
     }
 }
 
@@ -145,6 +159,44 @@ void WorldRenderer::render(const Frustum& frustum, Shader& shader) {
         m_stats.visibleSections++; m_stats.drawCalls++; m_stats.triangles += entry.translucentMesh.getTriangleCount();
     }
     glDepthMask(GL_TRUE);
+}
+
+void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries) {
+    if (!showChunkBoundaries) return;
+    
+    Tessellator* t = Tessellator::instance;
+    shader.use();
+    
+    glEnable(GL_DEPTH_TEST);
+    t->startDrawing(GL_LINES);
+    t->setColorOpaque(255, 255, 0); // Yellow boundaries
+    
+    for (const auto& [key, entry] : m_sections) {
+        if (entry.sectionIndex != 0) continue; // Use base section to find chunk pos
+        
+        float x = (float)(entry.chunk->getX() * 16);
+        float z = (float)(entry.chunk->getZ() * 16);
+        
+        // Define AABB for the entire chunk column (0-128)
+        AABB columnBounds = { {x, 0, z}, {x + 16, 128, z + 16} };
+        if (!frustum.intersects(columnBounds)) continue;
+        
+        // Vertical lines
+        for (int i = 0; i <= 16; i += 16) {
+            for (int j = 0; j <= 16; j += 16) {
+                t->addVertex(x + i, 0, z + j);
+                t->addVertex(x + i, 128, z + j);
+            }
+        }
+        // Horizontal lines every 16 blocks
+        for (int y = 0; y <= 128; y += 16) {
+            t->addVertex(x, y, z); t->addVertex(x + 16, y, z);
+            t->addVertex(x + 16, y, z); t->addVertex(x + 16, y, z + 16);
+            t->addVertex(x + 16, y, z + 16); t->addVertex(x, y, z + 16);
+            t->addVertex(x, y, z + 16); t->addVertex(x, y, z);
+        }
+    }
+    t->draw();
 }
 
 void WorldRenderer::removeFarSections(int playerCX, int playerCZ, int keepDistance) {

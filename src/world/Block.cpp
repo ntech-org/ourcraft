@@ -6,6 +6,7 @@
 Block* Block::blocksList[256] = { nullptr };
 bool Block::opaqueCubeLookup[256] = { false };
 int Block::lightOpacity[256] = { 0 };
+int Block::lightValue[256] = { 0 };
 
 const Block* Block::stone = nullptr;
 const Block* Block::grass = nullptr;
@@ -149,10 +150,27 @@ void Block::init() {
     stairCompactStone = new Block(67, 16, Material::rock);
     signWall = new Block(68, 4, Material::wood);
 
-    lightOpacity[8] = 3;
-    lightOpacity[9] = 3;
-    lightOpacity[10] = 3;
-    lightOpacity[11] = 3;
+    lightOpacity[6] = 0; // sapling
+    lightOpacity[8] = 3; // water moving
+    lightOpacity[9] = 3; // water still
+    lightOpacity[10] = 3; // lava moving
+    lightOpacity[11] = 3; // lava still
+    lightOpacity[18] = 1; // leaves (standard MC is 1 or 3)
+    lightOpacity[20] = 0; // glass
+    lightOpacity[37] = 0; // flower y
+    lightOpacity[38] = 0; // flower r
+    lightOpacity[39] = 0; // mushroom b
+    lightOpacity[40] = 0; // mushroom r
+    lightOpacity[50] = 0; // torch
+    lightOpacity[51] = 0; // fire
+    lightOpacity[59] = 0; // crops
+    lightOpacity[63] = 0; // sign
+    lightOpacity[65] = 0; // ladder
+    lightOpacity[66] = 0; // rail
+
+    lightValue[50] = 14; // Torch
+    lightValue[51] = 15; // Fire
+    lightValue[62] = 13; // Active Furnace
 }
 
 Block::Block(int id, int tex, const Material& mat) 
@@ -161,6 +179,7 @@ Block::Block(int id, int tex, const Material& mat)
     blocksList[id] = this;
     opaqueCubeLookup[id] = isOpaqueCube();
     lightOpacity[id] = isOpaqueCube() ? 255 : 0;
+    lightValue[id] = 0;
     setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 }
 

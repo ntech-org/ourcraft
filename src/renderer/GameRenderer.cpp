@@ -1,7 +1,9 @@
 #include "renderer/GameRenderer.hpp"
+#include "renderer/Tessellator.hpp"
 #include "world/Block.hpp"
 #include "renderer/TextureFX.hpp"
 #include "entities/EntityLiving.hpp"
+#include "InputHandler.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
@@ -22,6 +24,8 @@ GameRenderer::GameRenderer(GLFWwindow* window, World& world, EntityPlayer& playe
     m_terrainTex = m_renderEngine->getTexture("/terrain.png");
 
     m_entityShader = std::make_unique<Shader>("assets/shaders/entity.vert", "assets/shaders/entity.frag");
+    m_debugShader = std::make_unique<Shader>("assets/shaders/debug.vert", "assets/shaders/debug.frag");
+    m_uiShader = std::make_unique<Shader>("assets/shaders/ui.vert", "assets/shaders/ui.frag");
     m_playerModel = std::make_unique<ModelBiped>();
     m_zombieModel = std::make_unique<ModelZombie>();
     m_fontRenderer = std::make_unique<FontRenderer>(m_renderEngine.get(), "/default.png");
@@ -40,8 +44,12 @@ void GameRenderer::resize(int width, int height) {
     glViewport(0, 0, width, height);
 }
 
-void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, float fps) {
-    bool anyChunksAdded = m_world.pollGeneratedChunks();
+void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps) {
+    double frameStart = glfwGetTime();
+    m_world.pollGeneratedChunks();
+    for (auto& newChunk : m_world.popNewChunks()) {
+        m_worldRenderer->addSectionsForChunk(newChunk);
+    }
 
     double px = m_player.prevPosX + (m_player.posX - m_player.prevPosX) * (double)partialTicks;
     double py = m_player.prevPosY + (m_player.posY - m_player.prevPosY) * (double)partialTicks + (double)m_player.yOffset;
@@ -79,20 +87,19 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, fl
     // Chunk management
     int playerCX = (int)std::floor(px / 16.0);
     int playerCZ = (int)std::floor(pz / 16.0);
-    m_worldRenderer->removeFarSections(playerCX, playerCZ, 10);
-    m_world.unloadFarChunks(playerCX, playerCZ, 10);
-
-    bool chunksRequested = false;
-    for (int dx = -8; dx <= 8; ++dx) {
-        for (int dz = -8; dz <= 8; ++dz) {
-            if (!m_world.isChunkLoaded(playerCX + dx, playerCZ + dz) && !m_world.isChunkPending(playerCX + dx, playerCZ + dz)) {
-                m_world.requestChunk(playerCX + dx, playerCZ + dz);
-                chunksRequested = true;
-            }
-        }
+    
+    static int managementTimer = 0;
+    if (managementTimer-- <= 0) {
+        managementTimer = 10; // Every 10 frames
+        m_worldRenderer->removeFarSections(playerCX, playerCZ, 10);
+        m_world.unloadFarChunks(playerCX, playerCZ, 10);
     }
 
-    if (anyChunksAdded || chunksRequested) m_worldRenderer->rebuildSectionList();
+    std::vector<std::pair<int, int>> toRequest;
+    m_world.getLoadedAndPendingChunks(playerCX, playerCZ, 8, toRequest);
+    for (auto& pos : toRequest) {
+        m_world.requestChunk(pos.first, pos.second);
+    }
 
     // Fog and clear
     float voidDarkening = std::clamp((float)(py / m_world.getHorizon()), 0.0f, 1.0f);
@@ -113,16 +120,36 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, fl
     const float aspect = m_height > 0 ? (float)m_width / (float)m_height : 1.0f;
     glm::mat4 projection = glm::perspective(glm::radians(70.0f), aspect, 0.05f, 1000.0f);
 
+    double renderStart = glfwGetTime();
     m_skyRenderer->render(m_world, m_camera, projection, view, fogColor);
+    
+    double worldStart = glfwGetTime();
     renderWorld(partialTicks, projection, view, fogColor, voidDarkening);
+    m_profiler.worldTime = (glfwGetTime() - worldStart) * 1000.0;
 
+    // Debug boundaries
+    m_debugShader->use();
+    m_debugShader->setMat4("projection", projection);
+    m_debugShader->setMat4("view", view);
+    m_worldRenderer->renderDebug(m_frustum, *m_debugShader, showBoundaries);
+
+    double entityStart = glfwGetTime();
     // Disable culling for entities and hand to ensure all faces are visible
     glDisable(GL_CULL_FACE);
     renderEntities(partialTicks, projection, view, cameraMode);
     if (cameraMode == 0) renderFirstPersonArm(partialTicks, projection);
     glEnable(GL_CULL_FACE);
+    m_profiler.entityTime = (glfwGetTime() - entityStart) * 1000.0;
 
-    renderUI(showDebug, fps, cameraMode);
+    m_profiler.renderTime = (glfwGetTime() - renderStart) * 1000.0;
+
+    double uiStart = glfwGetTime();
+    renderUI(showDebug, showProfiler, fps, cameraMode);
+    m_profiler.uiTime = (glfwGetTime() - uiStart) * 1000.0;
+    
+    m_profiler.frameTime = (glfwGetTime() - frameStart) * 1000.0;
+    m_profiler.frameTimeHistory[m_profiler.historyIndex] = m_profiler.frameTime;
+    m_profiler.historyIndex = (m_profiler.historyIndex + 1) % 128;
 }
 
 void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening) {
@@ -142,7 +169,7 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
-    m_worldRenderer->updateDirtyMeshes(50);
+    m_worldRenderer->updateDirtyMeshes(64);
     m_worldRenderer->render(m_frustum, *m_basicShader);
 }
 
@@ -241,18 +268,69 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     m_playerModel->renderFirstPersonArm(*m_entityShader, armBase, 0.0625f);
 }
 
-void GameRenderer::renderUI(bool showDebug, float fps, int cameraMode) {
+void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode) {
     if (!showDebug) return;
     glDisable(GL_DEPTH_TEST);
-    m_entityShader->use();
-    m_entityShader->setMat4("projection", glm::ortho(0.0f, (float)m_width, (float)m_height, 0.0f, -1.0f, 1.0f));
-    m_entityShader->setMat4("view", glm::mat4(1.0f));
-    m_entityShader->setVec3("colorTint", glm::vec3(1.0f));
+    glDisable(GL_CULL_FACE); // Ensure UI isn't culled
+    m_uiShader->use();
+    m_uiShader->setMat4("projection", glm::ortho(0.0f, (float)m_width, (float)m_height, 0.0f, -1.0f, 1.0f));
+    m_uiShader->setMat4("view", glm::mat4(1.0f));
+    m_uiShader->setBool("hasTexture", true);
 
-    char buf[512];
-    std::snprintf(buf, sizeof(buf), "OurCraft Infdev\nFPS: %.0f\nPos: %.3f, %.3f, %.3f\nChunk: %d, %d\nCamera: %s",
-        (double)fps, m_player.posX, m_player.posY, m_player.posZ, (int)std::floor(m_player.posX / 16.0), (int)std::floor(m_player.posZ / 16.0),
+    const auto& stats = m_worldRenderer->getStats();
+    char buf[1024];
+    std::snprintf(buf, sizeof(buf), 
+        "OurCraft Infdev\n"
+        "FPS: %.0f (%.2f ms)\n"
+        "Pos: %.3f, %.3f, %.3f\n"
+        "Chunk: %d, %d\n"
+        "Sections: %zu / %zu visible\n"
+        "Triangles: %zu\n"
+        "Mesh Builds: %zu (%.2f ms)\n"
+        "Camera: %s",
+        (double)fps, m_profiler.frameTime,
+        m_player.posX, m_player.posY, m_player.posZ, 
+        (int)std::floor(m_player.posX / 16.0), (int)std::floor(m_player.posZ / 16.0),
+        stats.visibleSections, stats.sectionCount,
+        stats.triangles,
+        stats.meshBuilds, stats.meshBuildMs,
         cameraMode == 0 ? "First Person" : (cameraMode == 1 ? "Third Person Back" : "Third Person Front"));
-    m_fontRenderer->drawString(*m_entityShader, buf, 2.0f, 2.0f, 0xFFFFFFFF);
+    
+    m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, 2.0f, 0xFFFFFFFF);
+
+    if (showProfiler) {
+        std::snprintf(buf, sizeof(buf),
+            "--- Profiler ---\n"
+            "Update: %.2f ms\n"
+            "Render Total: %.2f ms\n"
+            "  World: %.2f ms\n"
+            "  Entities: %.2f ms\n"
+            "  UI: %.2f ms",
+            m_profiler.updateTime, m_profiler.renderTime,
+            m_profiler.worldTime, m_profiler.entityTime, m_profiler.uiTime);
+        m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, (float)m_height - 80.0f, 0xFFFFFFFF);
+
+        // Frame time graph
+        Tessellator* t = Tessellator::instance;
+        m_uiShader->use();
+        m_uiShader->setBool("hasTexture", false);
+        t->startDrawingQuads();
+        float gx = (float)m_width - 130.0f;
+        float gy = (float)m_height - 10.0f;
+        for (int i = 0; i < 128; ++i) {
+            float val = (float)m_profiler.frameTimeHistory[(m_profiler.historyIndex + i) % 128];
+            float h = std::clamp(val, 0.0f, 60.0f);
+            uint32_t c = val > 16.66f ? 0xFFFF0000 : 0xFF00FF00; // Red if over 16.6ms (60FPS), else Green
+            t->setColorOpaque_I(c);
+            t->addVertex(gx + i, gy, 0);
+            t->addVertex(gx + i + 1, gy, 0);
+            t->addVertex(gx + i + 1, gy - h, 0);
+            t->addVertex(gx + i, gy - h, 0);
+        }
+        t->draw();
+        m_uiShader->setBool("hasTexture", true);
+    }
+
+    glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }

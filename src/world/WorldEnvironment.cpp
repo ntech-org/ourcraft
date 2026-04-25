@@ -46,19 +46,14 @@ float World::getBrightness(int x, int y, int z) const {
         initialized = true;
     }
 
-    if (y < 0) return lightBrightnessTable[0];
-    if (y >= Chunk::HEIGHT) return lightBrightnessTable[15];
-
-    int currentLight = 15;
-    for (int ty = Chunk::HEIGHT - 1; ty > y; --ty) {
-        uint8_t bid = getBlockID(x, ty, z);
-        if (bid == 0) continue;
-        int opacity = Block::lightOpacity[bid];
-        if (opacity <= 0) continue;
-        currentLight -= opacity;
-        if (currentLight <= 0) { currentLight = 0; break; }
-    }
-    return lightBrightnessTable[currentLight];
+    int sky = getSavedLightValue(LightType::Sky, x, y, z);
+    int block = getSavedLightValue(LightType::Block, x, y, z);
+    
+    float daylight = getDaylightStrength();
+    float skyBr = lightBrightnessTable[sky] * daylight;
+    float blockBr = lightBrightnessTable[block];
+    
+    return std::max(skyBr, blockBr);
 }
 
 float World::getStarBrightness(float partialTick) const {

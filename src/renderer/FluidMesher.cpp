@@ -7,8 +7,13 @@ namespace {
 constexpr std::uint32_t kWhiteColor = 0xFFFFFFFFu;
 enum class FaceDirection { Down = 0, Up = 1, North = 2, South = 3, West = 4, East = 5 };
 
-void appendVertex(ChunkMeshData::Pass& p, float x, float y, float z, float u, float v, int tex, FaceDirection dir, float flow, float liq, float depth) {
-    p.vertices.push_back({x, y, z, u, v, kWhiteColor, (std::uint32_t)tex, (std::uint32_t)dir, flow, liq, depth});
+std::uint32_t packBrightness(float b) {
+    std::uint8_t val = (std::uint8_t)(b * 255.0f);
+    return 0xFF000000u | (val << 16) | (val << 8) | val;
+}
+
+void appendVertex(ChunkMeshData::Pass& p, float x, float y, float z, float u, float v, int tex, FaceDirection dir, float flow, float liq, float depth, std::uint32_t color) {
+    p.vertices.push_back({x, y, z, u, v, color, (std::uint32_t)tex, (std::uint32_t)dir, flow, liq, depth});
 }
 
 void appendIndices(ChunkMeshData::Pass& p) {
@@ -57,14 +62,16 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
             ChunkMeshData::Pass& pass = water ? md.translucent : md.opaque;
             if (!shouldCull(bid, n.getBlockID(x, gy + 1, z))) {
                 float flow = (float)BlockFluid::getFlowDirection(n, x, gy, z, mat); int tex = (flow > -999.0f) ? b->getTexture(2) : b->getTexture(1);
-                appendVertex(pass, fx, fy + h00, fz, 0, 0, tex, FaceDirection::Up, flow, liq, d1); appendVertex(pass, fx, fy + h01, fz + 1, 0, 1, tex, FaceDirection::Up, flow, liq, d1);
-                appendVertex(pass, fx + 1, fy + h11, fz + 1, 1, 1, tex, FaceDirection::Up, flow, liq, d1); appendVertex(pass, fx + 1, fy + h10, fz, 1, 0, tex, FaceDirection::Up, flow, liq, d1);
+                std::uint32_t color = packBrightness(n.getBrightness(bx + x, gy + 1, bz + z));
+                appendVertex(pass, fx, fy + h00, fz, 0, 0, tex, FaceDirection::Up, flow, liq, d1, color); appendVertex(pass, fx, fy + h01, fz + 1, 0, 1, tex, FaceDirection::Up, flow, liq, d1, color);
+                appendVertex(pass, fx + 1, fy + h11, fz + 1, 1, 1, tex, FaceDirection::Up, flow, liq, d1, color); appendVertex(pass, fx + 1, fy + h10, fz, 1, 0, tex, FaceDirection::Up, flow, liq, d1, color);
                 appendIndices(pass);
             }
             if (!shouldCull(bid, n.getBlockID(x, gy - 1, z))) {
-                int tex = b->getTexture(0); appendVertex(pass, fx, fy, fz + 1, 0, 1, tex, FaceDirection::Down, -1000.0f, liq, d0);
-                appendVertex(pass, fx, fy, fz, 0, 0, tex, FaceDirection::Down, -1000.0f, liq, d0); appendVertex(pass, fx + 1, fy, fz, 1, 0, tex, FaceDirection::Down, -1000.0f, liq, d0);
-                appendVertex(pass, fx + 1, fy, fz + 1, 1, 1, tex, FaceDirection::Down, -1000.0f, liq, d0); appendIndices(pass);
+                int tex = b->getTexture(0); std::uint32_t color = packBrightness(n.getBrightness(bx + x, gy - 1, bz + z));
+                appendVertex(pass, fx, fy, fz + 1, 0, 1, tex, FaceDirection::Down, -1000.0f, liq, d0, color);
+                appendVertex(pass, fx, fy, fz, 0, 0, tex, FaceDirection::Down, -1000.0f, liq, d0, color); appendVertex(pass, fx + 1, fy, fz, 1, 0, tex, FaceDirection::Down, -1000.0f, liq, d0, color);
+                appendVertex(pass, fx + 1, fy, fz + 1, 1, 1, tex, FaceDirection::Down, -1000.0f, liq, d0, color); appendIndices(pass);
             }
             for (int f = 0; f < 4; ++f) {
                 FaceDirection dir; int nx = x, nz = z; float v33, v35, v34, v36, h1s, h2s;
@@ -73,9 +80,10 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
                 else if (f == 2) { dir = FaceDirection::West; nx--; h1s = h01; h2s = h00; v33 = fx; v35 = fx; v34 = fz + 1; v36 = fz; }
                 else { dir = FaceDirection::East; nx++; h1s = h10; h2s = h11; v33 = fx + 1; v35 = fx + 1; v34 = fz; v36 = fz + 1; }
                 if (!shouldCull(bid, n.getBlockID(nx, gy, nz))) {
-                    int tex = b->getTexture(f + 2); appendVertex(pass, v33, fy + h1s, v34, 0, 1 - h1s, tex, dir, -1000.0f, liq, d1);
-                    appendVertex(pass, v35, fy + h2s, v36, 1, 1 - h2s, tex, dir, -1000.0f, liq, d1); appendVertex(pass, v35, fy, v36, 1, 1, tex, dir, -1000.0f, liq, d0);
-                    appendVertex(pass, v33, fy, v34, 0, 1, tex, dir, -1000.0f, liq, d0); appendIndices(pass);
+                    int tex = b->getTexture(f + 2); std::uint32_t color = packBrightness(n.getBrightness(bx + nx, gy, bz + nz));
+                    appendVertex(pass, v33, fy + h1s, v34, 0, 1 - h1s, tex, dir, -1000.0f, liq, d1, color);
+                    appendVertex(pass, v35, fy + h2s, v36, 1, 1 - h2s, tex, dir, -1000.0f, liq, d1, color); appendVertex(pass, v35, fy, v36, 1, 1, tex, dir, -1000.0f, liq, d0, color);
+                    appendVertex(pass, v33, fy, v34, 0, 1, tex, dir, -1000.0f, liq, d0, color); appendIndices(pass);
                 }
             }
         }
