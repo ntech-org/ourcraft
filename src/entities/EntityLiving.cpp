@@ -1,4 +1,5 @@
 #include "entities/EntityLiving.hpp"
+#include "world/World.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -52,9 +53,16 @@ void EntityLiving::onUpdate() {
     swingProgress = (float)swingProgressInt / 8.0f;
 
     if (handlePhysics) {
-        handleWaterMovement();
+        bool chunkLoaded = worldObj.isChunkLoaded((int)std::floor(posX / 16.0), (int)std::floor(posZ / 16.0));
         
-        if (inWater) {
+        if (!chunkLoaded) {
+            motionX = 0;
+            motionY = 0;
+            motionZ = 0;
+        } else {
+            handleWaterMovement();
+            
+            if (inWater) {
             // Infdev Water Physics
             float waterDrag = 0.8f;
             float acceleration = 0.02f;
@@ -100,11 +108,10 @@ void EntityLiving::onUpdate() {
                 motionY -= 0.08f; // Gravity
             }
         }
-
-
     }
+}
 
-    prevLimbSwing = limbSwing;
+prevLimbSwing = limbSwing;
     prevLimbSwingAmount = limbSwingAmount;
     
     float f = dist * 4.0f;

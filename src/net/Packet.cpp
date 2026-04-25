@@ -28,6 +28,12 @@ void Packet::writeByte(std::vector<uint8_t>& buffer, uint8_t value) {
     buffer.push_back(value);
 }
 
+void Packet::writeBytes(std::vector<uint8_t>& buffer, const uint8_t* data, size_t size) {
+    size_t currentSize = buffer.size();
+    buffer.resize(currentSize + size);
+    std::memcpy(buffer.data() + currentSize, data, size);
+}
+
 int32_t Packet::readInt(const uint8_t*& data) {
     int32_t value;
     std::memcpy(&value, data, 4);
@@ -60,4 +66,9 @@ uint8_t Packet::readByte(const uint8_t*& data) {
     uint8_t value = *data;
     data += 1;
     return value;
+}
+
+void Packet::readBytes(const uint8_t*& data, uint8_t* target, size_t size) {
+    std::memcpy(target, data, size);
+    data += size;
 }

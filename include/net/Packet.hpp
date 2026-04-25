@@ -12,7 +12,13 @@ enum class PacketType : uint8_t {
     SpawnEntity = 3,
     MoveEntity = 4,
     PlayerPosition = 5,
-    LoginResponse = 6
+    LoginResponse = 6,
+    PlayerDigging = 7,
+    BlockPlacement = 8,
+    BlockChange = 9,
+    DestroyEntity = 10,
+    ChunkRequest = 11,
+    ChunkUnload = 12
 };
 
 class Packet {
@@ -27,10 +33,12 @@ public:
     static void writeDouble(std::vector<uint8_t>& buffer, double value);
     static void writeString(std::vector<uint8_t>& buffer, const std::string& value);
     static void writeByte(std::vector<uint8_t>& buffer, uint8_t value);
+    static void writeBytes(std::vector<uint8_t>& buffer, const uint8_t* data, size_t size);
 
     static int32_t readInt(const uint8_t*& data);
     static float readFloat(const uint8_t*& data);
     static double readDouble(const uint8_t*& data);
     static std::string readString(const uint8_t*& data);
     static uint8_t readByte(const uint8_t*& data);
+    static void readBytes(const uint8_t*& data, uint8_t* target, size_t size);
 };

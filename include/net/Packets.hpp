@@ -1,6 +1,8 @@
 #pragma once
 
 #include "net/Packet.hpp"
+#include "util/Compression.hpp"
+#include <cstring>
 
 class PacketLogin : public Packet {
 public:
@@ -121,5 +123,281 @@ public:
         z = readDouble(data);
         yaw = readFloat(data);
         pitch = readFloat(data);
+    }
+};
+
+class PacketChunkData : public Packet {
+public:
+    int32_t x, z;
+    uint8_t primaryBitmask = 0;
+    
+    // Use pointers to avoid massive copies if possible
+    const uint8_t* blockPtr = nullptr;
+    const uint8_t* metaPtr = nullptr;
+    const uint8_t* skyPtr = nullptr;
+    const uint8_t* blockLightPtr = nullptr;
+
+    // Owned data for client-side
+    std::vector<uint8_t> blocks;
+    std::vector<uint8_t> metadata;
+    std::vector<uint8_t> skylight;
+    std::vector<uint8_t> blocklight;
+
+    PacketType getType() const override { return PacketType::ChunkData; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, x);
+        writeInt(buffer, z);
+        writeByte(buffer, primaryBitmask);
+
+        std::vector<uint8_t> uncompressed;
+        int sectionCount = 0;
+        for(int i = 0; i < 8; ++i) if(primaryBitmask & (1 << i)) sectionCount++;
+
+        uncompressed.reserve(sectionCount * (4096 + 2048 + 2048 + 2048));
+
+        const uint8_t* b = blockPtr ? blockPtr : blocks.data();
+        const uint8_t* m = metaPtr ? metaPtr : metadata.data();
+        const uint8_t* s = skyPtr ? skyPtr : skylight.data();
+        const uint8_t* bl = blockLightPtr ? blockLightPtr : blocklight.data();
+
+        // 1. Blocks
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                const uint8_t* src = b + i * 4096;
+                uncompressed.insert(uncompressed.end(), src, src + 4096);
+            }
+        }
+
+        // 2. Metadata (bitpacked)
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                for(int j = 0; j < 4096; j += 2) {
+                    uint8_t m1 = m[i * 4096 + j] & 0x0F;
+                    uint8_t m2 = m[i * 4096 + j + 1] & 0x0F;
+                    uncompressed.push_back(m1 | (m2 << 4));
+                }
+            }
+        }
+
+        // 3. Skylight
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                const uint8_t* src = s + i * 2048;
+                uncompressed.insert(uncompressed.end(), src, src + 2048);
+            }
+        }
+
+        // 4. Blocklight
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                const uint8_t* src = bl + i * 2048;
+                uncompressed.insert(uncompressed.end(), src, src + 2048);
+            }
+        }
+
+        std::vector<uint8_t> compressed;
+        Compression::compress(uncompressed, compressed);
+
+        writeInt(buffer, (int32_t)compressed.size());
+        writeBytes(buffer, compressed.data(), compressed.size());
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        x = readInt(data);
+        z = readInt(data);
+        primaryBitmask = readByte(data);
+        
+        int32_t compressedSize = readInt(data);
+        const uint8_t* compressedPtr = data;
+        
+        int sectionCount = 0;
+        for(int i = 0; i < 8; ++i) if(primaryBitmask & (1 << i)) sectionCount++;
+
+        size_t totalExpected = sectionCount * (4096 + 2048 + 2048 + 2048);
+        std::vector<uint8_t> decompressed;
+        Compression::decompress(compressedPtr, compressedSize, decompressed, totalExpected);
+
+        blocks.assign(16 * 128 * 16, 0);
+        metadata.assign(16 * 128 * 16, 0);
+        skylight.assign(16 * 128 * 16 / 2, 0);
+        blocklight.assign(16 * 128 * 16 / 2, 0);
+
+        const uint8_t* ptr = decompressed.data();
+        
+        // 1. Blocks
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                std::memcpy(blocks.data() + i * 4096, ptr, 4096);
+                ptr += 4096;
+            }
+        }
+
+        // 2. Metadata
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                for(int j = 0; j < 4096; j += 2) {
+                    uint8_t packed = *ptr++;
+                    metadata[i * 4096 + j] = packed & 0x0F;
+                    metadata[i * 4096 + j + 1] = (packed >> 4) & 0x0F;
+                }
+            }
+        }
+
+        // 3. Skylight
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                std::memcpy(skylight.data() + i * 2048, ptr, 2048);
+                ptr += 2048;
+            }
+        }
+
+        // 4. Blocklight
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) {
+                std::memcpy(blocklight.data() + i * 2048, ptr, 2048);
+                ptr += 2048;
+            }
+        }
+    }
+};
+
+enum class DiggingAction : uint8_t {
+    START = 0,
+    STOP = 1,
+    FINISH = 2
+};
+
+class PacketPlayerDigging : public Packet {
+public:
+    DiggingAction action;
+    int32_t x, y, z;
+    uint8_t face;
+
+    PacketType getType() const override { return PacketType::PlayerDigging; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeByte(buffer, (uint8_t)action);
+        writeInt(buffer, x);
+        writeInt(buffer, y);
+        writeInt(buffer, z);
+        writeByte(buffer, face);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        action = (DiggingAction)readByte(data);
+        x = readInt(data);
+        y = readInt(data);
+        z = readInt(data);
+        face = readByte(data);
+    }
+};
+
+class PacketBlockPlacement : public Packet {
+public:
+    int32_t x, y, z;
+    uint8_t face;
+    uint8_t blockID;
+    uint8_t metadata;
+
+    PacketType getType() const override { return PacketType::BlockPlacement; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, x);
+        writeInt(buffer, y);
+        writeInt(buffer, z);
+        writeByte(buffer, face);
+        writeByte(buffer, blockID);
+        writeByte(buffer, metadata);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        x = readInt(data);
+        y = readInt(data);
+        z = readInt(data);
+        face = readByte(data);
+        blockID = readByte(data);
+        metadata = readByte(data);
+    }
+};
+
+class PacketBlockChange : public Packet {
+public:
+    int32_t x, y, z;
+    uint8_t blockID;
+    uint8_t metadata;
+
+    PacketType getType() const override { return PacketType::BlockChange; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, x);
+        writeInt(buffer, y);
+        writeInt(buffer, z);
+        writeByte(buffer, blockID);
+        writeByte(buffer, metadata);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        x = readInt(data);
+        y = readInt(data);
+        z = readInt(data);
+        blockID = readByte(data);
+        metadata = readByte(data);
+    }
+};
+
+class PacketDestroyEntity : public Packet {
+public:
+    int32_t id;
+
+    PacketType getType() const override { return PacketType::DestroyEntity; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, id);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        id = readInt(data);
+    }
+};
+
+class PacketChunkRequest : public Packet {
+public:
+    int32_t x, z;
+
+    PacketType getType() const override { return PacketType::ChunkRequest; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, x);
+        writeInt(buffer, z);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        x = readInt(data);
+        z = readInt(data);
+    }
+};
+
+class PacketChunkUnload : public Packet {
+public:
+    int32_t x, z;
+
+    PacketType getType() const override { return PacketType::ChunkUnload; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, x);
+        writeInt(buffer, z);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        x = readInt(data);
+        z = readInt(data);
     }
 };

@@ -14,6 +14,7 @@
 #include <shared_mutex>
 #include <set>
 #include <mutex>
+#include <functional>
 
 class Entity;
 
@@ -52,6 +53,7 @@ public:
     void setGenerator(std::unique_ptr<WorldGenerator> generator);
 
     void addChunk(std::shared_ptr<Chunk> chunk);
+    void removeChunk(int chunkX, int chunkZ);
     void requestChunk(int chunkX, int chunkZ);
     bool pollGeneratedChunks();
     void unloadFarChunks(int playerCX, int playerCZ, int keepDistance);
@@ -88,6 +90,7 @@ public:
     void updateLightForBlockChange(int x, int y, int z, int oldOpacity, int newOpacity, int oldBlockLight, int newBlockLight, int oldSkyLight);
 
     void calculateInitialSkylight(Chunk& chunk);
+    void predictLighting(Chunk& chunk);
 
     void scheduleBlockUpdate(int worldX, int worldY, int worldZ, int blockID, int delay);
     void notifyBlocksOfNeighborChange(int worldX, int worldY, int worldZ, int blockID);
@@ -113,12 +116,15 @@ public:
 
     const std::vector<std::shared_ptr<Chunk>>& getChunks() const { return m_chunks; }
     std::vector<std::shared_ptr<Chunk>> popNewChunks();
+    std::vector<std::shared_ptr<Chunk>> popCompleteChunks();
+    std::vector<int32_t> popRemovedEntities();
 
     void spawnEntity(std::unique_ptr<Entity> entity);
     void removeEntity(int32_t id);
     const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
 
     bool isRemote = false;
+    std::function<void(int, int, int, uint8_t, uint8_t)> onBlockChanged;
 
 private:
     static int floorDiv(int value, int divisor);
@@ -129,6 +135,10 @@ private:
     std::vector<std::shared_ptr<Chunk>> m_chunks;
     std::vector<std::shared_ptr<Chunk>> m_newChunks;
     std::mutex m_newChunksMutex;
+    std::vector<std::shared_ptr<Chunk>> m_completeChunks;
+    std::mutex m_completeChunksMutex;
+    std::vector<int32_t> m_removedEntities;
+    std::mutex m_removedEntitiesMutex;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>> m_chunkLookup;
     std::vector<std::unique_ptr<Entity>> m_entities;
     int32_t m_nextEntityID = 0;
@@ -146,5 +156,6 @@ private:
 
 public:
     std::unordered_set<std::uint64_t> m_pendingChunks;
+    std::unordered_set<std::uint64_t> m_pendingRequests;
 };
 

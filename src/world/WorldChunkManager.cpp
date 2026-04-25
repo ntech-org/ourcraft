@@ -5,7 +5,14 @@
 void World::addChunk(std::shared_ptr<Chunk> chunk) {
     {
         std::unique_lock<std::shared_mutex> lock(m_chunkMutex);
-        m_chunkLookup[chunkKey(chunk->getX(), chunk->getZ())] = chunk;
+        uint64_t key = chunkKey(chunk->getX(), chunk->getZ());
+        auto it = m_chunkLookup.find(key);
+        if (it != m_chunkLookup.end()) {
+            // Remove old chunk from m_chunks list
+            auto& oldChunk = it->second;
+            m_chunks.erase(std::remove(m_chunks.begin(), m_chunks.end(), oldChunk), m_chunks.end());
+        }
+        m_chunkLookup[key] = chunk;
         m_chunks.push_back(chunk);
     }
     {
@@ -14,13 +21,38 @@ void World::addChunk(std::shared_ptr<Chunk> chunk) {
     }
 }
 
+void World::removeChunk(int chunkX, int chunkZ) {
+    std::unique_lock<std::shared_mutex> lock(m_chunkMutex);
+    uint64_t key = chunkKey(chunkX, chunkZ);
+    auto it = m_chunkLookup.find(key);
+    if (it != m_chunkLookup.end()) {
+        auto& chunk = it->second;
+        m_chunks.erase(std::remove(m_chunks.begin(), m_chunks.end(), chunk), m_chunks.end());
+        m_chunkLookup.erase(it);
+    }
+}
+
 void World::requestChunk(int chunkX, int chunkZ) {
+    std::uint64_t key = chunkKey(chunkX, chunkZ);
     if (isChunkLoaded(chunkX, chunkZ) || isChunkPending(chunkX, chunkZ)) return;
-    m_pendingChunks.insert(chunkKey(chunkX, chunkZ));
+
+    if (isRemote) {
+        if (m_pendingRequests.find(key) == m_pendingRequests.end()) {
+            m_pendingRequests.insert(key);
+            // This is a bit of a hack since World doesn't know about NetworkHandler,
+            // but we can assume someone else will poll m_pendingRequests or 
+            // we'll find a better way. Wait, we have the Minecraft instance 
+            // but World doesn't. 
+            // Let's use a callback or just check m_pendingRequests in GameRenderer.
+        }
+        return;
+    }
+    m_pendingChunks.insert(key);
     m_loader->requestChunk(chunkX, chunkZ);
 }
 
 bool World::pollGeneratedChunks() {
+    if (isRemote || !m_loader) return false;
     bool worldChanged = false;
     std::shared_ptr<Chunk> chunk;
     int processed = 0;
@@ -31,6 +63,7 @@ bool World::pollGeneratedChunks() {
 
         if (state == ChunkState::Generated) {
             m_pendingChunks.erase(chunkKey(cx, cz));
+            chunk->generateBitmask();
             addChunk(chunk);
             worldChanged = true;
             m_loader->requestLighting(chunk);
@@ -57,12 +90,17 @@ bool World::pollGeneratedChunks() {
             m_loader->requestLighting(chunk);
         } else if (state == ChunkState::Complete) {
             // Fully finished! Touch all neighbors to fix boundaries
+            chunk->generateBitmask();
             for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
                 if (auto n = getChunk(cx - 1, cz)) n->touchSection(i);
                 if (auto n = getChunk(cx + 1, cz)) n->touchSection(i);
                 if (auto n = getChunk(cx, cz - 1)) n->touchSection(i);
                 if (auto n = getChunk(cx, cz + 1)) n->touchSection(i);
                 chunk->touchSection(i);
+            }
+            {
+                std::lock_guard<std::mutex> lock(m_completeChunksMutex);
+                m_completeChunks.push_back(chunk);
             }
         }
     }
@@ -127,5 +165,12 @@ std::vector<std::shared_ptr<Chunk>> World::popNewChunks() {
     std::lock_guard<std::mutex> lock(m_newChunksMutex);
     std::vector<std::shared_ptr<Chunk>> n = std::move(m_newChunks);
     m_newChunks.clear();
+    return n;
+}
+
+std::vector<std::shared_ptr<Chunk>> World::popCompleteChunks() {
+    std::lock_guard<std::mutex> lock(m_completeChunksMutex);
+    std::vector<std::shared_ptr<Chunk>> n = std::move(m_completeChunks);
+    m_completeChunks.clear();
     return n;
 }

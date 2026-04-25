@@ -3,7 +3,7 @@
 
 ChunkLoader::ChunkLoader(WorldGenerator& generator, World* world) : m_generator(generator), m_world(world), m_running(true) {
     unsigned int numThreads = std::thread::hardware_concurrency();
-    if (numThreads == 0) numThreads = 4; // Fallback
+    if (numThreads == 0) numThreads = 8; // Better fallback
 
     for (unsigned int i = 0; i < numThreads; ++i) {
         m_workers.emplace_back(&ChunkLoader::workerLoop, this);

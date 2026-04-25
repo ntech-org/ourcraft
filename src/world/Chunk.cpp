@@ -124,6 +124,20 @@ void Chunk::generateHeightMap() {
     }
 }
 
+void Chunk::generateBitmask() {
+    m_primaryBitmask = 0;
+    for (int i = 0; i < SECTION_COUNT; ++i) {
+        bool empty = true;
+        for (int j = 0; j < 4096; ++j) {
+            if (m_blocks[i * 4096 + j] != 0) {
+                empty = false;
+                break;
+            }
+        }
+        if (!empty) m_primaryBitmask |= (1 << i);
+    }
+}
+
 bool Chunk::isSectionDirty(int sectionIndex) const {
     return m_sectionDirty[sectionIndex];
 }

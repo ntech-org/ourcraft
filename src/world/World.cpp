@@ -10,7 +10,9 @@ World::World() : m_worldTime(6000.0) {}
 
 void World::setGenerator(std::unique_ptr<WorldGenerator> generator) {
     m_generator = std::move(generator);
-    m_loader = std::make_unique<ChunkLoader>(*m_generator, this);
+    if (!isRemote) {
+        m_loader = std::make_unique<ChunkLoader>(*m_generator, this);
+    }
 }
 
 uint8_t World::getBlockID(int x, int y, int z) const {
@@ -34,6 +36,10 @@ void World::setBlockID(int x, int y, int z, uint8_t id) {
 
     int si = Chunk::getSectionIndex(y);
     chunk->setBlockID(lx, y, lz, id);
+    
+    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+        onBlockChanged(x, y, z, id, chunk->getBlockMetadata(lx, y, lz));
+    }
     
     if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
     else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
@@ -60,6 +66,10 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     chunk->setBlockID(lx, y, lz, id); 
     chunk->setBlockMetadata(lx, y, lz, meta);
 
+    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+        onBlockChanged(x, y, z, id, meta);
+    }
+
     if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
     else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
     if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
@@ -81,7 +91,11 @@ void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
     auto chunk = getChunk(x >> 4, z >> 4);
     if (!chunk) return;
     chunk->setBlockMetadata(x & 15, y, z & 15, meta);
-    notifyBlockChange(x, y, z, getBlockID(x, y, z));
+    uint8_t id = getBlockID(x, y, z);
+    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+        onBlockChanged(x, y, z, id, meta);
+    }
+    notifyBlockChange(x, y, z, id);
 }
 
 const Material& World::getBlockMaterial(int x, int y, int z) const {
@@ -120,7 +134,10 @@ void World::update(float dt) {
             }
         }
     }
-    for (auto& e : m_entities) e->onUpdate();
+    for (auto& e : m_entities) {
+        if (isRemote && !e->isLocalPlayer) continue;
+        e->onUpdate();
+    }
 }
 
 HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end) {
@@ -182,7 +199,18 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end) {
 
 void World::spawnEntity(std::unique_ptr<Entity> e) { if (e->entityID == -1) e->entityID = m_nextEntityID++; m_entities.push_back(std::move(e)); }
 
-void World::removeEntity(int32_t id) { m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) { return e->entityID == id; }), m_entities.end()); }
+void World::removeEntity(int32_t id) { 
+    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) { return e->entityID == id; }), m_entities.end()); 
+    std::lock_guard<std::mutex> lock(m_removedEntitiesMutex);
+    m_removedEntities.push_back(id);
+}
+
+std::vector<int32_t> World::popRemovedEntities() {
+    std::lock_guard<std::mutex> lock(m_removedEntitiesMutex);
+    std::vector<int32_t> r = std::move(m_removedEntities);
+    m_removedEntities.clear();
+    return r;
+}
 
 int World::floorDiv(int v, int d) { int q = v / d, r = v % d; if (r != 0 && ((r < 0) != (d < 0))) --q; return q; }
 int World::floorMod(int v, int d) { int r = v % d; return r < 0 ? r + d : r; }
@@ -448,4 +476,19 @@ void World::calculateInitialSkylight(Chunk& chunk) {
     }
     
     propagateLight(LightType::Sky, skyQueue); propagateLight(LightType::Block, blockQueue);
+}
+
+void World::predictLighting(Chunk& chunk) {
+    chunk.generateHeightMap();
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            int h = chunk.getHeight(x, z);
+            for (int y = Chunk::HEIGHT - 1; y >= h; --y) {
+                chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 15);
+            }
+            for (int y = h - 1; y >= 0; --y) {
+                chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 0);
+            }
+        }
+    }
 }

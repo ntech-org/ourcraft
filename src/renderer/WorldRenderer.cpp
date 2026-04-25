@@ -66,7 +66,8 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
     
     for (int sectionIndex = 0; sectionIndex < Chunk::SECTION_COUNT; ++sectionIndex) {
         std::uint64_t key = sectionKey(chunk->getX(), chunk->getZ(), sectionIndex);
-        if (m_sections.find(key) == m_sections.end()) {
+        auto it = m_sections.find(key);
+        if (it == m_sections.end()) {
             SectionRenderEntry entry;
             entry.chunk = chunk;
             entry.sectionIndex = sectionIndex;
@@ -80,6 +81,9 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
                 baseZ + static_cast<float>(Chunk::DEPTH)
             };
             m_sections[key] = std::move(entry);
+        } else {
+            // Update chunk pointer in case it was replaced (e.g. Generated -> Complete)
+            it->second.chunk = chunk;
         }
     }
     m_stats.sectionCount = m_sections.size();
@@ -115,22 +119,34 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
     if (limit <= 0) return;
 
     int buildsStarted = 0;
-    for (auto& [key, entry] : m_sections) {
+    for (auto it = m_sections.begin(); it != m_sections.end();) {
+        auto& entry = it->second;
+        
+        // Remove sections whose chunks are no longer in the world
+        if (!m_world.isChunkLoaded(entry.chunk->getX(), entry.chunk->getZ())) {
+            it = m_sections.erase(it);
+            continue;
+        }
+
         if (entry.chunk->isSectionDirty(entry.sectionIndex) && !entry.isBuilding) {
             ChunkState state = entry.chunk->getState();
             if (state != ChunkState::Empty && state != ChunkState::Generating) {
                 entry.isBuilding = true;
                 entry.chunk->clearSectionDirty(entry.sectionIndex);
 
-                MeshTask task { key, entry.chunk, entry.sectionIndex };
+                MeshTask task { it->first, entry.chunk, entry.sectionIndex };
                 {
                     std::lock_guard<std::mutex> lock(m_taskMutex);
                     m_taskQueue.push(task);
                 }
                 m_cv.notify_one();
-                if (++buildsStarted >= limit) break;
+                if (++buildsStarted >= limit) {
+                    ++it;
+                    break;
+                }
             }
         }
+        ++it;
     }
 }
 

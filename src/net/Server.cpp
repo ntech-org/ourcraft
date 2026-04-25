@@ -6,7 +6,8 @@ Server::Server(uint16_t port) {
     address.host = ENET_HOST_ANY;
     address.port = port;
 
-    m_server = enet_host_create(&address, 32, 2, 0, 0);
+    // Set reasonable bandwidth limits (e.g. 20MB/s)
+    m_server = enet_host_create(&address, 32, 2, 20 * 1024 * 1024, 20 * 1024 * 1024);
     if (m_server == NULL) {
         throw std::runtime_error("An error occurred while trying to create an ENet server host.");
     }

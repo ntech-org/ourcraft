@@ -63,9 +63,20 @@ public:
     int getZ() const { return m_z; }
 
     const uint8_t* getBlocks() const { return m_blocks.data(); }
+    const uint8_t* getMetadata() const { return m_metadata.data(); }
+    const uint8_t* getSkylight() const { return m_skylight.data(); }
+    const uint8_t* getBlocklight() const { return m_blocklight.data(); }
+    
+    uint8_t* getBlocks() { return m_blocks.data(); }
+    uint8_t* getMetadata() { return m_metadata.data(); }
+    uint8_t* getSkylight() { return m_skylight.data(); }
+    uint8_t* getBlocklight() { return m_blocklight.data(); }
+    
     int getHeight(int x, int z) const { return m_heightMap[x + z * WIDTH]; }
     void setHeight(int x, int z, int h) { m_heightMap[x + z * WIDTH] = (uint8_t)h; }
     void generateHeightMap();
+    void generateBitmask();
+    uint8_t getPrimaryBitmask() const { return m_primaryBitmask; }
     
     bool isSectionDirty(int sectionIndex) const;
     void clearSectionDirty(int sectionIndex);
@@ -99,6 +110,7 @@ private:
     std::mutex m_blockMutex;
     std::mutex m_lightMutex;
     std::atomic<ChunkState> m_state { ChunkState::Empty };
+    uint8_t m_primaryBitmask = 0xFF;
 
     static inline int getIndex(int x, int y, int z) {
         return (x << 11) | (z << 7) | y;

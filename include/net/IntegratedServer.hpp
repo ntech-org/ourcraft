@@ -28,6 +28,7 @@ private:
     struct PlayerSession {
         int32_t entityID;
         std::string username;
+        std::unordered_map<uint64_t, ChunkState> sentChunks;
     };
     std::map<ENetPeer*, PlayerSession> m_players;
 };

@@ -23,6 +23,7 @@ void Minecraft::init() {
     m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
 
     m_player = std::make_unique<EntityPlayer>(*m_world);
+    m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
     m_player->preparePlayerToSpawn();
 
@@ -34,16 +35,6 @@ void Minecraft::init() {
         throw std::runtime_error("Failed to connect to integrated server");
     }
 
-    // Initial chunk load
-    for (int dx = -16; dx <= 16; ++dx) {
-        for (int dz = -16; dz <= 16; ++dz) {
-            m_world->requestChunk(dx, dz);
-        }
-    }
-    while (!m_world->m_pendingChunks.empty()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        m_world->pollGeneratedChunks();
-    }
     m_gameRenderer->getWorldRenderer().rebuildSectionList();
 }
 
@@ -95,6 +86,7 @@ void Minecraft::tick() {
         m_player->swing();
         if (hit.type == HitType::BLOCK) {
             m_world->setBlockWithNotify(hit.x, hit.y, hit.z, 0);
+            m_networkHandler->sendDigging(DiggingAction::FINISH, hit.x, hit.y, hit.z, hit.sideHit);
         }
     }
 
@@ -102,9 +94,10 @@ void Minecraft::tick() {
     if (m_inputHandler->isRightClick()) {
         if (hit.type == HitType::BLOCK) {
             int x = hit.x, y = hit.y, z = hit.z;
-            if (hit.sideHit == 0) y--; else if (hit.sideHit == 1) y++;
-            else if (hit.sideHit == 2) z--; else if (hit.sideHit == 3) z++;
-            else if (hit.sideHit == 4) x--; else if (hit.sideHit == 5) x++;
+            int face = hit.sideHit;
+            if (face == 0) y--; else if (face == 1) y++;
+            else if (face == 2) z--; else if (face == 3) z++;
+            else if (face == 4) x--; else if (face == 5) x++;
 
             AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
             if (!m_player->boundingBox.intersectsWith(blockBB)) {
@@ -112,6 +105,7 @@ void Minecraft::tick() {
                 if (itemID > 0) {
                     m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
                     m_player->swing();
+                    m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
                 }
             }
         }

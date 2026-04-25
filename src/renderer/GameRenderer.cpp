@@ -102,19 +102,6 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     int playerCX = (int)std::floor(px / 16.0);
     int playerCZ = (int)std::floor(pz / 16.0);
 
-    static int managementTimer = 0;
-    if (managementTimer-- <= 0) {
-        managementTimer = 10; // Every 10 frames
-        m_worldRenderer->removeFarSections(playerCX, playerCZ, 10);
-        m_world.unloadFarChunks(playerCX, playerCZ, 10);
-    }
-
-    std::vector<std::pair<int, int>> toRequest;
-    m_world.getLoadedAndPendingChunks(playerCX, playerCZ, 8, toRequest);
-    for (auto& pos : toRequest) {
-        m_world.requestChunk(pos.first, pos.second);
-    }
-
     // Fog and clear
     float voidDarkening = std::clamp((float)(py / m_world.getHorizon()), 0.0f, 1.0f);
     voidDarkening *= voidDarkening;

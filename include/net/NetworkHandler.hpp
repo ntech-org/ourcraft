@@ -5,6 +5,7 @@
 #include <functional>
 #include "net/Client.hpp"
 #include "net/IntegratedServer.hpp"
+#include "net/Packets.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
@@ -16,6 +17,8 @@ public:
     bool connect(const std::string& address, int port);
     void update();
     void sendPlayerPosition(const EntityPlayer& player);
+    void sendDigging(DiggingAction action, int x, int y, int z, int face);
+    void sendPlacement(int x, int y, int z, int face, int id, int meta);
 
     int32_t getPlayerID() const { return m_playerID; }
 
