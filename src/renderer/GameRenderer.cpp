@@ -179,8 +179,17 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", view);
 
+    auto getEntityBrightness = [&](int x, int y, int z) {
+        auto light = m_world.getLightPair(x, y, z);
+        float skyVar2 = 1.0f - std::clamp((float)light.first, 0.0f, 15.0f) / 15.0f;
+        float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
+        float blockVar2 = 1.0f - std::clamp((float)light.second, 0.0f, 15.0f) / 15.0f;
+        float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
+        return std::max(skyBr * m_world.getDaylightStrength(), blockBr);
+    };
+
     auto renderOne = [&](Entity* entity, float pTicks) {
-        float b = m_world.getBrightness((int)std::floor(entity->posX), (int)std::floor(entity->posY), (int)std::floor(entity->posZ));
+        float b = getEntityBrightness((int)std::floor(entity->posX), (int)std::floor(entity->posY), (int)std::floor(entity->posZ));
         m_entityShader->setVec3("colorTint", glm::vec3(b));
 
         m_renderEngine->bindTexture(m_renderEngine->getTexture(dynamic_cast<EntityPlayer*>(entity) ? "/char.png" : "/mob/zombie.png"));
@@ -230,7 +239,16 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     m_entityShader->use();
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", glm::mat4(1.0f));
-    m_entityShader->setVec3("colorTint", glm::vec3(m_world.getBrightness((int)m_player.posX, (int)m_player.posY, (int)m_player.posZ)));
+    auto getEntityBrightness = [&](int x, int y, int z) {
+        auto light = m_world.getLightPair(x, y, z);
+        float skyVar2 = 1.0f - std::clamp((float)light.first, 0.0f, 15.0f) / 15.0f;
+        float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
+        float blockVar2 = 1.0f - std::clamp((float)light.second, 0.0f, 15.0f) / 15.0f;
+        float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
+        return std::max(skyBr * m_world.getDaylightStrength(), blockBr);
+    };
+
+    m_entityShader->setVec3("colorTint", glm::vec3(getEntityBrightness((int)m_player.posX, (int)m_player.posY, (int)m_player.posZ)));
     m_renderEngine->bindTexture(m_renderEngine->getTexture("/char.png"));
 
     glm::mat4 armBase = glm::mat4(1.0f);

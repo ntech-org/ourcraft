@@ -9,6 +9,8 @@ flat in uint FaceId;
 flat in float FlowRotation;
 flat in float LiquidType;
 in float IsUnderwater;
+in float SkyLight;
+in float BlockLight;
 
 uniform sampler2D texture1;
 uniform bool hasTexture;
@@ -74,10 +76,22 @@ void main() {
         outColor = texColor;
     }
 
+    // Dynamic voxel lighting
+    float var0 = 0.05;
+    float skyVar2 = 1.0 - clamp(SkyLight, 0.0, 15.0) / 15.0;
+    float skyBr = (1.0 - skyVar2) / (skyVar2 * 3.0 + 1.0) * (1.0 - var0) + var0;
+    
+    float blockVar2 = 1.0 - clamp(BlockLight, 0.0, 15.0) / 15.0;
+    float blockBr = (1.0 - blockVar2) / (blockVar2 * 3.0 + 1.0) * (1.0 - var0) + var0;
+    
+    float totalBr = max(skyBr * daylightFactor, blockBr);
+
     float classicShade = faceShade(FaceId);
     float sunDiffuse = max(dot(faceNormal(FaceId), normalize(sunDirection)), 0.0);
-    float lighting = classicShade * mix(0.35, 1.0, daylightFactor) + sunDiffuse * 0.25 * daylightFactor;
-    outColor.rgb *= clamp(lighting, 0.10, 1.0);
+    
+    // Mix the ambient voxel lighting with the directional sun/shade
+    float lighting = classicShade * totalBr + sunDiffuse * 0.25 * daylightFactor * (SkyLight/15.0);
+    outColor.rgb *= clamp(lighting, 0.05, 1.0);
 
     // Depth effect: Darken everything underwater
     if (IsUnderwater > 0.1) {

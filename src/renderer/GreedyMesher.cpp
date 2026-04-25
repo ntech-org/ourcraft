@@ -8,7 +8,7 @@ constexpr std::uint32_t kWhiteColor = 0xFFFFFFFFu;
 constexpr int kSectionSize = Chunk::SECTION_HEIGHT;
 
 enum class FaceDirection { Down = 0, Up = 1, North = 2, South = 3, West = 4, East = 5 };
-struct FaceMaskCell { bool visible = false; int textureIndex = 0; float depth = 0.0f; std::uint32_t color = 0xFFFFFFFFu; };
+struct FaceMaskCell { bool visible = false; int textureIndex = 0; float depth = 0.0f; float skyLight = 15.0f; float blockLight = 0.0f; };
 
 bool isGreedyRenderable(std::uint8_t id) {
     if (!id) return false;
@@ -16,22 +16,17 @@ bool isGreedyRenderable(std::uint8_t id) {
     return b && (b->getRenderLayer() == BlockRenderLayer::Opaque || b->getRenderLayer() == BlockRenderLayer::Cutout) && b->isFullCube();
 }
 
-std::uint32_t packBrightness(float b) {
-    std::uint8_t val = (std::uint8_t)(b * 255.0f);
-    return 0xFF000000u | (val << 16) | (val << 8) | val;
-}
-
-FaceMaskCell makeMaskCell(std::uint8_t id, int face, float depth, float brightness) {
+FaceMaskCell makeMaskCell(std::uint8_t id, int face, float depth, std::pair<int, int> light) {
     if (!isGreedyRenderable(id)) return {};
-    return { true, Block::blocksList[id]->getTexture(face), depth, packBrightness(brightness) };
+    return { true, Block::blocksList[id]->getTexture(face), depth, (float)light.first, (float)light.second };
 }
 
 bool sameCell(const FaceMaskCell& l, const FaceMaskCell& r) {
-    return l.visible == r.visible && l.textureIndex == r.textureIndex && std::abs(l.depth - r.depth) < 0.01f && l.color == r.color;
+    return l.visible == r.visible && l.textureIndex == r.textureIndex && std::abs(l.depth - r.depth) < 0.01f && l.skyLight == r.skyLight && l.blockLight == r.blockLight;
 }
 
-void appendVertex(ChunkMeshData::Pass& p, float x, float y, float z, float u, float v, int tex, FaceDirection dir, float depth, std::uint32_t color) {
-    p.vertices.push_back({x, y, z, u, v, color, (std::uint32_t)tex, (std::uint32_t)dir, -1000.0f, 0.0f, depth});
+void appendVertex(ChunkMeshData::Pass& p, float x, float y, float z, float u, float v, int tex, FaceDirection dir, float depth, float skyLight, float blockLight) {
+    p.vertices.push_back({x, y, z, u, v, kWhiteColor, (std::uint32_t)tex, (std::uint32_t)dir, -1000.0f, 0.0f, depth, skyLight, blockLight});
 }
 
 void appendIndices(ChunkMeshData::Pass& p) {
@@ -61,7 +56,7 @@ void ChunkMesher::greedyMeshTopBottom(ChunkMeshData& md, const IBlockAccess& n, 
         std::vector<FaceMaskCell> mask(256); int gy = by + ly;
         for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
             uint8_t bid = n.getBlockID(x, gy, z), nid = n.getBlockID(x, gy + off, z);
-            if (!shouldCull(bid, nid)) mask[x + z * 16] = makeMaskCell(bid, f, getWaterDepth(n, x, gy + (up ? 1 : 0), z), n.getBrightness(bx + x, gy + off, bz + z));
+            if (!shouldCull(bid, nid)) mask[x + z * 16] = makeMaskCell(bid, f, getWaterDepth(n, x, gy + (up ? 1 : 0), z), n.getLightPair(bx + x, gy + off, bz + z));
         }
         for (int z = 0; z < 16; ++z) for (int x = 0; x < 16;) {
             FaceMaskCell c = mask[x + z * 16]; if (!c.visible) { ++x; continue; }
@@ -71,11 +66,11 @@ void ChunkMesher::greedyMeshTopBottom(ChunkMeshData& md, const IBlockAccess& n, 
             for (int dx = 0; dx < w; ++dx) for (int dz = 0; dz < h; ++dz) mask[x + dx + (z + dz) * 16] = {};
             float x0 = (float)(bx + x), x1 = (float)(bx + x + w), yq = (float)(gy + (up ? 1 : 0)), z0 = (float)(bz + z), z1 = (float)(bz + z + h);
             if (up) {
-                appendVertex(md.opaque, x1, yq, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x1, yq, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.color);
-                appendVertex(md.opaque, x0, yq, z0, 0, 0, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x0, yq, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.color);
+                appendVertex(md.opaque, x1, yq, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x1, yq, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
+                appendVertex(md.opaque, x0, yq, z0, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x0, yq, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             } else {
-                appendVertex(md.opaque, x0, yq, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x0, yq, z0, 0, 0, c.textureIndex, dir, c.depth, c.color);
-                appendVertex(md.opaque, x1, yq, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x1, yq, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.color);
+                appendVertex(md.opaque, x0, yq, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x0, yq, z0, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
+                appendVertex(md.opaque, x1, yq, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x1, yq, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             }
             appendIndices(md.opaque); x += w;
         }
@@ -89,7 +84,7 @@ void ChunkMesher::greedyMeshNorthSouth(ChunkMeshData& md, const IBlockAccess& n,
         std::vector<FaceMaskCell> mask(256);
         for (int x = 0; x < 16; ++x) for (int y = 0; y < 16; ++y) {
             int gy = by + y; uint8_t bid = n.getBlockID(x, gy, lz), nid = n.getBlockID(x, gy, lz + off);
-            if (!shouldCull(bid, nid)) mask[x + y * 16] = makeMaskCell(bid, f, getWaterDepth(n, x, gy, lz + (south ? 1 : 0)), n.getBrightness(bx + x, gy, bz + lz + off));
+            if (!shouldCull(bid, nid)) mask[x + y * 16] = makeMaskCell(bid, f, getWaterDepth(n, x, gy, lz + (south ? 1 : 0)), n.getLightPair(bx + x, gy, bz + lz + off));
         }
         for (int y = 0; y < 16; ++y) for (int x = 0; x < 16;) {
             FaceMaskCell c = mask[x + y * 16]; if (!c.visible) { ++x; continue; }
@@ -99,11 +94,11 @@ void ChunkMesher::greedyMeshNorthSouth(ChunkMeshData& md, const IBlockAccess& n,
             for (int dx = 0; dx < w; ++dx) for (int dy = 0; dy < h; ++dy) mask[x + dx + (y + dy) * 16] = {};
             float x0 = (float)(bx + x), x1 = (float)(bx + x + w), y0 = (float)(by + y), y1 = (float)(by + y + h), zq = (float)(bz + lz + (south ? 1 : 0));
             if (!south) {
-                appendVertex(md.opaque, x0, y1, zq, 0, 0, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x1, y1, zq, (float)w, 0, c.textureIndex, dir, c.depth, c.color);
-                appendVertex(md.opaque, x1, y0, zq, (float)w, (float)h, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x0, y0, zq, 0, (float)h, c.textureIndex, dir, c.depth, c.color);
+                appendVertex(md.opaque, x0, y1, zq, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x1, y1, zq, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
+                appendVertex(md.opaque, x1, y0, zq, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x0, y0, zq, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             } else {
-                appendVertex(md.opaque, x0, y1, zq, 0, 0, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x0, y0, zq, 0, (float)h, c.textureIndex, dir, c.depth, c.color);
-                appendVertex(md.opaque, x1, y0, zq, (float)w, (float)h, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, x1, y1, zq, (float)w, 0, c.textureIndex, dir, c.depth, c.color);
+                appendVertex(md.opaque, x0, y1, zq, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x0, y0, zq, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
+                appendVertex(md.opaque, x1, y0, zq, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x1, y1, zq, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             }
             appendIndices(md.opaque); x += w;
         }
@@ -117,7 +112,7 @@ void ChunkMesher::greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, i
         std::vector<FaceMaskCell> mask(256);
         for (int z = 0; z < 16; ++z) for (int y = 0; y < 16; ++y) {
             int gy = by + y; uint8_t bid = n.getBlockID(lx, gy, z), nid = n.getBlockID(lx + off, gy, z);
-            if (!shouldCull(bid, nid)) mask[z + y * 16] = makeMaskCell(bid, f, getWaterDepth(n, lx + (east ? 1 : 0), gy, z), n.getBrightness(bx + lx + off, gy, bz + z));
+            if (!shouldCull(bid, nid)) mask[z + y * 16] = makeMaskCell(bid, f, getWaterDepth(n, lx + (east ? 1 : 0), gy, z), n.getLightPair(bx + lx + off, gy, bz + z));
         }
         for (int y = 0; y < 16; ++y) for (int z = 0; z < 16;) {
             FaceMaskCell c = mask[z + y * 16]; if (!c.visible) { ++z; continue; }
@@ -127,11 +122,11 @@ void ChunkMesher::greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, i
             for (int dx = 0; dx < w; ++dx) for (int dy = 0; dy < h; ++dy) mask[z + dx + (y + dy) * 16] = {};
             float xq = (float)(bx + lx + (east ? 1 : 0)), y0 = (float)(by + y), y1 = (float)(by + y + h), z0 = (float)(bz + z), z1 = (float)(bz + z + w);
             if (!east) {
-                appendVertex(md.opaque, xq, y1, z1, (float)w, 0, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, xq, y1, z0, 0, 0, c.textureIndex, dir, c.depth, c.color);
-                appendVertex(md.opaque, xq, y0, z0, 0, (float)h, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, xq, y0, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.color);
+                appendVertex(md.opaque, xq, y1, z1, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y1, z0, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
+                appendVertex(md.opaque, xq, y0, z0, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y0, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             } else {
-                appendVertex(md.opaque, xq, y0, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, xq, y0, z0, (float)w, (float)h, c.textureIndex, dir, c.depth, c.color);
-                appendVertex(md.opaque, xq, y1, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.color); appendVertex(md.opaque, xq, y1, z1, 0, 0, c.textureIndex, dir, c.depth, c.color);
+                appendVertex(md.opaque, xq, y0, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y0, z0, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
+                appendVertex(md.opaque, xq, y1, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y1, z1, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             }
             appendIndices(md.opaque); z += w;
         }

@@ -23,7 +23,7 @@ void Minecraft::init() {
     m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
 
     m_player = std::make_unique<EntityPlayer>(*m_world);
-    m_player->setPosition(8.0, 80.0, 8.0);
+    m_player->setPosition(-283.0, 74.0, 414.0);
     m_player->preparePlayerToSpawn();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
@@ -60,9 +60,9 @@ void Minecraft::run() {
         for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
         m_gameRenderer->getProfiler().updateTime = (glfwGetTime() - updateStart) * 1000.0;
 
-        m_gameRenderer->render(m_timer.renderPartialTicks, 
-                               m_inputHandler->getCameraMode(), 
-                               m_inputHandler->isDebugVisible(), 
+        m_gameRenderer->render(m_timer.renderPartialTicks,
+                               m_inputHandler->getCameraMode(),
+                               m_inputHandler->isDebugVisible(),
                                m_inputHandler->isChunkBoundariesVisible(),
                                m_inputHandler->isProfilerVisible(),
                                m_fps);
@@ -76,7 +76,7 @@ void Minecraft::tick() {
     m_world->update(0.05f);
     m_networkHandler->update();
     m_inputHandler->update();
-    
+
     if (m_inputHandler->shouldReloadChunks()) {
         m_gameRenderer->getWorldRenderer().rebuildSectionList();
     }

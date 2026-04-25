@@ -34,26 +34,11 @@ glm::vec3 World::getFogColor(float partialTick) const {
     };
 }
 
-float World::getBrightness(int x, int y, int z) const {
-    static float lightBrightnessTable[16];
-    static bool initialized = false;
-    if (!initialized) {
-        float var0 = 0.05f;
-        for (int i = 0; i <= 15; ++i) {
-            float var2 = 1.0f - static_cast<float>(i) / 15.0f;
-            lightBrightnessTable[i] = (1.0f - var2) / (var2 * 3.0f + 1.0f) * (1.0f - var0) + var0;
-        }
-        initialized = true;
-    }
-
+std::pair<int, int> World::getLightPair(int x, int y, int z) const {
     int sky = getSavedLightValue(LightType::Sky, x, y, z);
     int block = getSavedLightValue(LightType::Block, x, y, z);
     
-    float daylight = getDaylightStrength();
-    float skyBr = lightBrightnessTable[sky] * daylight;
-    float blockBr = lightBrightnessTable[block];
-    
-    return std::max(skyBr, blockBr);
+    return {sky, block};
 }
 
 float World::getStarBrightness(float partialTick) const {

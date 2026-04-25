@@ -7,6 +7,8 @@ layout (location = 4) in uint aFaceId;
 layout (location = 5) in float aFlowRotation;
 layout (location = 6) in float aLiquidType;
 layout (location = 7) in float aIsUnderwater;
+layout (location = 8) in float aSkyLight;
+layout (location = 9) in float aBlockLight;
 
 out vec2 TileCoord;
 out vec4 Color;
@@ -16,6 +18,8 @@ flat out uint FaceId;
 flat out float FlowRotation;
 flat out float LiquidType;
 out float IsUnderwater;
+out float SkyLight;
+out float BlockLight;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -31,4 +35,6 @@ void main() {
     FlowRotation = aFlowRotation;
     LiquidType = aLiquidType;
     IsUnderwater = aIsUnderwater;
+    SkyLight = aSkyLight;
+    BlockLight = aBlockLight;
 }

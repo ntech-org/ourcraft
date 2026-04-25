@@ -89,7 +89,7 @@ public:
     float getCelestialAngle(float partialTick = 0.0f) const;
     glm::vec3 getSkyColor(float partialTick = 0.0f) const;
     glm::vec3 getFogColor(float partialTick = 0.0f) const;
-    float getBrightness(int x, int y, int z) const;
+    std::pair<int, int> getLightPair(int x, int y, int z) const override;
     float getStarBrightness(float partialTick = 0.0f) const;
     float getDaylightStrength(float partialTick = 0.0f) const;
     glm::vec3 getSunDirection(float partialTick = 0.0f) const;

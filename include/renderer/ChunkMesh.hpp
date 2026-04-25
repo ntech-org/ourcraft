@@ -15,6 +15,8 @@ struct TerrainVertex {
     float flowRotation;
     float liquidType; // 0: None, 1: Water, 2: Lava
     float isUnderwater;
+    float skyLight;
+    float blockLight;
 };
 
 struct ChunkMeshData {
