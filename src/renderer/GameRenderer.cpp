@@ -1,7 +1,9 @@
 #include "renderer/GameRenderer.hpp"
 #include "renderer/Tessellator.hpp"
 #include "world/Block.hpp"
+#include "world/Material.hpp"
 #include "renderer/TextureFX.hpp"
+
 #include "entities/EntityLiving.hpp"
 #include "InputHandler.hpp"
 #include <glm/gtc/matrix_transform.hpp>
@@ -129,8 +131,14 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     glClearColor(fogColor.r, fogColor.g, fogColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    float fov = 70.0f;
+    if (m_player.isInsideOfMaterial(Material::water)) {
+        fov = 60.0f;
+    }
+
     const float aspect = m_height > 0 ? (float)m_width / (float)m_height : 1.0f;
-    glm::mat4 projection = glm::perspective(glm::radians(70.0f), aspect, 0.05f, 1000.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, 0.05f, 1000.0f);
+
 
     double renderStart = glfwGetTime();
     m_skyRenderer->render(m_world, m_camera, projection, view, fogColor);
@@ -149,9 +157,10 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     // Disable culling for entities and hand to ensure all faces are visible
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    renderEntities(partialTicks, projection, view, cameraMode);
+    renderEntities(partialTicks, projection, view, cameraMode, fogColor);
     glEnable(GL_CULL_FACE);
     m_profiler.entityTime = (glfwGetTime() - entityStart) * 1000.0;
+
 
     // Pass 2: Translucent world (water)
     m_renderEngine->bindTexture(m_terrainTex);
@@ -190,7 +199,18 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_basicShader->setFloat("uTime", (float)glfwGetTime());
 
     // Simple fog distance based on state
-    m_basicShader->setFloat("fogNear", 64.0f); m_basicShader->setFloat("fogFar", 256.0f);
+    if (m_player.isInsideOfMaterial(Material::water)) {
+        m_basicShader->setInt("fogMode", 1);
+        m_basicShader->setFloat("fogDensity", 0.1f);
+    } else if (m_player.isInsideOfMaterial(Material::lava)) {
+        m_basicShader->setInt("fogMode", 1);
+        m_basicShader->setFloat("fogDensity", 2.0f);
+    } else {
+        m_basicShader->setInt("fogMode", 0);
+        m_basicShader->setFloat("fogNear", 64.0f); 
+        m_basicShader->setFloat("fogFar", 256.0f);
+    }
+
 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
@@ -198,13 +218,29 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_worldRenderer->renderOpaque(m_frustum, *m_basicShader);
 }
 
-void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode) {
+void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode, const glm::vec3& fogColor) {
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     m_entityShader->use();
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", view);
 
+    if (m_player.isInsideOfMaterial(Material::water)) {
+        m_entityShader->setInt("fogMode", 1);
+        m_entityShader->setFloat("fogDensity", 0.1f);
+    } else if (m_player.isInsideOfMaterial(Material::lava)) {
+        m_entityShader->setInt("fogMode", 1);
+        m_entityShader->setFloat("fogDensity", 2.0f);
+    } else {
+        m_entityShader->setInt("fogMode", 0);
+        m_entityShader->setFloat("fogNear", 64.0f);
+        m_entityShader->setFloat("fogFar", 256.0f);
+    }
+    m_entityShader->setVec3("fogColor", fogColor);
+    m_entityShader->setVec3("cameraPos", m_camera.position);
+
+
     auto getEntityBrightness = [&](double ex, double ey, double ez) {
+
         // Sample at feet (slightly up) and center
         auto light1 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.1), (int)std::floor(ez));
         auto light2 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.9), (int)std::floor(ez));
@@ -271,6 +307,7 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     m_entityShader->use();
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", glm::mat4(1.0f));
+    m_entityShader->setVec3("cameraPos", glm::vec3(0.0f)); // View space, arm is at origin
 
     auto getEntityBrightness = [&](double ex, double ey, double ez) {
         auto light1 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.5), (int)std::floor(ez));
@@ -333,8 +370,12 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
     m_uiShader->setBool("hasTexture", true);
 
     Tessellator::instance->setColorOpaque_I(0xFFFFFFFF);
+    if (m_player.isInsideOfMaterial(Material::water)) {
+        renderUnderwaterOverlay();
+    }
     renderHUD();
     renderCrosshair();
+
 
 
     if (!showDebug) {
@@ -422,7 +463,20 @@ void GameRenderer::renderHUD() {
             if (i * 2 + 1 < m_player.health) drawTexturedModalRect(x, y, 52, 0, 9, 9); // Full heart
             else if (i * 2 + 1 == m_player.health) drawTexturedModalRect(x, y, 61, 0, 9, 9); // Half heart
         }
+
+        if (m_player.isInsideOfMaterial(Material::water)) {
+            int air = (int)std::ceil((double)(m_player.air - 2) * 10.0 / 300.0);
+            int extraAir = (int)std::ceil((double)m_player.air * 10.0 / 300.0) - air;
+            for (int i = 0; i < air + extraAir; ++i) {
+                if (i < air) {
+                    drawTexturedModalRect(centerX - 91.0f + (float)i * 8.0f, m_scaledHeight - 32.0f - 9.0f, 16, 18, 9, 9);
+                } else {
+                    drawTexturedModalRect(centerX - 91.0f + (float)i * 8.0f, m_scaledHeight - 32.0f - 9.0f, 25, 18, 9, 9);
+                }
+            }
+        }
     }
+
     glDisable(GL_BLEND);
 }
 
@@ -435,7 +489,29 @@ void GameRenderer::renderCrosshair() {
 }
 
 
+void GameRenderer::renderUnderwaterOverlay() {
+    m_renderEngine->bindTexture(m_renderEngine->getTexture("/water.png"));
+    
+    Tessellator* t = Tessellator::instance;
+    float b = m_world.getDaylightStrength();
+    m_uiShader->use();
+    m_uiShader->setBool("hasTexture", true);
+    t->startDrawingQuads();
+    t->setColorRGBA((int)(b * 255), (int)(b * 255), (int)(b * 255), 128); // 0.5 opacity
+
+    float warp = 4.0f;
+    float uOff = -m_player.rotationYaw / 64.0f;
+    float vOff = m_player.rotationPitch / 64.0f;
+
+    t->addVertexWithUV(0, m_scaledHeight, -90, uOff, vOff + warp);
+    t->addVertexWithUV(m_scaledWidth, m_scaledHeight, -90, uOff + warp, vOff + warp);
+    t->addVertexWithUV(m_scaledWidth, 0, -90, uOff + warp, vOff);
+    t->addVertexWithUV(0, 0, -90, uOff, vOff);
+    t->draw();
+}
+
 void GameRenderer::drawTexturedModalRect(float x, float y, int u, int v, int width, int height) {
+
     float f = 0.00390625f; // 1/256
     Tessellator* t = Tessellator::instance;
     t->startDrawingQuads();

@@ -1,7 +1,9 @@
 #include "entities/Entity.hpp"
 #include "world/World.hpp"
+#include "world/Block.hpp"
 #include "world/Material.hpp"
 #include <cmath>
+
 #include <algorithm>
 
 Entity::Entity(World& world) 
@@ -152,3 +154,24 @@ bool Entity::isOffsetPositionInLiquid(double dx, double dy, double dz) {
 }
 
 void Entity::fall(float distance) {}
+
+bool Entity::isInsideOfMaterial(const Material& material) const {
+    double eyeY = posY + (double)yOffset;
+    int ix = (int)std::floor(posX);
+    int iy = (int)std::floor(eyeY);
+    int iz = (int)std::floor(posZ);
+    uint8_t id = worldObj.getBlockID(ix, iy, iz);
+    if (id == 0) return material == Material::air;
+    return Block::blocksList[id]->blockMaterial == material;
+}
+
+
+bool Entity::isEntityInsideOpaqueBlock() const {
+    double eyeY = posY + (double)yOffset;
+    int ix = (int)std::floor(posX);
+    int iy = (int)std::floor(eyeY);
+    int iz = (int)std::floor(posZ);
+    uint8_t id = worldObj.getBlockID(ix, iy, iz);
+    if (id == 0) return false;
+    return Block::blocksList[id]->isOccluder();
+}

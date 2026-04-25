@@ -29,7 +29,11 @@ public:
     int hurtTime = 0;
     bool isFlying = false;
 
+    int drowningTimer = 0;
+    int suffocationTimer = 0;
+
     virtual void swing();
+
 
     virtual void attackEntityFrom(Entity* source, int amount);
     void fall(float distance) override;

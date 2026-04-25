@@ -32,7 +32,11 @@ public:
     bool sneaking = false;
     bool sprinting = false;
 
+    int air = 300;
+    int maxAir = 300;
+
     void attackEntityFrom(Entity* source, int amount) override;
+
 };
 
 

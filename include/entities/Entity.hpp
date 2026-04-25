@@ -43,5 +43,10 @@ public:
     bool isOffsetPositionInLiquid(double dx, double dy, double dz);
 
     virtual void fall(float distance);
+
+    bool isInsideOfMaterial(const class Material& material) const;
+    bool isEntityInsideOpaqueBlock() const;
 };
+
+
 

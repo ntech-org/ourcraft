@@ -18,6 +18,8 @@ uniform vec3 fogColor;
 uniform vec3 cameraPos;
 uniform float fogNear;
 uniform float fogFar;
+uniform float fogDensity;
+uniform int fogMode; // 0 = Linear, 1 = Exp
 uniform float daylightFactor;
 uniform vec3 sunDirection;
 uniform float uTime;
@@ -93,18 +95,23 @@ void main() {
     float lighting = classicShade * totalBr + sunDiffuse * 0.25 * daylightFactor * (SkyLight/15.0);
     outColor.rgb *= clamp(lighting, 0.1, 1.0);
 
-
     // Depth effect: Darken everything underwater
     if (IsUnderwater > 0.1) {
         float depthFactor = pow(0.7, IsUnderwater);
         depthFactor = max(depthFactor, 0.1); // Floor for depth darkening
         outColor.rgb *= depthFactor;
         if (LiquidType > 0.5 && LiquidType < 1.5) {
-
             outColor.a = mix(outColor.a, 1.0, 1.0 - pow(0.5, IsUnderwater));
         }
     }
 
-    float fogFactor = clamp((fogFar - distance(WorldPos, cameraPos)) / max(fogFar - fogNear, 0.001), 0.0, 1.0);
+    float fogFactor = 1.0;
+    if (fogMode == 1) {
+        fogFactor = exp(-fogDensity * distance(WorldPos, cameraPos));
+    } else {
+        fogFactor = (fogFar - distance(WorldPos, cameraPos)) / max(fogFar - fogNear, 0.001);
+    }
+    fogFactor = clamp(fogFactor, 0.0, 1.0);
+    
     FragColor = vec4(mix(fogColor, outColor.rgb, fogFactor), outColor.a);
 }

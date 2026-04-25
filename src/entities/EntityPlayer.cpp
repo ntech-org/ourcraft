@@ -1,5 +1,7 @@
 #include "entities/EntityPlayer.hpp"
+#include "world/Material.hpp"
 #include <cmath>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -18,7 +20,36 @@ void EntityPlayer::onUpdate() {
     prevCameraPitch = cameraPitch;
     EntityLiving::onUpdate();
 
+    if (isInsideOfMaterial(Material::water)) {
+        if (air > 0) {
+            air--;
+        } else {
+            // Drowning damage every 20 ticks
+            if (drowningTimer++ >= 20) {
+                attackEntityFrom(nullptr, 1);
+                drowningTimer = 0;
+            }
+        }
+    } else {
+        if (!isEntityInsideOpaqueBlock()) {
+            air = maxAir;
+        }
+    }
+
+    if (isEntityInsideOpaqueBlock()) {
+        // Suffocation damage every 20 ticks
+        if (suffocationTimer++ >= 20) {
+            attackEntityFrom(nullptr, 1);
+            suffocationTimer = 0;
+        }
+    } else {
+        suffocationTimer = 0;
+    }
+
+
+
     float speed = (float)std::sqrt(motionX * motionX + motionZ * motionZ);
+
     float pitchTarget = (float)std::atan(-motionY * 0.2f) * 15.0f;
     
     if (speed > 0.1f) speed = 0.1f;
