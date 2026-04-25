@@ -77,7 +77,7 @@ void main() {
     }
 
     // Dynamic voxel lighting
-    float var0 = 0.05;
+    float var0 = 0.1;
     float skyVar2 = 1.0 - clamp(SkyLight, 0.0, 15.0) / 15.0;
     float skyBr = (1.0 - skyVar2) / (skyVar2 * 3.0 + 1.0) * (1.0 - var0) + var0;
     
@@ -91,13 +91,16 @@ void main() {
     
     // Mix the ambient voxel lighting with the directional sun/shade
     float lighting = classicShade * totalBr + sunDiffuse * 0.25 * daylightFactor * (SkyLight/15.0);
-    outColor.rgb *= clamp(lighting, 0.05, 1.0);
+    outColor.rgb *= clamp(lighting, 0.1, 1.0);
+
 
     // Depth effect: Darken everything underwater
     if (IsUnderwater > 0.1) {
         float depthFactor = pow(0.7, IsUnderwater);
+        depthFactor = max(depthFactor, 0.1); // Floor for depth darkening
         outColor.rgb *= depthFactor;
         if (LiquidType > 0.5 && LiquidType < 1.5) {
+
             outColor.a = mix(outColor.a, 1.0, 1.0 - pow(0.5, IsUnderwater));
         }
     }

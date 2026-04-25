@@ -18,8 +18,10 @@ public:
     void run();
     void resize(int width, int height);
     void mouseCallback(double xpos, double ypos);
+    void scrollCallback(double xoffset, double yoffset);
 
 private:
+
     void init();
     void tick();
 

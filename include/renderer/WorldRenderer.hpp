@@ -34,8 +34,10 @@ public:
     void rebuildSectionList();
     void addSectionsForChunk(std::shared_ptr<Chunk> chunk);
     void updateDirtyMeshes(int limit = 4);
-    void render(const Frustum& frustum, Shader& shader);
+    void renderOpaque(const Frustum& frustum, Shader& shader);
+    void renderTranslucent(const Frustum& frustum, Shader& shader);
     void renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries);
+
     void removeFarSections(int playerCX, int playerCZ, int keepDistance);
 
     const Stats& getStats() const { return m_stats; }

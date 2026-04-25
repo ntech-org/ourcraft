@@ -24,8 +24,17 @@ public:
     int attackTime = 0;
     bool jumping = false;
     
+    int health = 20;
+    int maxHealth = 20;
+    int hurtTime = 0;
+    bool isFlying = false;
+
     virtual void swing();
+
+    virtual void attackEntityFrom(Entity* source, int amount);
+    void fall(float distance) override;
     
 protected:
     virtual void updateEntityActionState();
 };
+

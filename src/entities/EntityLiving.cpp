@@ -35,7 +35,10 @@ void EntityLiving::onUpdate() {
     renderYawOffset = rotationYaw - yawDiff;
     renderYawOffset += yawDiff * 0.1f; // Body slowly turns to follow head
 
+    if (hurtTime > 0) hurtTime--;
+
     handleWaterMovement();
+
     updateEntityActionState();
 
     prevSwingProgress = swingProgress;
@@ -66,7 +69,13 @@ void EntityLiving::onUpdate() {
             motionX *= waterDrag;
             motionY *= waterDrag;
             motionZ *= waterDrag;
-            motionY -= 0.02f; // Sinking force
+            
+            if (isFlying) {
+                // Sinking suppressed
+            } else {
+                motionY -= 0.02f; // Sinking force
+            }
+
 
             if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
                 motionY = 0.30000001192092896;
@@ -85,8 +94,14 @@ void EntityLiving::onUpdate() {
             motionY *= 0.98f;
             motionZ *= drag;
             
-            motionY -= 0.08f; // Gravity
+            if (isFlying) {
+                // Gravity suppressed
+            } else {
+                motionY -= 0.08f; // Gravity
+            }
         }
+
+
     }
 
     prevLimbSwing = limbSwing;
@@ -108,3 +123,18 @@ void EntityLiving::swing() {
 void EntityLiving::updateEntityActionState() {
     // Default AI or behavior
 }
+
+void EntityLiving::attackEntityFrom(Entity* source, int amount) {
+    if (amount > 0) {
+        health -= amount;
+        hurtTime = 20;
+    }
+}
+
+void EntityLiving::fall(float distance) {
+    int damage = (int)std::ceil(distance - 3.0f);
+    if (damage > 0) {
+        attackEntityFrom(nullptr, damage);
+    }
+}
+

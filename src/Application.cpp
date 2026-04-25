@@ -28,7 +28,9 @@ void Application::init() {
     glfwSetWindowUserPointer(m_window, this);
     glfwSetFramebufferSizeCallback(m_window, framebuffer_size_callback);
     glfwSetCursorPosCallback(m_window, mouse_callback);
+    glfwSetScrollCallback(m_window, scroll_callback);
     glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         throw std::runtime_error("Failed to initialize GLAD");
@@ -61,6 +63,21 @@ void Application::framebuffer_size_callback(GLFWwindow* window, int width, int h
 void Application::mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     auto app = static_cast<Application*>(glfwGetWindowUserPointer(window));
     if (app->m_game) {
-        app->m_game->mouseCallback(xpos, ypos);
+        app->mouseCallback(xpos, ypos);
     }
+}
+
+void Application::scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    auto app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (app->m_game) {
+        app->scrollCallback(xoffset, yoffset);
+    }
+}
+
+void Application::mouseCallback(double xpos, double ypos) {
+    if (m_game) m_game->mouseCallback(xpos, ypos);
+}
+
+void Application::scrollCallback(double xoffset, double yoffset) {
+    if (m_game) m_game->scrollCallback(xoffset, yoffset);
 }

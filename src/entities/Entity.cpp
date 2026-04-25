@@ -103,7 +103,17 @@ void Entity::moveEntity(double dx, double dy, double dz) {
     isCollided = isCollidedHorizontally || origDY != dy;
     onGround = origDY != dy && origDY < 0.0;
 
+    if (onGround) {
+        if (fallDistance > 0.0f) {
+            fall(fallDistance);
+            fallDistance = 0.0f;
+        }
+    } else if (dy < 0.0) {
+        fallDistance -= (float)dy;
+    }
+
     if (origDX != dx) motionX = 0.0;
+
     if (origDY != dy) motionY = 0.0;
     if (origDZ != dz) motionZ = 0.0;
 
@@ -140,3 +150,5 @@ bool Entity::isOffsetPositionInLiquid(double dx, double dy, double dz) {
     if (!worldObj.getCollidingBoundingBoxes(offsetBB).empty()) return false;
     return !worldObj.getIsAnyLiquid(offsetBB);
 }
+
+void Entity::fall(float distance) {}

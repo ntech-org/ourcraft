@@ -12,9 +12,11 @@
 GameRenderer::GameRenderer(GLFWwindow* window, World& world, EntityPlayer& player)
     : m_window(window), m_world(world), m_player(player)
 {
-    glfwGetWindowSize(window, &m_width, &m_height);
+    glfwGetFramebufferSize(window, &m_width, &m_height);
+    resize(m_width, m_height);
 
     m_renderEngine = std::make_unique<RenderEngine>();
+
     m_worldRenderer = std::make_unique<WorldRenderer>(m_world);
     m_skyRenderer = std::make_unique<SkyRenderer>(*m_renderEngine);
 
@@ -42,7 +44,17 @@ void GameRenderer::resize(int width, int height) {
     m_width = width;
     m_height = height;
     glViewport(0, 0, width, height);
+
+    m_guiScale = 1;
+    while (m_guiScale < 3 && m_width / (m_guiScale + 1) >= 320 && m_height / (m_guiScale + 1) >= 240) {
+        m_guiScale++;
+    }
+
+    m_scaledWidth = (float)m_width / (float)m_guiScale;
+    m_scaledHeight = (float)m_height / (float)m_guiScale;
 }
+
+
 
 void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps) {
     double frameStart = glfwGetTime();
@@ -87,7 +99,7 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     // Chunk management
     int playerCX = (int)std::floor(px / 16.0);
     int playerCZ = (int)std::floor(pz / 16.0);
-    
+
     static int managementTimer = 0;
     if (managementTimer-- <= 0) {
         managementTimer = 10; // Every 10 frames
@@ -122,7 +134,7 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 
     double renderStart = glfwGetTime();
     m_skyRenderer->render(m_world, m_camera, projection, view, fogColor);
-    
+
     double worldStart = glfwGetTime();
     renderWorld(partialTicks, projection, view, fogColor, voidDarkening);
     m_profiler.worldTime = (glfwGetTime() - worldStart) * 1000.0;
@@ -135,18 +147,31 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 
     double entityStart = glfwGetTime();
     // Disable culling for entities and hand to ensure all faces are visible
+    glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     renderEntities(partialTicks, projection, view, cameraMode);
-    if (cameraMode == 0) renderFirstPersonArm(partialTicks, projection);
     glEnable(GL_CULL_FACE);
     m_profiler.entityTime = (glfwGetTime() - entityStart) * 1000.0;
 
+    // Pass 2: Translucent world (water)
+    m_renderEngine->bindTexture(m_terrainTex);
+    m_worldRenderer->renderTranslucent(m_frustum, *m_basicShader);
+
+    // Final Pass: First person hand (on top of everything)
+    if (cameraMode == 0) {
+        glDisable(GL_CULL_FACE);
+        renderFirstPersonArm(partialTicks, projection);
+        glEnable(GL_CULL_FACE);
+    }
+
     m_profiler.renderTime = (glfwGetTime() - renderStart) * 1000.0;
+
+
 
     double uiStart = glfwGetTime();
     renderUI(showDebug, showProfiler, fps, cameraMode);
     m_profiler.uiTime = (glfwGetTime() - uiStart) * 1000.0;
-    
+
     m_profiler.frameTime = (glfwGetTime() - frameStart) * 1000.0;
     m_profiler.frameTimeHistory[m_profiler.historyIndex] = m_profiler.frameTime;
     m_profiler.historyIndex = (m_profiler.historyIndex + 1) % 128;
@@ -170,7 +195,7 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
     m_worldRenderer->updateDirtyMeshes(64);
-    m_worldRenderer->render(m_frustum, *m_basicShader);
+    m_worldRenderer->renderOpaque(m_frustum, *m_basicShader);
 }
 
 void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode) {
@@ -179,24 +204,31 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", view);
 
-    auto getEntityBrightness = [&](int x, int y, int z) {
-        auto light = m_world.getLightPair(x, y, z);
-        float skyVar2 = 1.0f - std::clamp((float)light.first, 0.0f, 15.0f) / 15.0f;
-        float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
-        float blockVar2 = 1.0f - std::clamp((float)light.second, 0.0f, 15.0f) / 15.0f;
-        float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
+    auto getEntityBrightness = [&](double ex, double ey, double ez) {
+        // Sample at feet (slightly up) and center
+        auto light1 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.1), (int)std::floor(ez));
+        auto light2 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.9), (int)std::floor(ez));
+
+        int sky = std::max(light1.first, light2.first);
+        int block = std::max(light1.second, light2.second);
+
+        float skyVar2 = 1.0f - std::clamp((float)sky, 0.0f, 15.0f) / 15.0f;
+        float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
+        float blockVar2 = 1.0f - std::clamp((float)block, 0.0f, 15.0f) / 15.0f;
+        float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
         return std::max(skyBr * m_world.getDaylightStrength(), blockBr);
+
     };
 
     auto renderOne = [&](Entity* entity, float pTicks) {
-        float b = getEntityBrightness((int)std::floor(entity->posX), (int)std::floor(entity->posY), (int)std::floor(entity->posZ));
+        double ex = entity->prevPosX + (entity->posX - entity->prevPosX) * (double)pTicks;
+        double ey = entity->prevPosY + (entity->posY - entity->prevPosY) * (double)pTicks;
+        double ez = entity->prevPosZ + (entity->posZ - entity->prevPosZ) * (double)pTicks;
+
+        float b = getEntityBrightness(ex, ey, ez);
         m_entityShader->setVec3("colorTint", glm::vec3(b));
 
         m_renderEngine->bindTexture(m_renderEngine->getTexture(dynamic_cast<EntityPlayer*>(entity) ? "/char.png" : "/mob/zombie.png"));
-
-        double ex = entity->prevPosX + (entity->posX - entity->prevPosX) * pTicks;
-        double ey = entity->prevPosY + (entity->posY - entity->prevPosY) * pTicks;
-        double ez = entity->prevPosZ + (entity->posZ - entity->prevPosZ) * pTicks;
 
         float renderYaw = 0.0f, interpYaw = entity->rotationYaw, headPitch = entity->rotationPitch;
         if (auto living = dynamic_cast<EntityLiving*>(entity)) {
@@ -239,16 +271,22 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     m_entityShader->use();
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", glm::mat4(1.0f));
-    auto getEntityBrightness = [&](int x, int y, int z) {
-        auto light = m_world.getLightPair(x, y, z);
-        float skyVar2 = 1.0f - std::clamp((float)light.first, 0.0f, 15.0f) / 15.0f;
-        float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
-        float blockVar2 = 1.0f - std::clamp((float)light.second, 0.0f, 15.0f) / 15.0f;
-        float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.95f + 0.05f;
+
+    auto getEntityBrightness = [&](double ex, double ey, double ez) {
+        auto light1 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.5), (int)std::floor(ez));
+        auto light2 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 1.2), (int)std::floor(ez));
+        int sky = std::max(light1.first, light2.first);
+        int block = std::max(light1.second, light2.second);
+        float skyVar2 = 1.0f - std::clamp((float)sky, 0.0f, 15.0f) / 15.0f;
+        float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
+        float blockVar2 = 1.0f - std::clamp((float)block, 0.0f, 15.0f) / 15.0f;
+        float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
         return std::max(skyBr * m_world.getDaylightStrength(), blockBr);
+
     };
 
-    m_entityShader->setVec3("colorTint", glm::vec3(getEntityBrightness((int)m_player.posX, (int)m_player.posY, (int)m_player.posZ)));
+    m_entityShader->setVec3("colorTint", glm::vec3(getEntityBrightness(m_player.posX, m_player.posY, m_player.posZ)));
+
     m_renderEngine->bindTexture(m_renderEngine->getTexture("/char.png"));
 
     glm::mat4 armBase = glm::mat4(1.0f);
@@ -287,17 +325,30 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
 }
 
 void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode) {
-    if (!showDebug) return;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE); // Ensure UI isn't culled
     m_uiShader->use();
-    m_uiShader->setMat4("projection", glm::ortho(0.0f, (float)m_width, (float)m_height, 0.0f, -1.0f, 1.0f));
+    m_uiShader->setMat4("projection", glm::ortho(0.0f, (float)m_scaledWidth, (float)m_scaledHeight, 0.0f, -1.0f, 1.0f));
     m_uiShader->setMat4("view", glm::mat4(1.0f));
     m_uiShader->setBool("hasTexture", true);
 
+    Tessellator::instance->setColorOpaque_I(0xFFFFFFFF);
+    renderHUD();
+    renderCrosshair();
+
+
+    if (!showDebug) {
+        glEnable(GL_CULL_FACE);
+        glEnable(GL_DEPTH_TEST);
+        return;
+    }
+
+
     const auto& stats = m_worldRenderer->getStats();
     char buf[1024];
-    std::snprintf(buf, sizeof(buf), 
+
+
+    std::snprintf(buf, sizeof(buf),
         "OurCraft Infdev\n"
         "FPS: %.0f (%.2f ms)\n"
         "Pos: %.3f, %.3f, %.3f\n"
@@ -307,13 +358,13 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
         "Mesh Builds: %zu (%.2f ms)\n"
         "Camera: %s",
         (double)fps, m_profiler.frameTime,
-        m_player.posX, m_player.posY, m_player.posZ, 
+        m_player.posX, m_player.posY, m_player.posZ,
         (int)std::floor(m_player.posX / 16.0), (int)std::floor(m_player.posZ / 16.0),
         stats.visibleSections, stats.sectionCount,
         stats.triangles,
         stats.meshBuilds, stats.meshBuildMs,
         cameraMode == 0 ? "First Person" : (cameraMode == 1 ? "Third Person Back" : "Third Person Front"));
-    
+
     m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, 2.0f, 0xFFFFFFFF);
 
     if (showProfiler) {
@@ -326,15 +377,16 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
             "  UI: %.2f ms",
             m_profiler.updateTime, m_profiler.renderTime,
             m_profiler.worldTime, m_profiler.entityTime, m_profiler.uiTime);
-        m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, (float)m_height - 80.0f, 0xFFFFFFFF);
+        m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, (float)m_scaledHeight - 80.0f, 0xFFFFFFFF);
 
         // Frame time graph
         Tessellator* t = Tessellator::instance;
         m_uiShader->use();
         m_uiShader->setBool("hasTexture", false);
         t->startDrawingQuads();
-        float gx = (float)m_width - 130.0f;
-        float gy = (float)m_height - 10.0f;
+        float gx = (float)m_scaledWidth - 130.0f;
+        float gy = (float)m_scaledHeight - 10.0f;
+
         for (int i = 0; i < 128; ++i) {
             float val = (float)m_profiler.frameTimeHistory[(m_profiler.historyIndex + i) % 128];
             float h = std::clamp(val, 0.0f, 60.0f);
@@ -352,3 +404,46 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }
+
+void GameRenderer::renderHUD() {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/gui.png"));
+    float centerX = m_scaledWidth / 2.0f;
+    drawTexturedModalRect(centerX - 91.0f, m_scaledHeight - 22.0f, 0, 0, 182, 22); // Hotbar
+    drawTexturedModalRect(centerX - 91.0f - 1.0f + (float)m_player.inventory.currentSlot * 20.0f, m_scaledHeight - 22.0f - 1.0f, 0, 22, 24, 22); // Selection
+
+    if (m_player.gameMode == GameMode::SURVIVAL) {
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/icons.png"));
+        for (int i = 0; i < 10; ++i) {
+            float x = centerX - 91.0f + (float)i * 8.0f;
+            float y = m_scaledHeight - 32.0f;
+            drawTexturedModalRect(x, y, 16, 0, 9, 9); // Empty heart
+            if (i * 2 + 1 < m_player.health) drawTexturedModalRect(x, y, 52, 0, 9, 9); // Full heart
+            else if (i * 2 + 1 == m_player.health) drawTexturedModalRect(x, y, 61, 0, 9, 9); // Half heart
+        }
+    }
+    glDisable(GL_BLEND);
+}
+
+void GameRenderer::renderCrosshair() {
+    m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/icons.png"));
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR); // Invert colors
+    drawTexturedModalRect(m_scaledWidth / 2.0f - 8.0f, m_scaledHeight / 2.0f - 8.0f, 0, 0, 16, 16);
+    glDisable(GL_BLEND);
+}
+
+
+void GameRenderer::drawTexturedModalRect(float x, float y, int u, int v, int width, int height) {
+    float f = 0.00390625f; // 1/256
+    Tessellator* t = Tessellator::instance;
+    t->startDrawingQuads();
+    t->setColorOpaque_I(0xFFFFFFFF);
+    t->addVertexWithUV(x, y + (float)height, 0.0f, (float)u * f, (float)(v + height) * f);
+    t->addVertexWithUV(x + (float)width, y + (float)height, 0.0f, (float)(u + width) * f, (float)(v + height) * f);
+    t->addVertexWithUV(x + (float)width, y, 0.0f, (float)(u + width) * f, (float)v * f);
+    t->addVertexWithUV(x, y, 0.0f, (float)u * f, (float)v * f);
+    t->draw();
+}
+

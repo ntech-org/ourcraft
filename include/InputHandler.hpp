@@ -11,12 +11,17 @@ public:
     void handleKey(int key, int scancode, int action, int mods);
     void handleMouse(double xpos, double ypos);
     void handleMouseButton(int button, int action, int mods);
+    void handleScroll(double xoffset, double yoffset);
 
     bool isDebugVisible() const { return m_showDebug; }
+
     bool isChunkBoundariesVisible() const { return m_showChunkBoundaries; }
     bool isProfilerVisible() const { return m_showProfiler; }
     bool shouldReloadChunks() { bool r = m_reloadChunks; m_reloadChunks = false; return r; }
     int getCameraMode() const { return m_cameraMode; }
+
+    bool isLeftClick() { bool r = m_leftClick; m_leftClick = false; return r; }
+    bool isRightClick() { bool r = m_rightClick; m_rightClick = false; return r; }
 
 private:
     GLFWwindow* m_window;
@@ -34,8 +39,19 @@ private:
     
     bool m_f3Pressed = false;
     bool m_f5Pressed = false;
+    bool m_f4Pressed = false;
+    bool m_tPressed = false;
+    bool m_yPressed = false;
     bool m_gPressed = false;
     bool m_pPressed = false;
     bool m_aPressed = false;
     bool m_leftMousePressed = false;
+    bool m_rightMousePressed = false;
+    bool m_leftClick = false;
+    bool m_rightClick = false;
+
+    bool m_spacePressed = false;
+    int m_spaceTapTicks = 0;
 };
+
+

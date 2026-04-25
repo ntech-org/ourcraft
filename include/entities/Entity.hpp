@@ -41,4 +41,7 @@ public:
     virtual void preparePlayerToSpawn();
     bool handleWaterMovement();
     bool isOffsetPositionInLiquid(double dx, double dy, double dz);
+
+    virtual void fall(float distance);
 };
+

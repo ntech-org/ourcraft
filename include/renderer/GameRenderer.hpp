@@ -48,15 +48,25 @@ private:
     void renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode);
     void renderFirstPersonArm(float partialTicks, const glm::mat4& projection);
     void renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode);
+    void renderHUD();
+    void renderCrosshair();
+    void drawTexturedModalRect(float x, float y, int u, int v, int width, int height);
 
     GLFWwindow* m_window;
+
     World& m_world;
     EntityPlayer& m_player;
 
     int m_width;
     int m_height;
 
+    float m_scaledWidth;
+    float m_scaledHeight;
+    int m_guiScale;
+
+
     std::unique_ptr<RenderEngine> m_renderEngine;
+
     std::unique_ptr<WorldRenderer> m_worldRenderer;
     std::unique_ptr<SkyRenderer> m_skyRenderer;
     std::unique_ptr<Shader> m_basicShader;

@@ -23,7 +23,7 @@ void Minecraft::init() {
     m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
 
     m_player = std::make_unique<EntityPlayer>(*m_world);
-    m_player->setPosition(-283.0, 74.0, 414.0);
+    m_player->setPosition(0.0, 128.0, 0.0);
     m_player->preparePlayerToSpawn();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
@@ -77,6 +77,48 @@ void Minecraft::tick() {
     m_networkHandler->update();
     m_inputHandler->update();
 
+    // Raycast for block picking
+    float reach = 5.0f;
+    glm::vec3 eyePos = glm::vec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
+    float yaw = glm::radians(m_player->rotationYaw);
+    float pitch = glm::radians(m_player->rotationPitch);
+    glm::vec3 lookDir = glm::vec3(
+        -std::sin(yaw) * std::cos(pitch),
+        std::sin(pitch),
+        std::cos(yaw) * std::cos(pitch)
+    );
+
+    glm::vec3 endPos = eyePos + lookDir * reach;
+    HitResult hit = m_world->rayTraceBlocks(eyePos, endPos);
+
+    if (m_inputHandler->isLeftClick()) {
+        m_player->swing();
+        if (hit.type == HitType::BLOCK) {
+            m_world->setBlockWithNotify(hit.x, hit.y, hit.z, 0);
+        }
+    }
+
+
+    if (m_inputHandler->isRightClick()) {
+        if (hit.type == HitType::BLOCK) {
+            int x = hit.x, y = hit.y, z = hit.z;
+            if (hit.sideHit == 0) y--; else if (hit.sideHit == 1) y++;
+            else if (hit.sideHit == 2) z--; else if (hit.sideHit == 3) z++;
+            else if (hit.sideHit == 4) x--; else if (hit.sideHit == 5) x++;
+
+            AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
+            if (!m_player->boundingBox.intersectsWith(blockBB)) {
+                int itemID = m_player->inventory.getCurrentItemID();
+                if (itemID > 0) {
+                    m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
+                    m_player->swing();
+                }
+            }
+        }
+    }
+
+
+
     if (m_inputHandler->shouldReloadChunks()) {
         m_gameRenderer->getWorldRenderer().rebuildSectionList();
     }
@@ -86,6 +128,7 @@ void Minecraft::tick() {
     m_networkHandler->sendPlayerPosition(*m_player);
 }
 
+
 void Minecraft::resize(int width, int height) {
     m_width = width; m_height = height;
     m_gameRenderer->resize(width, height);
@@ -93,4 +136,8 @@ void Minecraft::resize(int width, int height) {
 
 void Minecraft::mouseCallback(double xpos, double ypos) {
     m_inputHandler->handleMouse(xpos, ypos);
+}
+
+void Minecraft::scrollCallback(double xoffset, double yoffset) {
+    m_inputHandler->handleScroll(xoffset, yoffset);
 }

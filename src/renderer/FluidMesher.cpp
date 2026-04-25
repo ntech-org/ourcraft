@@ -61,7 +61,17 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
                 appendVertex(pass, fx, fy + h00, fz, 0, 0, tex, FaceDirection::Up, flow, liq, d1, sl, bl); appendVertex(pass, fx, fy + h01, fz + 1, 0, 1, tex, FaceDirection::Up, flow, liq, d1, sl, bl);
                 appendVertex(pass, fx + 1, fy + h11, fz + 1, 1, 1, tex, FaceDirection::Up, flow, liq, d1, sl, bl); appendVertex(pass, fx + 1, fy + h10, fz, 1, 0, tex, FaceDirection::Up, flow, liq, d1, sl, bl);
                 appendIndices(pass);
+
+                // Render the same surface quad facing DOWN (for underwater view)
+                if (water) {
+                    appendVertex(pass, fx + 1, fy + h10, fz, 1, 0, tex, FaceDirection::Down, flow, liq, d1, sl, bl);
+                    appendVertex(pass, fx + 1, fy + h11, fz + 1, 1, 1, tex, FaceDirection::Down, flow, liq, d1, sl, bl);
+                    appendVertex(pass, fx, fy + h01, fz + 1, 0, 1, tex, FaceDirection::Down, flow, liq, d1, sl, bl);
+                    appendVertex(pass, fx, fy + h00, fz, 0, 0, tex, FaceDirection::Down, flow, liq, d1, sl, bl);
+                    appendIndices(pass);
+                }
             }
+
             if (!shouldCull(bid, n.getBlockID(x, gy - 1, z))) {
                 int tex = b->getTexture(0); auto light = n.getLightPair(bx + x, gy - 1, bz + z); float sl = (float)light.first, bl = (float)light.second;
                 appendVertex(pass, fx, fy, fz + 1, 0, 1, tex, FaceDirection::Down, -1000.0f, liq, d0, sl, bl);
@@ -75,11 +85,18 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
                 else if (f == 2) { dir = FaceDirection::West; nx--; h1s = h01; h2s = h00; v33 = fx; v35 = fx; v34 = fz + 1; v36 = fz; }
                 else { dir = FaceDirection::East; nx++; h1s = h10; h2s = h11; v33 = fx + 1; v35 = fx + 1; v34 = fz; v36 = fz + 1; }
                 if (!shouldCull(bid, n.getBlockID(nx, gy, nz))) {
-                    int tex = b->getTexture(f + 2); auto light = n.getLightPair(bx + nx, gy, bz + nz); float sl = (float)light.first, bl = (float)light.second;
+                    int tex = b->getTexture(f + 2); 
+                    // Use neighbor light, but fallback to current block if neighbor is likely unloaded (0 light)
+                    auto light = n.getLightPair(bx + nx, gy, bz + nz); 
+                    if (light.first == 0 && light.second == 0) {
+                        light = n.getLightPair(bx + x, gy, bz + z);
+                    }
+                    float sl = (float)light.first, bl = (float)light.second;
                     appendVertex(pass, v33, fy + h1s, v34, 0, 1 - h1s, tex, dir, -1000.0f, liq, d1, sl, bl);
                     appendVertex(pass, v35, fy + h2s, v36, 1, 1 - h2s, tex, dir, -1000.0f, liq, d1, sl, bl); appendVertex(pass, v35, fy, v36, 1, 1, tex, dir, -1000.0f, liq, d0, sl, bl);
                     appendVertex(pass, v33, fy, v34, 0, 1, tex, dir, -1000.0f, liq, d0, sl, bl); appendIndices(pass);
                 }
+
             }
         }
     }

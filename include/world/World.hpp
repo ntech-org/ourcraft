@@ -33,6 +33,18 @@ struct NextTickListEntry {
     }
 };
 
+enum class HitType {
+    NONE,
+    BLOCK
+};
+
+struct HitResult {
+    HitType type = HitType::NONE;
+    int x, y, z;
+    int sideHit;
+    glm::vec3 hitVec;
+};
+
 class World : public IBlockAccess {
 public:
     World();
@@ -85,6 +97,8 @@ public:
     bool handleMaterialAcceleration(const AxisAlignedBB& bb, const class Material& mat, Entity* entity);
     bool getIsAnyLiquid(const AxisAlignedBB& bb);
 
+    HitResult rayTraceBlocks(glm::vec3 start, glm::vec3 end);
+
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;
     glm::vec3 getSkyColor(float partialTick = 0.0f) const;
@@ -95,6 +109,7 @@ public:
     glm::vec3 getSunDirection(float partialTick = 0.0f) const;
     float getHorizon() const { return 64.0f; }
     double getWorldTime() const { return m_worldTime; }
+    void setWorldTime(double time) { m_worldTime = time; }
 
     const std::vector<std::shared_ptr<Chunk>>& getChunks() const { return m_chunks; }
     std::vector<std::shared_ptr<Chunk>> popNewChunks();
@@ -132,3 +147,4 @@ private:
 public:
     std::unordered_set<std::uint64_t> m_pendingChunks;
 };
+

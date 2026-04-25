@@ -18,8 +18,13 @@ private:
 
     static void framebuffer_size_callback(GLFWwindow* window, int width, int height);
     static void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+    static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+
+    void mouseCallback(double xpos, double ypos);
+    void scrollCallback(double xoffset, double yoffset);
 
     GLFWwindow* m_window = nullptr;
+
     int m_width = 854;
     int m_height = 480;
 

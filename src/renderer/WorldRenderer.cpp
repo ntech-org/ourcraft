@@ -134,25 +134,27 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
     }
 }
 
-void WorldRenderer::render(const Frustum& frustum, Shader& shader) {
+void WorldRenderer::renderOpaque(const Frustum& frustum, Shader& shader) {
     m_stats.visibleSections = 0;
     m_stats.drawCalls = 0;
     m_stats.triangles = 0;
 
     shader.use();
-
-    // Pass 1: Opaque
     glDisable(GL_BLEND);
     for (const auto& [key, entry] : m_sections) {
         if (!entry.mesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
         entry.mesh.draw();
         m_stats.visibleSections++; m_stats.drawCalls++; m_stats.triangles += entry.mesh.getTriangleCount();
     }
+}
 
-    // Pass 2: Translucent
+void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader) {
+    shader.use();
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE); // Disable depth write to allow alpha stacking
+    glDepthMask(GL_FALSE);
+    // Culling re-enabled to prevent "fences" (seeing backfaces of the water mass from inside)
+    glEnable(GL_CULL_FACE); 
     for (const auto& [key, entry] : m_sections) {
         if (!entry.translucentMesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
         entry.translucentMesh.draw();
@@ -160,6 +162,9 @@ void WorldRenderer::render(const Frustum& frustum, Shader& shader) {
     }
     glDepthMask(GL_TRUE);
 }
+
+
+
 
 void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries) {
     if (!showChunkBoundaries) return;

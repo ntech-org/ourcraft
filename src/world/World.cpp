@@ -123,7 +123,65 @@ void World::update(float dt) {
     for (auto& e : m_entities) e->onUpdate();
 }
 
+HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end) {
+    if (std::isnan(start.x) || std::isnan(start.y) || std::isnan(start.z)) return {HitType::NONE};
+    if (std::isnan(end.x) || std::isnan(end.y) || std::isnan(end.z)) return {HitType::NONE};
+
+    int x1 = (int)std::floor(start.x);
+    int y1 = (int)std::floor(start.y);
+    int z1 = (int)std::floor(start.z);
+    int x2 = (int)std::floor(end.x);
+    int y2 = (int)std::floor(end.y);
+    int z2 = (int)std::floor(end.z);
+
+    uint8_t id = getBlockID(x1, y1, z1);
+    if (id > 0) return {HitType::BLOCK, x1, y1, z1, -1, start};
+
+    int count = 200;
+    while (count-- >= 0) {
+        bool changedX = true, changedY = true, changedZ = true;
+        double nextX = 999.0, nextY = 999.0, nextZ = 999.0;
+
+        if (x2 > x1) nextX = (double)x1 + 1.0; else if (x2 < x1) nextX = (double)x1 + 0.0; else changedX = false;
+        if (y2 > y1) nextY = (double)y1 + 1.0; else if (y2 < y1) nextY = (double)y1 + 0.0; else changedY = false;
+        if (z2 > z1) nextZ = (double)z1 + 1.0; else if (z2 < z1) nextZ = (double)z1 + 0.0; else changedZ = false;
+
+        double dx = 999.0, dy = 999.0, dz = 999.0;
+        double vx = end.x - start.x, vy = end.y - start.y, vz = end.z - start.z;
+
+        if (changedX) dx = (nextX - start.x) / vx;
+        if (changedY) dy = (nextY - start.y) / vy;
+        if (changedZ) dz = (nextZ - start.z) / vz;
+
+        int side = -1;
+        if (dx < dy && dx < dz) {
+            side = (x2 > x1) ? 4 : 5;
+            start.x = (float)nextX; start.y += (float)(vy * dx); start.z += (float)(vz * dx);
+        } else if (dy < dz) {
+            side = (y2 > y1) ? 0 : 1;
+            start.x += (float)(vx * dy); start.y = (float)nextY; start.z += (float)(vz * dy);
+        } else {
+            side = (z2 > z1) ? 2 : 3;
+            start.x += (float)(vx * dz); start.y += (float)(vy * dz); start.z = (float)nextZ;
+        }
+        
+        x1 = (int)std::floor(start.x) - (side == 5 ? 1 : 0);
+        y1 = (int)std::floor(start.y) - (side == 1 ? 1 : 0);
+        z1 = (int)std::floor(start.z) - (side == 3 ? 1 : 0);
+        
+        uint8_t hitID = getBlockID(x1, y1, z1);
+        if (hitID > 0) {
+            return {HitType::BLOCK, x1, y1, z1, side, start};
+        }
+
+        if (x1 == x2 && y1 == y2 && z1 == z2) break;
+    }
+    return {HitType::NONE};
+}
+
+
 void World::spawnEntity(std::unique_ptr<Entity> e) { if (e->entityID == -1) e->entityID = m_nextEntityID++; m_entities.push_back(std::move(e)); }
+
 void World::removeEntity(int32_t id) { m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) { return e->entityID == id; }), m_entities.end()); }
 
 int World::floorDiv(int v, int d) { int q = v / d, r = v % d; if (r != 0 && ((r < 0) != (d < 0))) --q; return q; }
@@ -263,23 +321,64 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
 }
 
 void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int newOpacity, int oldBlockLight, int newBlockLight, int oldSkyLight) {
+    auto queueNeighbors = [&](int x, int y, int z, std::vector<LightNode>& queue) {
+        queue.push_back({x - 1, y, z}); queue.push_back({x + 1, y, z});
+        queue.push_back({x, y - 1, z}); queue.push_back({x, y + 1, z});
+        queue.push_back({x, y, z - 1}); queue.push_back({x, y, z + 1});
+    };
+
     {
         std::vector<LightNode> addQueue; std::vector<LightRemovalNode> removeQueue;
-        int current = getSavedLightValue(LightType::Block, x, y, z);
         if (newBlockLight > 0) { setLightValue(LightType::Block, x, y, z, newBlockLight); addQueue.push_back({x, y, z}); }
-        else { setLightValue(LightType::Block, x, y, z, 0); if (oldBlockLight > 0) removeQueue.push_back({x, y, z, oldBlockLight}); else if (current > 0) removeQueue.push_back({x, y, z, current}); }
+        else { 
+            setLightValue(LightType::Block, x, y, z, 0); 
+            if (oldBlockLight > 0) removeQueue.push_back({x, y, z, oldBlockLight});
+            else {
+                int current = getSavedLightValue(LightType::Block, x, y, z);
+                if (current > 0) removeQueue.push_back({x, y, z, current});
+                else queueNeighbors(x, y, z, addQueue);
+            }
+        }
         if (!removeQueue.empty()) unpropagateLight(LightType::Block, removeQueue, addQueue);
         if (!addQueue.empty()) propagateLight(LightType::Block, addQueue);
     }
     {
         std::vector<LightNode> addQueue; std::vector<LightRemovalNode> removeQueue;
-        if (newOpacity > oldOpacity) { removeQueue.push_back({x, y, z, oldSkyLight}); setLightValue(LightType::Sky, x, y, z, 0); if (oldSkyLight == 15) { for (int ty = y - 1; ty >= 0; --ty) { int sl = getSavedLightValue(LightType::Sky, x, ty, z); if (sl == 0) break; removeQueue.push_back({x, ty, z, sl}); setLightValue(LightType::Sky, x, ty, z, 0); } } }
-        else if (newOpacity < oldOpacity) { addQueue.push_back({x, y, z}); bool canSeeSky = true; for (int ty = Chunk::HEIGHT - 1; ty > y; --ty) { if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) { canSeeSky = false; break; } } if (canSeeSky) { setLightValue(LightType::Sky, x, y, z, 15); for (int ty = y - 1; ty >= 0; --ty) { if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) break; setLightValue(LightType::Sky, x, ty, z, 15); addQueue.push_back({x, ty, z}); } } }
+        if (newOpacity > oldOpacity) { 
+            removeQueue.push_back({x, y, z, oldSkyLight}); 
+            setLightValue(LightType::Sky, x, y, z, 0); 
+            if (oldSkyLight == 15) { 
+                for (int ty = y - 1; ty >= 0; --ty) { 
+                    int sl = getSavedLightValue(LightType::Sky, x, ty, z); 
+                    if (sl <= 0) break; 
+                    removeQueue.push_back({x, ty, z, sl}); 
+                    setLightValue(LightType::Sky, x, ty, z, 0); 
+                } 
+            } 
+        }
+        else if (newOpacity < oldOpacity) { 
+            bool canSeeSky = true; 
+            for (int ty = Chunk::HEIGHT - 1; ty > y; --ty) { 
+                if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) { canSeeSky = false; break; } 
+            } 
+            if (canSeeSky) { 
+                setLightValue(LightType::Sky, x, y, z, 15); 
+                addQueue.push_back({x, y, z});
+                for (int ty = y - 1; ty >= 0; --ty) { 
+                    if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) break; 
+                    setLightValue(LightType::Sky, x, ty, z, 15); 
+                    addQueue.push_back({x, ty, z}); 
+                } 
+            } else {
+                queueNeighbors(x, y, z, addQueue);
+            }
+        }
         else { addQueue.push_back({x, y, z}); }
         if (!removeQueue.empty()) unpropagateLight(LightType::Sky, removeQueue, addQueue);
         if (!addQueue.empty()) propagateLight(LightType::Sky, addQueue);
     }
 }
+
 
 void World::calculateInitialSkylight(Chunk& chunk) {
     chunk.generateHeightMap();
