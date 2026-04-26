@@ -4,6 +4,7 @@
 #include "world/BlockFluid.hpp"
 #include <cmath>
 #include <algorithm>
+#include <glm/ext/scalar_constants.hpp>
 
 EntityLiving::EntityLiving(World& world) : Entity(world) {
     limbSwing = 0.0f;
@@ -15,6 +16,25 @@ EntityLiving::EntityLiving(World& world) : Entity(world) {
     isSwinging = false;
     swingProgressInt = 0;
 }
+
+
+void EntityLiving::moveRelative(float strafe, float forward, float friction) {
+    float dist = strafe * strafe + forward * forward;
+    if (dist < 1.0E-4F) return;
+
+    dist = std::sqrt(dist);
+    if (dist < 1.0f) dist = 1.0f;
+    dist = friction / dist;
+    strafe *= dist;
+    forward *= dist;
+
+    float sinYaw = std::sin(rotationYaw * glm::pi<float>() / 180.0f);
+    float cosYaw = std::cos(rotationYaw * glm::pi<float>() / 180.0f);
+
+    motionX += (double)(strafe * cosYaw - forward * sinYaw);
+    motionZ += (double)(forward * cosYaw + strafe * sinYaw);
+}
+
 
 void EntityLiving::onUpdate() {
     double dx = posX - prevPosX;
@@ -106,7 +126,9 @@ void EntityLiving::onUpdate() {
 
                 if (jumping) {
                     motionY += buoyancy;
-                }            moveEntity(motionX, motionY, motionZ);
+                }
+
+                moveEntity(motionX, motionY, motionZ);
 
                 motionX *= lavaDrag;
                 motionY *= lavaDrag;
@@ -160,7 +182,17 @@ void EntityLiving::swing() {
 }
 
 void EntityLiving::updateEntityActionState() {
-    // Default AI or behavior
+    // regular walking/jumping logic for non-player entities. Player overrides this with flying/sneaking/sprinting logic.
+    isFlying = false;
+
+    if (jumping && onGround && !inWater) {
+        motionY = 0.42;
+    }
+
+    float speed = onGround ? 0.1f : 0.02f;
+    if (inWater || inLava) speed = 0.02f;
+
+    moveRelative(moveStrafe, moveForward, speed);
 }
 
 void EntityLiving::attackEntityFrom(Entity* source, int amount) {

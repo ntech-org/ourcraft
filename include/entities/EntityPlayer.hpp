@@ -15,10 +15,6 @@ public:
 
     void onUpdate() override;
     void updateEntityActionState() override;
-    void moveRelative(float strafe, float forward, float friction);
-
-    float moveForward = 0.0f;
-    float moveStrafe = 0.0f;
 
     float cameraYaw = 0.0f;
     float prevCameraYaw = 0.0f;
@@ -32,15 +28,7 @@ public:
     bool sneaking = false;
     bool sprinting = false;
 
-    int air = 300;
-    int maxAir = 300;
 
     void attackEntityFrom(Entity* source, int amount) override;
 
 };
-
-
-
-
-
-
