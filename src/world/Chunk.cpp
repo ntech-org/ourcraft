@@ -47,7 +47,7 @@ int Chunk::getLight(LightType type, int x, int y, int z) const {
 void Chunk::setLight(LightType type, int x, int y, int z, int val) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || z < 0 || z >= DEPTH) return;
     std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
-    
+
     {
         std::lock_guard<std::mutex> lock(m_lightMutex);
         setLightValue(data, getIndex(x, y, z), val);

@@ -36,7 +36,7 @@ void World::removeChunk(int chunkX, int chunkZ) {
 
 void World::requestChunk(int chunkX, int chunkZ) {
     std::uint64_t key = chunkKey(chunkX, chunkZ);
-    
+
     {
         std::lock_guard<std::mutex> lock(m_pendingMutex);
         if (isChunkLoaded(chunkX, chunkZ) || m_pendingChunks.count(key) > 0 || m_pendingRequests.count(key) > 0) return;
@@ -90,13 +90,14 @@ bool World::pollGeneratedChunks() {
             }
             addChunk(chunk);
             worldChanged = true;
-            
-            // Wake up fluids and neighbors
+
+            // Wake up fluids and neighbors - only flowing fluids need ticking
+            // Stationary fluids (9=water, 11=lava) only update via neighbor changes
             for (int x = 0; x < 16; ++x) {
                 for (int z = 0; z < 16; ++z) {
                     for (int y = 0; y < Chunk::HEIGHT; ++y) {
                         uint8_t id = chunk->getBlockID(x, y, z);
-                        if (id >= 8 && id <= 11) { // Any fluid
+                        if (id == 8 || id == 10) { // Only flowing water (8) and flowing lava (10)
                             scheduleBlockUpdate(cx * 16 + x, y, cz * 16 + z, id, Block::blocksList[id]->tickRate());
                         }
                     }
@@ -112,6 +113,11 @@ bool World::pollGeneratedChunks() {
                 if (auto n = getChunk(cx, cz + 1)) n->touchSection(i);
                 chunk->touchSection(i);
             }
+
+            // IMPORTANT: Don't clear dirty flags here! They need to trigger rebuilds
+            // for water connectivity. The version check in WorldRenderer prevents
+            // continuous remeshing from repeated touches.
+
             {
                 std::lock_guard<std::mutex> lock(m_completeChunksMutex);
                 m_completeChunks.push_back(chunk);
@@ -133,17 +139,17 @@ void World::checkChunkProgression(int cx, int cz) {
         for (int dz = -1; dz <= 0; ++dz) {
             auto c00 = getChunk(cx + dx, cz + dz), c10 = getChunk(cx + dx + 1, cz + dz);
             auto c01 = getChunk(cx + dx, cz + dz + 1), c11 = getChunk(cx + dx + 1, cz + dz + 1);
-            if (c00 && c10 && c01 && c11 && 
-                c00->getState() == ChunkState::Lighted && 
-                c10->getState() >= ChunkState::Lighted && 
-                c01->getState() >= ChunkState::Lighted && 
+            if (c00 && c10 && c01 && c11 &&
+                c00->getState() == ChunkState::Lighted &&
+                c10->getState() >= ChunkState::Lighted &&
+                c01->getState() >= ChunkState::Lighted &&
                 c11->getState() >= ChunkState::Lighted) {
                 c00->setState(ChunkState::Decorating);
                 m_loader->requestDecoration(c00, c10, c01, c11);
             }
         }
     }
-    
+
     // Check for final lighting (2x2 area)
     for (int dx = 0; dx <= 1; ++dx) {
         for (int dz = 0; dz <= 1; ++dz) {

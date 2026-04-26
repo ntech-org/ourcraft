@@ -32,21 +32,21 @@ bool World::setBlockID(int x, int y, int z, uint8_t id) {
     auto chunk = getChunk(x >> 4, z >> 4);
     if (!chunk) return false;
     int lx = x & 15, lz = z & 15;
-    
+
     uint8_t oldID = chunk->getBlockID(lx, y, lz);
     if (oldID == id) return false;
-    
+
     int oldOpacity = Block::lightOpacity[oldID];
     int oldBlockLight = Block::lightValue[oldID];
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
 
     int si = Chunk::getSectionIndex(y);
     chunk->setBlockID(lx, y, lz, id);
-    
+
     if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
         onBlockChanged(x, y, z, id, chunk->getBlockMetadata(lx, y, lz));
     }
-    
+
     if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
     else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
     if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
@@ -68,7 +68,7 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     auto chunk = getChunk(x >> 4, z >> 4);
     if (!chunk) return;
     int lx = x & 15, lz = z & 15;
-    
+
     uint8_t oldID = chunk->getBlockID(lx, y, lz);
     uint8_t oldMeta = chunk->getBlockMetadata(lx, y, lz);
     if (oldID == id && oldMeta == meta) return;
@@ -78,7 +78,7 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
 
     int si = Chunk::getSectionIndex(y);
-    chunk->setBlockID(lx, y, lz, id); 
+    chunk->setBlockID(lx, y, lz, id);
     chunk->setBlockMetadata(lx, y, lz, meta);
 
     if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
@@ -89,7 +89,7 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
     if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
     else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
-    
+
     updateLightForBlockChange(x, y, z, oldOpacity, Block::lightOpacity[id], oldBlockLight, Block::lightValue[id], oldSkyLight);
 
     if (id > 0 && Block::blocksList[id]) {
@@ -119,7 +119,7 @@ bool World::setBlockIDAndMetadata(int x, int y, int z, uint8_t id, uint8_t meta)
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
 
     int si = Chunk::getSectionIndex(y);
-    chunk->setBlockID(lx, y, lz, id); 
+    chunk->setBlockID(lx, y, lz, id);
     chunk->setBlockMetadata(lx, y, lz, meta);
 
     if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
@@ -155,6 +155,11 @@ void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
     if (y < 0 || y >= Chunk::HEIGHT) return;
     auto chunk = getChunk(x >> 4, z >> 4);
     if (!chunk) return;
+
+    // Check if metadata actually changes to avoid unnecessary notifications
+    uint8_t oldMeta = chunk->getBlockMetadata(x & 15, y, z & 15);
+    if (oldMeta == meta) return;
+
     chunk->setBlockMetadata(x & 15, y, z & 15, meta);
     uint8_t id = getBlockID(x, y, z);
     if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
@@ -169,6 +174,13 @@ const Material& World::getBlockMaterial(int x, int y, int z) const {
 }
 
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int delay) {
+    // Check if there's already a scheduled update for this block position
+    // Use a time of 0 for the search to find any entry at this position
+    for (const auto& existing : m_scheduledTickSet) {
+        if (existing.x == x && existing.y == y && existing.z == z && existing.blockID == id) {
+            return; // Already scheduled, don't add duplicate
+        }
+    }
     NextTickListEntry e; e.x = x; e.y = y; e.z = z; e.blockID = id; e.scheduledTime = m_tickCount + delay;
     m_scheduledTickSet.insert(e);
 }
@@ -190,7 +202,7 @@ void World::notifyBlockChange(int x, int y, int z, int id) {
     while (!m_notificationQueue.empty()) {
         BlockUpdate u = m_notificationQueue.front();
         m_notificationQueue.pop_front();
-        
+
         notifyBlockOfNeighborChange(u.x - 1, u.y, u.z, u.id);
         notifyBlockOfNeighborChange(u.x + 1, u.y, u.z, u.id);
         notifyBlockOfNeighborChange(u.x, u.y - 1, u.z, u.id);
@@ -276,11 +288,11 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiqui
             side = (z2 > z1) ? 2 : 3;
             start.x += (float)(vx * dz); start.y += (float)(vy * dz); start.z = (float)nextZ;
         }
-        
+
         x1 = (int)std::floor(start.x) - (side == 5 ? 1 : 0);
         y1 = (int)std::floor(start.y) - (side == 1 ? 1 : 0);
         z1 = (int)std::floor(start.z) - (side == 3 ? 1 : 0);
-        
+
         uint8_t hitID = getBlockID(x1, y1, z1);
         if (hitID > 0) {
             if (!ignoreLiquids || Block::blocksList[hitID]->blockMaterial.isSolid()) {
@@ -296,8 +308,8 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiqui
 
 void World::spawnEntity(std::unique_ptr<Entity> e) { if (e->entityID == -1) e->entityID = m_nextEntityID++; m_entities.push_back(std::move(e)); }
 
-void World::removeEntity(int32_t id) { 
-    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) { return e->entityID == id; }), m_entities.end()); 
+void World::removeEntity(int32_t id) {
+    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) { return e->entityID == id; }), m_entities.end());
     std::lock_guard<std::mutex> lock(m_removedEntitiesMutex);
     m_removedEntities.push_back(id);
 }
@@ -357,7 +369,7 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
             int nidx = (nlx << 11) | (nlz << 7) | ny;
             int oldLight = nChunk->getLightInternal(type, nidx);
             int opacity = Block::lightOpacity[nChunk->getBlockID(nlx, ny, nlz)];
-            
+
             int newLight;
             if (type == LightType::Sky && ny == n.y - 1 && currentLight == 15 && opacity == 0) newLight = 15;
             else newLight = currentLight - (opacity < 1 ? 1 : opacity);
@@ -400,7 +412,7 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
 
     while (head < removeQueue.size()) {
         LightRemovalNode n = removeQueue[head++];
-        
+
         auto check = [&](int nx, int ny, int nz) {
             if (ny < 0 || ny >= Chunk::HEIGHT) return;
             Chunk* nChunk = getRawChunk(nx, nz);
@@ -444,8 +456,8 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
     {
         std::vector<LightNode> addQueue; std::vector<LightRemovalNode> removeQueue;
         if (newBlockLight > 0) { setLightValue(LightType::Block, x, y, z, newBlockLight); addQueue.push_back({x, y, z}); }
-        else { 
-            setLightValue(LightType::Block, x, y, z, 0); 
+        else {
+            setLightValue(LightType::Block, x, y, z, 0);
             if (oldBlockLight > 0) removeQueue.push_back({x, y, z, oldBlockLight});
             else {
                 int current = getSavedLightValue(LightType::Block, x, y, z);
@@ -458,31 +470,31 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
     }
     {
         std::vector<LightNode> addQueue; std::vector<LightRemovalNode> removeQueue;
-        if (newOpacity > oldOpacity) { 
-            removeQueue.push_back({x, y, z, oldSkyLight}); 
-            setLightValue(LightType::Sky, x, y, z, 0); 
-            if (oldSkyLight == 15) { 
-                for (int ty = y - 1; ty >= 0; --ty) { 
-                    int sl = getSavedLightValue(LightType::Sky, x, ty, z); 
-                    if (sl <= 0) break; 
-                    removeQueue.push_back({x, ty, z, sl}); 
-                    setLightValue(LightType::Sky, x, ty, z, 0); 
-                } 
-            } 
+        if (newOpacity > oldOpacity) {
+            removeQueue.push_back({x, y, z, oldSkyLight});
+            setLightValue(LightType::Sky, x, y, z, 0);
+            if (oldSkyLight == 15) {
+                for (int ty = y - 1; ty >= 0; --ty) {
+                    int sl = getSavedLightValue(LightType::Sky, x, ty, z);
+                    if (sl <= 0) break;
+                    removeQueue.push_back({x, ty, z, sl});
+                    setLightValue(LightType::Sky, x, ty, z, 0);
+                }
+            }
         }
-        else if (newOpacity < oldOpacity) { 
-            bool canSeeSky = true; 
-            for (int ty = Chunk::HEIGHT - 1; ty > y; --ty) { 
-                if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) { canSeeSky = false; break; } 
-            } 
-            if (canSeeSky) { 
-                setLightValue(LightType::Sky, x, y, z, 15); 
+        else if (newOpacity < oldOpacity) {
+            bool canSeeSky = true;
+            for (int ty = Chunk::HEIGHT - 1; ty > y; --ty) {
+                if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) { canSeeSky = false; break; }
+            }
+            if (canSeeSky) {
+                setLightValue(LightType::Sky, x, y, z, 15);
                 addQueue.push_back({x, y, z});
-                for (int ty = y - 1; ty >= 0; --ty) { 
-                    if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) break; 
-                    setLightValue(LightType::Sky, x, ty, z, 15); 
-                    addQueue.push_back({x, ty, z}); 
-                } 
+                for (int ty = y - 1; ty >= 0; --ty) {
+                    if (Block::lightOpacity[getBlockID(x, ty, z)] > 0) break;
+                    setLightValue(LightType::Sky, x, ty, z, 15);
+                    addQueue.push_back({x, ty, z});
+                }
             } else {
                 queueNeighbors(x, y, z, addQueue);
             }
@@ -498,19 +510,19 @@ void World::calculateInitialSkylight(Chunk& chunk) {
     chunk.generateHeightMap();
     int cx = chunk.getX() << 4, cz = chunk.getZ() << 4;
     std::vector<LightNode> skyQueue, blockQueue;
-    
+
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             int h = chunk.getHeight(x, z);
             for (int y = Chunk::HEIGHT - 1; y >= h; --y) chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 15);
             for (int y = h - 1; y >= 0; --y) chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 0);
-            
+
             // Seed vertical column for 15-to-14 horizontal spread
             skyQueue.push_back({cx + x, h, cz + z});
             if (h > 0) skyQueue.push_back({cx + x, h - 1, cz + z});
-            
+
             for (int y = 0; y < Chunk::HEIGHT; ++y) if (Block::lightValue[chunk.getBlockID(x, y, z)] > 0) blockQueue.push_back({cx + x, y, cz + z});
-            
+
             // Seed internal horizontal spread for sunlight shafts (1-block holes)
             for (int dx = -1; dx <= 1; ++dx) {
                 for (int dz = -1; dz <= 1; ++dz) {
@@ -526,7 +538,7 @@ void World::calculateInitialSkylight(Chunk& chunk) {
             }
         }
     }
-    
+
     // Modern industry standard boundary seeding (Lock-free fast path)
     std::shared_ptr<Chunk> spW = getChunk((cx - 1) >> 4, cz >> 4);
     std::shared_ptr<Chunk> spE = getChunk((cx + 16) >> 4, cz >> 4);
@@ -544,7 +556,7 @@ void World::calculateInitialSkylight(Chunk& chunk) {
             if (nChunk->getLightInternal(LightType::Block, idx) > 0) blockQueue.push_back({nx, y, nz});
         }
     };
-    
+
     auto seedOurBoundary = [&](int nx, int nz) {
         for (int y = 0; y < Chunk::HEIGHT; ++y) {
             int nlx = nx & 15, nlz = nz & 15;
@@ -576,7 +588,7 @@ void World::calculateInitialSkylight(Chunk& chunk) {
         seedBoth(neighborN, cx + i, cz, cx + i, cz - 1);
         seedBoth(neighborS, cx + i, cz + 15, cx + i, cz + 16);
     }
-    
+
     propagateLight(LightType::Sky, skyQueue); propagateLight(LightType::Block, blockQueue);
 }
 

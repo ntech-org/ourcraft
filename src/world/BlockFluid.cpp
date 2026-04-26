@@ -229,12 +229,13 @@ void BlockFlowing::updateTick(World& world, int x, int y, int z, JavaRandom& ran
                 world.notifyBlockChange(x, y, z, blockID);
             }
         } else if (flag) {
-            // SILENT conversion to stationary
-            world.setBlockIDAndMetadata(x, y, z, blockID + 1, decay);
+            // Only convert to stationary if it's flowing and metadata actually changed
+            if (world.getBlockID(x, y, z) == blockID && world.getBlockMetadata(x, y, z) != decay) {
+                world.setBlockIDAndMetadata(x, y, z, blockID + 1, decay);
+            }
         }
     } else {
-        // SILENT conversion to stationary
-        world.setBlockIDAndMetadata(x, y, z, blockID + 1, decay);
+        // decay = 0 means this IS a source block (max level) - DON'T convert to stationary
     }
     
     if (liquidCanDisplaceBlock(world, x, y - 1, z)) {
@@ -243,10 +244,16 @@ void BlockFlowing::updateTick(World& world, int x, int y, int z, JavaRandom& ran
             triggerLavaMixEffects(world, x, y - 1, z);
             return;
         }
+        int belowId = world.getBlockID(x, y - 1, z);
+        int belowMeta = world.getBlockMetadata(x, y - 1, z);
         if (decay >= 8) {
-            world.setBlockAndMetadataWithNotify(x, y - 1, z, blockID, decay);
+            if (belowId != blockID || belowMeta != decay) {
+                world.setBlockAndMetadataWithNotify(x, y - 1, z, blockID, decay);
+            }
         } else {
-            world.setBlockAndMetadataWithNotify(x, y - 1, z, blockID, decay + 8);
+            if (belowId != blockID || belowMeta != decay + 8) {
+                world.setBlockAndMetadataWithNotify(x, y - 1, z, blockID, decay + 8);
+            }
         }
     } else if (decay >= 0 && (decay == 0 || blockBlocksFlow(world, x, y - 1, z))) {
         std::vector<bool> directions = getOptimalFlowDirections(world, x, y, z);
@@ -276,7 +283,10 @@ void BlockFlowing::flowIntoBlock(World& world, int x, int y, int z, int meta) co
                 // Drop as item if needed
             }
         }
-        world.setBlockAndMetadataWithNotify(x, y, z, blockID, meta);
+        // Only set if different to avoid unnecessary dirty marks
+        if (id != blockID || world.getBlockMetadata(x, y, z) != meta) {
+            world.setBlockAndMetadataWithNotify(x, y, z, blockID, meta);
+        }
     }
 }
 
@@ -384,16 +394,20 @@ void BlockStationary::onBlockAdded(World& world, int x, int y, int z) const {
 void BlockStationary::onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {
     BlockFluid::onNeighborBlockChange(world, x, y, z, neighborID);
     if (world.getBlockID(x, y, z) == blockID) {
-        int meta = world.getBlockMetadata(x, y, z);
-        // SILENT conversion to flowing
-        world.setBlockIDAndMetadata(x, y, z, blockID - 1, meta);
-        world.scheduleBlockUpdate(x, y, z, blockID - 1, tickRate());
+        // Only convert back to flowing if neighbor is NOT the same liquid type
+        // This prevents self-triggering loops where stationary water detects
+        // neighboring flowing/stationary water and converts back
+        bool neighborIsSameLiquid = (neighborID == blockID || neighborID == blockID - 1);
+        if (!neighborIsSameLiquid) {
+            int meta = world.getBlockMetadata(x, y, z);
+            world.setBlockIDAndMetadata(x, y, z, blockID - 1, meta);
+            world.scheduleBlockUpdate(x, y, z, blockID - 1, tickRate());
+        }
     }
 }
 
 void BlockStationary::updateTick(World& world, int x, int y, int z, JavaRandom& random) const {
-    if (blockMaterial == Material::water)
-        ((BlockFlowing*)Block::waterMoving)->updateTick(world, x, y, z, random);
-    else
-        ((BlockFlowing*)Block::lavaMoving)->updateTick(world, x, y, z, random);
+    // Stationary fluids should NOT tick - they only convert to flowing when
+    // a neighbor changes. Ticking here would cause continuous remeshing because
+    // the flowing update converts back to stationary every tick.
 }

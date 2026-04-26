@@ -40,7 +40,7 @@ void WorldRenderer::meshWorkerLoop() {
         const auto buildStart = clock::now();
         ChunkMeshData meshData = ChunkMesher::buildSectionMesh(m_world, *task.chunk, task.sectionIndex);
         const auto buildEnd = clock::now();
-        
+
         MeshResult result;
         result.key = task.key;
         result.meshData = std::move(meshData);
@@ -63,7 +63,7 @@ void WorldRenderer::rebuildSectionList() {
 
 void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
     if (!chunk || chunk->getState() == ChunkState::Empty) return;
-    
+
     for (int sectionIndex = 0; sectionIndex < Chunk::SECTION_COUNT; ++sectionIndex) {
         std::uint64_t key = sectionKey(chunk->getX(), chunk->getZ(), sectionIndex);
         auto it = m_sections.find(key);
@@ -71,6 +71,7 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
             SectionRenderEntry entry;
             entry.chunk = chunk;
             entry.sectionIndex = sectionIndex;
+            entry.uploadedVersion = chunk->getSectionVersion(sectionIndex);
             const float baseX = static_cast<float>(chunk->getX() * Chunk::WIDTH);
             const float baseY = static_cast<float>(Chunk::getSectionMinY(sectionIndex));
             const float baseZ = static_cast<float>(chunk->getZ() * Chunk::DEPTH);
@@ -82,7 +83,7 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
             };
             m_sections[key] = std::move(entry);
         } else {
-            // Update chunk pointer in case it was replaced (e.g. Generated -> Complete)
+            // Update chunk pointer in case it was replaced
             it->second.chunk = chunk;
         }
     }
@@ -121,7 +122,7 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
     int buildsStarted = 0;
     for (auto it = m_sections.begin(); it != m_sections.end();) {
         auto& entry = it->second;
-        
+
         // Remove sections whose chunks are no longer in the world
         if (!m_world.isChunkLoaded(entry.chunk->getX(), entry.chunk->getZ())) {
             it = m_sections.erase(it);
@@ -129,8 +130,11 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
         }
 
         if (entry.chunk->isSectionDirty(entry.sectionIndex) && !entry.isBuilding) {
+            uint32_t currentVersion = entry.chunk->getSectionVersion(entry.sectionIndex);
+
             ChunkState state = entry.chunk->getState();
-            if (state != ChunkState::Empty && state != ChunkState::Generating) {
+            // Only rebuild if chunk is fully processed
+            if (state == ChunkState::Complete || state == ChunkState::Decorated || state == ChunkState::Lighted) {
                 entry.isBuilding = true;
                 entry.chunk->clearSectionDirty(entry.sectionIndex);
 
@@ -143,6 +147,9 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
                 if (++buildsStarted >= limit) {
                     break;
                 }
+            } else {
+                // Clear dirty flag but don't rebuild yet - chunk not ready
+                entry.chunk->clearSectionDirty(entry.sectionIndex);
             }
         }
         ++it;
@@ -169,7 +176,7 @@ void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);
     // Culling re-enabled to prevent "fences" (seeing backfaces of the water mass from inside)
-    glEnable(GL_CULL_FACE); 
+    glEnable(GL_CULL_FACE);
     for (const auto& [key, entry] : m_sections) {
         if (!entry.translucentMesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
         entry.translucentMesh.draw();
@@ -183,24 +190,24 @@ void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader) {
 
 void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries) {
     if (!showChunkBoundaries) return;
-    
+
     Tessellator* t = Tessellator::instance;
     shader.use();
-    
+
     glEnable(GL_DEPTH_TEST);
     t->startDrawing(GL_LINES);
     t->setColorOpaque(255, 255, 0); // Yellow boundaries
-    
+
     for (const auto& [key, entry] : m_sections) {
         if (entry.sectionIndex != 0) continue; // Use base section to find chunk pos
-        
+
         float x = (float)(entry.chunk->getX() * 16);
         float z = (float)(entry.chunk->getZ() * 16);
-        
+
         // Define AABB for the entire chunk column (0-128)
         AABB columnBounds = { {x, 0, z}, {x + 16, 128, z + 16} };
         if (!frustum.intersects(columnBounds)) continue;
-        
+
         // Vertical lines
         for (int i = 0; i <= 16; i += 16) {
             for (int j = 0; j <= 16; j += 16) {
