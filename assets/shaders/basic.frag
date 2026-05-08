@@ -105,11 +105,12 @@ void main() {
         }
     }
 
+    float dist = length(WorldPos);
     float fogFactor = 1.0;
     if (fogMode == 1) {
-        fogFactor = exp(-fogDensity * distance(WorldPos, cameraPos));
+        fogFactor = exp(-fogDensity * dist);
     } else {
-        fogFactor = (fogFar - distance(WorldPos, cameraPos)) / max(fogFar - fogNear, 0.001);
+        fogFactor = (fogFar - dist) / max(fogFar - fogNear, 0.001);
     }
     fogFactor = clamp(fogFactor, 0.0, 1.0);
     

@@ -4,6 +4,7 @@
 #include "renderer/Shader.hpp"
 #include "world/Chunk.hpp"
 #include "world/World.hpp"
+#include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
 WorldRenderer::WorldRenderer(World& world) : m_world(world), m_running(true) {
@@ -74,15 +75,8 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
             entry.chunk = chunk;
             entry.sectionIndex = sectionIndex;
             entry.uploadedVersion = chunk->getSectionVersion(sectionIndex);
-            const float baseX = static_cast<float>(chunk->getX() * Chunk::WIDTH);
-            const float baseY = static_cast<float>(Chunk::getSectionMinY(sectionIndex));
-            const float baseZ = static_cast<float>(chunk->getZ() * Chunk::DEPTH);
-            entry.bounds.min = {baseX, baseY, baseZ};
-            entry.bounds.max = {
-                baseX + static_cast<float>(Chunk::WIDTH),
-                baseY + static_cast<float>(Chunk::SECTION_HEIGHT),
-                baseZ + static_cast<float>(Chunk::DEPTH)
-            };
+            entry.bounds.min = {0.0f, 0.0f, 0.0f};
+            entry.bounds.max = {16.0f, 16.0f, 16.0f};
             m_sections[key] = std::move(entry);
         } else {
             // Update chunk pointer in case it was replaced
@@ -181,7 +175,7 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
     }
 }
 
-void WorldRenderer::renderOpaque(const Frustum& frustum, Shader& shader) {
+void WorldRenderer::renderOpaque(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos) {
     m_stats.visibleSections = 0;
     m_stats.drawCalls = 0;
     m_stats.triangles = 0;
@@ -189,13 +183,18 @@ void WorldRenderer::renderOpaque(const Frustum& frustum, Shader& shader) {
     shader.use();
     glDisable(GL_BLEND);
     for (const auto& [key, entry] : m_sections) {
-        if (!entry.mesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
+        glm::vec3 relativePos = glm::vec3(
+            glm::dvec3(entry.chunk->getX() * 16, entry.sectionIndex * 16, entry.chunk->getZ() * 16) - cameraPos
+        );
+        if (!entry.mesh.hasGeometry() || !frustum.intersects(entry.bounds, relativePos)) continue;
+        
+        shader.setMat4("model", glm::translate(glm::mat4(1.0f), relativePos));
         entry.mesh.draw();
         m_stats.visibleSections++; m_stats.drawCalls++; m_stats.triangles += entry.mesh.getTriangleCount();
     }
 }
 
-void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader) {
+void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos) {
     shader.use();
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -203,7 +202,12 @@ void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader) {
     // Culling re-enabled to prevent "fences" (seeing backfaces of the water mass from inside)
     glEnable(GL_CULL_FACE);
     for (const auto& [key, entry] : m_sections) {
-        if (!entry.translucentMesh.hasGeometry() || !frustum.intersects(entry.bounds)) continue;
+        glm::vec3 relativePos = glm::vec3(
+            glm::dvec3(entry.chunk->getX() * 16, entry.sectionIndex * 16, entry.chunk->getZ() * 16) - cameraPos
+        );
+        if (!entry.translucentMesh.hasGeometry() || !frustum.intersects(entry.bounds, relativePos)) continue;
+
+        shader.setMat4("model", glm::translate(glm::mat4(1.0f), relativePos));
         entry.translucentMesh.draw();
         m_stats.visibleSections++; m_stats.drawCalls++; m_stats.triangles += entry.translucentMesh.getTriangleCount();
     }
@@ -213,7 +217,7 @@ void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader) {
 
 
 
-void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries) {
+void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries, const glm::dvec3& cameraPos) {
     if (!showChunkBoundaries) return;
 
     Tessellator* t = Tessellator::instance;
@@ -228,24 +232,28 @@ void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool sho
 
         float x = (float)(entry.chunk->getX() * 16);
         float z = (float)(entry.chunk->getZ() * 16);
+        
+        glm::vec3 relativeChunkPos = glm::vec3(glm::dvec3(x, 0, z) - cameraPos);
 
         // Define AABB for the entire chunk column (0-128)
-        AABB columnBounds = { {x, 0, z}, {x + 16, 128, z + 16} };
-        if (!frustum.intersects(columnBounds)) continue;
+        AABB columnBounds = { {0, 0, 0}, {16, 128, 16} };
+        if (!frustum.intersects(columnBounds, relativeChunkPos)) continue;
+
+        shader.setMat4("model", glm::translate(glm::mat4(1.0f), relativeChunkPos));
 
         // Vertical lines
         for (int i = 0; i <= 16; i += 16) {
             for (int j = 0; j <= 16; j += 16) {
-                t->addVertex(x + i, 0, z + j);
-                t->addVertex(x + i, 128, z + j);
+                t->addVertex(i, 0, j);
+                t->addVertex(i, 128, j);
             }
         }
         // Horizontal lines every 16 blocks
         for (int y = 0; y <= 128; y += 16) {
-            t->addVertex(x, y, z); t->addVertex(x + 16, y, z);
-            t->addVertex(x + 16, y, z); t->addVertex(x + 16, y, z + 16);
-            t->addVertex(x + 16, y, z + 16); t->addVertex(x, y, z + 16);
-            t->addVertex(x, y, z + 16); t->addVertex(x, y, z);
+            t->addVertex(0, y, 0); t->addVertex(16, y, 0);
+            t->addVertex(16, y, 0); t->addVertex(16, y, 16);
+            t->addVertex(16, y, 16); t->addVertex(0, y, 16);
+            t->addVertex(0, y, 16); t->addVertex(0, y, 0);
         }
     }
     t->draw();

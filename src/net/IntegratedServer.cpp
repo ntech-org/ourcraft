@@ -388,7 +388,7 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         PacketPlayerDigging packet;
         packet.deserialize(ptr, size - 1);
         if (packet.action == DiggingAction::STOP) {
-            m_world->setBlockWithNotify(packet.x, packet.y, packet.z, 0);
+            // Aborted breaking - do nothing or reset server-side state if we had any
         } else if (packet.action == DiggingAction::FINISH) {
             const uint8_t oldID = m_world->getBlockID(packet.x, packet.y, packet.z);
             const uint8_t oldMeta = m_world->getBlockMetadata(packet.x, packet.y, packet.z);

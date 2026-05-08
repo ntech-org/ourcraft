@@ -54,7 +54,7 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
             if (!b) continue;
             const Material& mat = b->blockMaterial;
             float h00 = getCornerHeight(n, x, gy, z, mat), h01 = getCornerHeight(n, x, gy, z + 1, mat), h11 = getCornerHeight(n, x + 1, gy, z + 1, mat), h10 = getCornerHeight(n, x + 1, gy, z, mat);
-            float fx = (float)(bx + x), fy = (float)gy, fz = (float)(bz + z);
+            float fx = (float)x, fy = (float)y, fz = (float)z;
             bool water = (bid == 8 || bid == 9); float liq = water ? 1.0f : 2.0f, d0 = getWaterDepth(n, x, gy, z), d1 = getWaterDepth(n, x, gy + 1, z);
             ChunkMeshData::Pass& pass = water ? md.translucent : md.opaque;
             if (!shouldCull(bid, n.getBlockID(x, gy + 1, z))) {

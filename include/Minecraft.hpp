@@ -79,4 +79,7 @@ private:
     int m_breakFace = -1;
     float m_breakProgress = 0.0f;
     int m_breakSwingTick = 0;
+
+    int m_hitDelayTimer = 0;
+    int m_rightClickDelayTimer = 0;
 };

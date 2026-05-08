@@ -21,7 +21,7 @@ void main() {
     vec3 color = texColor.rgb * colorTint;
     
     float fogFactor = 1.0;
-    float dist = distance(WorldPos, cameraPos);
+    float dist = length(WorldPos);
     if (fogMode == 1) {
         fogFactor = exp(-fogDensity * dist);
     } else {

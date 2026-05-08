@@ -64,7 +64,7 @@ void ChunkMesher::greedyMeshTopBottom(ChunkMeshData& md, const IBlockAccess& n, 
             int h = 1; bool grow = true;
             while (z + h < 16 && grow) { for (int k = 0; k < w; ++k) if (!sameCell(mask[x + k + (z + h) * 16], c)) { grow = false; break; } if (grow) ++h; }
             for (int dx = 0; dx < w; ++dx) for (int dz = 0; dz < h; ++dz) mask[x + dx + (z + dz) * 16] = {};
-            float x0 = (float)(bx + x), x1 = (float)(bx + x + w), yq = (float)(gy + (up ? 1 : 0)), z0 = (float)(bz + z), z1 = (float)(bz + z + h);
+            float x0 = (float)x, x1 = (float)(x + w), yq = (float)(up ? ly + 1 : ly), z0 = (float)z, z1 = (float)(z + h);
             if (up) {
                 appendVertex(md.opaque, x1, yq, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x1, yq, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
                 appendVertex(md.opaque, x0, yq, z0, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x0, yq, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
@@ -92,7 +92,7 @@ void ChunkMesher::greedyMeshNorthSouth(ChunkMeshData& md, const IBlockAccess& n,
             int h = 1; bool grow = true;
             while (y + h < 16 && grow) { for (int k = 0; k < w; ++k) if (!sameCell(mask[x + k + (y + h) * 16], c)) { grow = false; break; } if (grow) ++h; }
             for (int dx = 0; dx < w; ++dx) for (int dy = 0; dy < h; ++dy) mask[x + dx + (y + dy) * 16] = {};
-            float x0 = (float)(bx + x), x1 = (float)(bx + x + w), y0 = (float)(by + y), y1 = (float)(by + y + h), zq = (float)(bz + lz + (south ? 1 : 0));
+            float x0 = (float)x, x1 = (float)(x + w), y0 = (float)y, y1 = (float)(y + h), zq = (float)(lz + (south ? 1 : 0));
             if (!south) {
                 appendVertex(md.opaque, x0, y1, zq, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x1, y1, zq, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
                 appendVertex(md.opaque, x1, y0, zq, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, x0, y0, zq, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
@@ -120,7 +120,7 @@ void ChunkMesher::greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, i
             int h = 1; bool grow = true;
             while (y + h < 16 && grow) { for (int k = 0; k < w; ++k) if (!sameCell(mask[z + k + (y + h) * 16], c)) { grow = false; break; } if (grow) ++h; }
             for (int dx = 0; dx < w; ++dx) for (int dy = 0; dy < h; ++dy) mask[z + dx + (y + dy) * 16] = {};
-            float xq = (float)(bx + lx + (east ? 1 : 0)), y0 = (float)(by + y), y1 = (float)(by + y + h), z0 = (float)(bz + z), z1 = (float)(bz + z + w);
+            float xq = (float)(lx + (east ? 1 : 0)), y0 = (float)y, y1 = (float)(y + h), z0 = (float)z, z1 = (float)(z + w);
             if (!east) {
                 appendVertex(md.opaque, xq, y1, z1, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y1, z0, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
                 appendVertex(md.opaque, xq, y0, z0, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y0, z1, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
@@ -128,6 +128,7 @@ void ChunkMesher::greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, i
                 appendVertex(md.opaque, xq, y0, z1, 0, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y0, z0, (float)w, (float)h, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
                 appendVertex(md.opaque, xq, y1, z0, (float)w, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight); appendVertex(md.opaque, xq, y1, z1, 0, 0, c.textureIndex, dir, c.depth, c.skyLight, c.blockLight);
             }
+
             appendIndices(md.opaque); z += w;
         }
     }
@@ -148,9 +149,9 @@ void ChunkMesher::crossMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
                 auto light = n.getLightPair(bx + x, gy, bz + z);
                 float sl = (float)light.first, bl = (float)light.second;
 
-                float x0 = (float)(bx + x), x1 = x0 + 1.0f;
-                float y0 = (float)gy, y1 = y0 + 1.0f;
-                float z0 = (float)(bz + z), z1 = z0 + 1.0f;
+                float x0 = (float)x, x1 = x0 + 1.0f;
+                float y0 = (float)y, y1 = y0 + 1.0f;
+                float z0 = (float)z, z1 = z0 + 1.0f;
 
                 // First plane (double sided)
                 appendVertex(md.opaque, x0, y1, z0, 0, 0, tex, FaceDirection::Up, 0, sl, bl);

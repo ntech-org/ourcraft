@@ -67,8 +67,7 @@ struct Neighborhood : public IBlockAccess {
 
 ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chunk, int si) {
     ChunkMeshData md; int cx = chunk.getX(), cz = chunk.getZ();
-    float bx = (float)(cx * 16), by = (float)(si * 16), bz = (float)(cz * 16);
-    md.bounds.min = {bx, by, bz}; md.bounds.max = {bx + 16, by + 16, bz + 16};
+    md.bounds.min = {0.0f, 0.0f, 0.0f}; md.bounds.max = {16.0f, 16.0f, 16.0f};
     Neighborhood n(world, cx, cz); 
     for (int dx = -1; dx <= 1; ++dx) 
         for (int dz = -1; dz <= 1; ++dz) 

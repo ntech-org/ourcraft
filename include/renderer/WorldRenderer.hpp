@@ -35,9 +35,9 @@ public:
     void rebuildSectionList();
     void addSectionsForChunk(std::shared_ptr<Chunk> chunk);
     void updateDirtyMeshes(int limit = 4);
-    void renderOpaque(const Frustum& frustum, Shader& shader);
-    void renderTranslucent(const Frustum& frustum, Shader& shader);
-    void renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries);
+    void renderOpaque(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos);
+    void renderTranslucent(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos);
+    void renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries, const glm::dvec3& cameraPos);
 
     void removeFarSections(int playerCX, int playerCZ, int keepDistance);
 

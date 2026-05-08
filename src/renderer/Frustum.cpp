@@ -23,12 +23,12 @@ void Frustum::update(const glm::mat4& viewProjection) {
     m_planes[5] = normalizePlane(matrix[3] - matrix[2]);
 }
 
-bool Frustum::intersects(const AABB& bounds) const {
+bool Frustum::intersects(const AABB& bounds, const glm::vec3& offset) const {
     for (const glm::vec4& plane : m_planes) {
-        glm::vec3 positive = bounds.min;
-        if (plane.x >= 0.0f) positive.x = bounds.max.x;
-        if (plane.y >= 0.0f) positive.y = bounds.max.y;
-        if (plane.z >= 0.0f) positive.z = bounds.max.z;
+        glm::vec3 positive = bounds.min + offset;
+        if (plane.x >= 0.0f) positive.x = bounds.max.x + offset.x;
+        if (plane.y >= 0.0f) positive.y = bounds.max.y + offset.y;
+        if (plane.z >= 0.0f) positive.z = bounds.max.z + offset.z;
 
         if (glm::dot(glm::vec3(plane), positive) + plane.w < 0.0f) {
             return false;

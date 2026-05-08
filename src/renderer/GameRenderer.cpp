@@ -104,12 +104,12 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     if (cameraMode == 0) {
         m_camera.yaw = camYaw + 90.0f;
         m_camera.pitch = camPitch;
-        m_camera.position = glm::vec3(px, py, pz);
+        m_camera.position = glm::dvec3(px, py, pz);
     } else {
         m_camera.yaw = camYaw + 90.0f + (cameraMode == 2 ? 180.0f : 0.0f);
         m_camera.pitch = (cameraMode == 2 ? -camPitch : camPitch);
         m_camera.updateCameraVectors();
-        m_camera.position = glm::vec3(px, py, pz) - m_camera.front * 4.0f;
+        m_camera.position = glm::dvec3(px, py, pz) - glm::dvec3(m_camera.front) * 4.0;
     }
     m_camera.updateCameraVectors();
 
@@ -169,7 +169,7 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     m_debugShader->use();
     m_debugShader->setMat4("projection", projection);
     m_debugShader->setMat4("view", view);
-    m_worldRenderer->renderDebug(m_frustum, *m_debugShader, showBoundaries);
+    m_worldRenderer->renderDebug(m_frustum, *m_debugShader, showBoundaries, m_camera.position);
 
     double entityStart = glfwGetTime();
     // Disable culling for entities and hand to ensure all faces are visible
@@ -182,7 +182,7 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 
     // Pass 2: Translucent world (water)
     m_renderEngine->bindTexture(m_terrainTex);
-    m_worldRenderer->renderTranslucent(m_frustum, *m_basicShader);
+    m_worldRenderer->renderTranslucent(m_frustum, *m_basicShader, m_camera.position);
 
     // Final Pass: First person hand (on top of everything)
     if (cameraMode == 0) {
@@ -223,16 +223,16 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening) {
     m_basicShader->use();
     m_basicShader->setMat4("projection", projection);
-    m_basicShader->setMat4("view", view);
+    m_basicShader->setMat4("view", view); // This is now rotation-only
     m_basicShader->setMat4("model", glm::mat4(1.0f));
     m_basicShader->setBool("hasTexture", true);
     m_basicShader->setVec3("fogColor", fogColor);
-    m_basicShader->setVec3("cameraPos", m_camera.position);
+    m_basicShader->setVec3("cameraPos", glm::vec3(0.0f)); // Camera is at origin in relative space
     m_basicShader->setFloat("daylightFactor", m_world.getDaylightStrength());
     m_basicShader->setVec3("sunDirection", m_world.getSunDirection());
     m_basicShader->setFloat("uTime", (float)glfwGetTime());
 
-    // Simple fog distance based on state
+    // ... rest of fog logic ...
     if (m_player.isInsideOfMaterial(Material::water)) {
         m_basicShader->setInt("fogMode", 1);
         m_basicShader->setFloat("fogDensity", 0.1f);
@@ -249,7 +249,7 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
     m_worldRenderer->updateDirtyMeshes(64);
-    m_worldRenderer->renderOpaque(m_frustum, *m_basicShader);
+    m_worldRenderer->renderOpaque(m_frustum, *m_basicShader, m_camera.position);
     renderBreakingOverlay();
 }
 
@@ -264,9 +264,11 @@ void GameRenderer::renderBreakingOverlay() {
     const float u1 = u0 + 16.0f / 256.0f;
     const float v1 = v0 + 16.0f / 256.0f;
 
-    const float x0 = (float)m_breakOverlayX;
-    const float y0 = (float)m_breakOverlayY;
-    const float z0 = (float)m_breakOverlayZ;
+    // Use relative coordinates
+    const glm::vec3 relativePos = glm::vec3(glm::dvec3(m_breakOverlayX, m_breakOverlayY, m_breakOverlayZ) - m_camera.position);
+    const float x0 = relativePos.x;
+    const float y0 = relativePos.y;
+    const float z0 = relativePos.z;
     const float x1 = x0 + 1.0f;
     const float y1 = y0 + 1.0f;
     const float z1 = z0 + 1.0f;
@@ -280,6 +282,8 @@ void GameRenderer::renderBreakingOverlay() {
 
     m_renderEngine->bindTexture(m_terrainTex);
     Tessellator* t = Tessellator::instance;
+    // Set identity model matrix for breaking overlay since we use absolute-relative coords
+    m_basicShader->setMat4("model", glm::mat4(1.0f));
     t->startDrawingQuads();
     t->setColorRGBA(255, 255, 255, 180);
 
@@ -338,15 +342,14 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
         m_entityShader->setFloat("fogFar", 256.0f);
     }
     m_entityShader->setVec3("fogColor", fogColor);
-    m_entityShader->setVec3("cameraPos", m_camera.position);
+    m_entityShader->setVec3("cameraPos", glm::vec3(0.0f));
 
 
     auto getEntityBrightness = [&](double ex, double ey, double ez) {
-
-        // Sample at feet (slightly up) and center
+        // Absolute coordinates for lighting lookup
         auto light1 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.1), (int)std::floor(ez));
         auto light2 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.9), (int)std::floor(ez));
-
+        // ... rest ...
         int sky = std::max(light1.first, light2.first);
         int block = std::max(light1.second, light2.second);
 
@@ -365,6 +368,9 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
 
         float b = getEntityBrightness(ex, ey, ez);
         m_entityShader->setVec3("colorTint", glm::vec3(b));
+        
+        // Relative coordinates for rendering
+        glm::vec3 relativePos = glm::vec3(glm::dvec3(ex, ey, ez) - m_camera.position);
 
         if (auto* item = dynamic_cast<EntityItem*>(entity)) {
             const bool isBlockItem = item->itemID > 0 && Block::blocksList[item->itemID] != nullptr;
@@ -380,13 +386,14 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
             const float v1 = v0 + 16.0f / 256.0f;
 
             glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), glm::vec3(
-                (float)ex,
-                (float)ey + 0.15f + std::sin((float)glfwGetTime() * 2.0f + (float)item->entityID) * 0.05f,
-                (float)ez
+                relativePos.x,
+                relativePos.y + 0.15f + std::sin((float)glfwGetTime() * 2.0f + (float)item->entityID) * 0.05f,
+                relativePos.z
             ));
             modelMat = glm::rotate(modelMat, glm::radians(-m_camera.yaw + 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             modelMat = glm::scale(modelMat, glm::vec3(0.35f, 0.35f, 0.35f));
             m_entityShader->setMat4("model", modelMat);
+            // ... rest of item rendering ...
 
             Tessellator* t = Tessellator::instance;
             if (isBlockItem) {
@@ -441,7 +448,7 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
         }
 
         float netHeadYaw = std::clamp(interpYaw - renderYaw, -75.0f, 75.0f);
-        glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), glm::vec3(ex, ey, ez));
+        glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), relativePos);
         modelMat = glm::rotate(modelMat, glm::radians(180.0f - renderYaw), glm::vec3(0.0f, 1.0f, 0.0f));
         modelMat = glm::scale(modelMat, glm::vec3(-1.0f, -1.0f, 1.0f));
         modelMat = glm::translate(modelMat, glm::vec3(0.0f, -1.5f, 0.0f));

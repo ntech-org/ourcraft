@@ -44,7 +44,7 @@ void Minecraft::init() {
 void Minecraft::saveAndQuit() {
     if (m_networkHandler) m_networkHandler->stopServer();
     m_networkHandler.reset();
-    
+
     // Re-initialize client to clean state
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
@@ -52,10 +52,10 @@ void Minecraft::saveAndQuit() {
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
-    
+
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
-    
+
     m_gameState = GameState::MainMenu;
     displayGuiScreen(std::make_shared<GuiMainMenu>());
 }
@@ -63,7 +63,7 @@ void Minecraft::saveAndQuit() {
 void Minecraft::startSingleplayer() {
     // In case we were already in a world, the above ensures we are clean.
     // Note: World/Renderer/Player are already initialized by init() or saveAndQuit().
-    
+
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
 
     if (!m_networkHandler->connect("127.0.0.1", 25565)) {
@@ -71,7 +71,7 @@ void Minecraft::startSingleplayer() {
     }
 
     m_gameRenderer->getWorldRenderer().rebuildSectionList();
-    
+
     m_gameState = GameState::InGame;
     displayGuiScreen(nullptr);
 }
@@ -121,6 +121,9 @@ void Minecraft::tick() {
         m_networkHandler->update();
         m_inputHandler->update();
 
+        if (m_hitDelayTimer > 0) m_hitDelayTimer--;
+        if (m_rightClickDelayTimer > 0) m_rightClickDelayTimer--;
+
         if (m_inputHandler->isEscPressed()) {
             displayGuiScreen(std::make_shared<GuiIngameMenu>());
         }
@@ -144,9 +147,9 @@ void Minecraft::tick() {
         HitResult hit = m_world->rayTraceBlocks(eyePos, endPos, true);
 
         const bool leftDown = m_inputHandler->isLeftMouseDown();
-        if (!leftDown || hit.type != HitType::BLOCK) {
+        if ((!leftDown || hit.type != HitType::BLOCK) && m_hitDelayTimer <= 0) {
             resetBlockBreaking(true);
-        } else {
+        } else if (m_hitDelayTimer <= 0) {
             const bool sameTarget = m_isBreakingBlock &&
                                     m_breakX == hit.x &&
                                     m_breakY == hit.y &&
@@ -174,9 +177,10 @@ void Minecraft::tick() {
                     resetBlockBreaking(true);
                 } else if (m_player->gameMode == GameMode::CREATIVE) {
                     m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
-                    m_networkHandler->sendDigging(DiggingAction::STOP, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
+                    m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
                     m_player->swing();
                     resetBlockBreaking(false);
+                    m_hitDelayTimer = 5;
                 } else {
                     m_breakProgress = std::min(1.0f, m_breakProgress + getBreakDeltaForBlock(targetID));
                     if ((++m_breakSwingTick % 4) == 0) {
@@ -195,7 +199,7 @@ void Minecraft::tick() {
         }
 
 
-        if (m_inputHandler->isRightClick()) {
+        if (m_inputHandler->isRightMouseDown() && m_rightClickDelayTimer <= 0) {
             resetBlockBreaking(true);
             if (hit.type == HitType::BLOCK) {
                 int x = hit.x, y = hit.y, z = hit.z;
@@ -213,6 +217,7 @@ void Minecraft::tick() {
                             m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
                             m_player->swing();
                             m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
+                            m_rightClickDelayTimer = 4;
                         }
                     }
                 }
@@ -295,21 +300,21 @@ void Minecraft::scrollCallback(double xoffset, double yoffset) {
 void Minecraft::mouseButtonCallback(int button, int action, int mods) {
     if (m_currentScreen && action == GLFW_PRESS) {
         auto screen = m_currentScreen; // Hold reference to prevent crash if screen is changed
-        
+
         double mx, my;
         glfwGetCursorPos(m_window, &mx, &my);
-        
+
         // Convert screen units to framebuffer pixels
         int ww, wh, fw, fh;
         glfwGetWindowSize(m_window, &ww, &wh);
         glfwGetFramebufferSize(m_window, &fw, &fh);
-        
+
         mx *= (double)fw / (double)ww;
         my *= (double)fh / (double)wh;
-        
+
         mx /= (double)m_gameRenderer->getGuiScale();
         my /= (double)m_gameRenderer->getGuiScale();
-        
+
         screen->mouseClicked((int)mx, (int)my, button);
     }
 }
