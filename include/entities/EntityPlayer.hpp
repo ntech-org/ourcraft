@@ -9,6 +9,8 @@ enum class GameMode {
     CREATIVE
 };
 
+class Minecraft;
+
 class EntityPlayer : public EntityLiving {
 public:
     EntityPlayer(World& world);
@@ -28,7 +30,11 @@ public:
     bool sneaking = false;
     bool sprinting = false;
 
-
     void attackEntityFrom(Entity* source, int amount) override;
 
+    void setMinecraft(Minecraft* mc) { this->mc = mc; }
+    Minecraft& getMinecraft() { return *mc; }
+
+private:
+    Minecraft* mc = nullptr;
 };

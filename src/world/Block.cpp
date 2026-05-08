@@ -7,6 +7,7 @@ Block* Block::blocksList[256] = { nullptr };
 bool Block::opaqueCubeLookup[256] = { false };
 int Block::lightOpacity[256] = { 0 };
 int Block::lightValue[256] = { 0 };
+float Block::blockHardness[256] = { 0.0f };
 
 const Block* Block::stone = nullptr;
 const Block* Block::grass = nullptr;
@@ -95,13 +96,30 @@ public:
     BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
 };
 
+class BlockCross : public Block {
+public:
+    BlockCross(int id, int tex) : Block(id, tex, Material::plants) {
+        setBlockBounds(0.1f, 0.0f, 0.1f, 0.9f, 0.8f, 0.9f);
+    }
+    bool isFullCube() const override { return false; }
+    bool isOpaqueCube() const override { return false; }
+    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
+    BlockRenderShape getRenderShape() const override { return BlockRenderShape::Cross; }
+    AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const override { return AxisAlignedBB(0,0,0,0,0,0); }
+};
+
 void Block::init() {
+    for (int i = 0; i < 256; ++i) {
+        blockHardness[i] = 1.0f;
+    }
+    blockHardness[0] = 0.0f;
+
     stone = new Block(1, 1, Material::rock);
     grass = new BlockGrass(2);
     dirt = new Block(3, 2, Material::ground);
     cobblestone = new Block(4, 16, Material::rock);
     planks = new Block(5, 4, Material::wood);
-    sapling = new Block(6, 15, Material::plants);
+    sapling = new BlockCross(6, 15);
     bedrock = new Block(7, 17, Material::rock);
     waterMoving = new BlockFlowing(8, Material::water); 
     waterStill = new BlockStationary(9, Material::water);
@@ -117,10 +135,10 @@ void Block::init() {
     sponge = new Block(19, 48, Material::sponge);
     glass = new BlockGlass(20);
     cloth = new Block(35, 64, Material::cloth);
-    flowerYellow = new Block(37, 13, Material::plants);
-    flowerRed = new Block(38, 12, Material::plants);
-    mushroomBrown = new Block(39, 29, Material::plants);
-    mushroomRed = new Block(40, 28, Material::plants);
+    flowerYellow = new BlockCross(37, 13);
+    flowerRed = new BlockCross(38, 12);
+    mushroomBrown = new BlockCross(39, 29);
+    mushroomRed = new BlockCross(40, 28);
     blockGold = new Block(41, 39, Material::iron);
     blockSteel = new Block(42, 38, Material::iron);
     stairDouble = new Block(43, 5, Material::rock);
@@ -130,7 +148,7 @@ void Block::init() {
     bookshelf = new Block(47, 35, Material::wood);
     cobblestoneMossy = new Block(48, 36, Material::rock);
     obsidian = new Block(49, 37, Material::rock);
-    torch = new Block(50, 80, Material::plants);
+    torch = new BlockCross(50, 80);
     fire = new Block(51, 31, Material::fire);
     mobSpawner = new Block(52, 65, Material::rock);
     stairCompactWood = new Block(53, 4, Material::wood);
@@ -139,7 +157,7 @@ void Block::init() {
     oreDiamond = new Block(56, 50, Material::rock);
     blockDiamond = new Block(57, 40, Material::iron);
     workbench = new Block(58, 43, Material::wood);
-    crops = new Block(59, 88, Material::plants);
+    crops = new BlockCross(59, 88);
     farmland = new Block(60, 87, Material::ground);
     furnaceIdle = new Block(61, 44, Material::rock);
     furnaceActive = new Block(62, 60, Material::rock);
@@ -149,6 +167,60 @@ void Block::init() {
     minecartTrack = new Block(66, 128, Material::iron);
     stairCompactStone = new Block(67, 16, Material::rock);
     signWall = new Block(68, 4, Material::wood);
+
+    blockHardness[1] = 1.5f;   // stone
+    blockHardness[2] = 0.6f;   // grass
+    blockHardness[3] = 0.5f;   // dirt
+    blockHardness[4] = 2.0f;   // cobblestone
+    blockHardness[5] = 2.0f;   // planks
+    blockHardness[6] = 0.0f;   // sapling
+    blockHardness[7] = -1.0f;  // bedrock
+    blockHardness[8] = -1.0f;  // water moving
+    blockHardness[9] = -1.0f;  // water still
+    blockHardness[10] = -1.0f; // lava moving
+    blockHardness[11] = -1.0f; // lava still
+    blockHardness[12] = 0.5f;  // sand
+    blockHardness[13] = 0.6f;  // gravel
+    blockHardness[14] = 3.0f;  // ore gold
+    blockHardness[15] = 3.0f;  // ore iron
+    blockHardness[16] = 3.0f;  // ore coal
+    blockHardness[17] = 2.0f;  // wood
+    blockHardness[18] = 0.2f;  // leaves
+    blockHardness[19] = 0.6f;  // sponge
+    blockHardness[20] = 0.3f;  // glass
+    blockHardness[35] = 0.8f;  // wool
+    blockHardness[37] = 0.0f;  // yellow flower
+    blockHardness[38] = 0.0f;  // red flower
+    blockHardness[39] = 0.0f;  // brown mushroom
+    blockHardness[40] = 0.0f;  // red mushroom
+    blockHardness[41] = 5.0f;  // gold block
+    blockHardness[42] = 5.0f;  // iron block
+    blockHardness[43] = 2.0f;  // double slab
+    blockHardness[44] = 2.0f;  // slab
+    blockHardness[45] = 2.0f;  // brick
+    blockHardness[46] = 0.0f;  // tnt
+    blockHardness[47] = 1.5f;  // bookshelf
+    blockHardness[48] = 2.0f;  // mossy cobblestone
+    blockHardness[49] = 10.0f; // obsidian
+    blockHardness[50] = 0.0f;  // torch
+    blockHardness[51] = -1.0f; // fire
+    blockHardness[52] = 5.0f;  // spawner
+    blockHardness[53] = 2.0f;  // wood stairs
+    blockHardness[54] = 2.5f;  // chest
+    blockHardness[55] = 0.0f;  // gear/redstone wire
+    blockHardness[56] = 3.0f;  // diamond ore
+    blockHardness[57] = 5.0f;  // diamond block
+    blockHardness[58] = 2.5f;  // workbench
+    blockHardness[59] = 0.0f;  // crops
+    blockHardness[60] = 0.6f;  // farmland
+    blockHardness[61] = 3.5f;  // furnace idle
+    blockHardness[62] = 3.5f;  // furnace active
+    blockHardness[63] = 1.0f;  // sign
+    blockHardness[64] = 3.0f;  // wooden door
+    blockHardness[65] = 0.4f;  // ladder
+    blockHardness[66] = 0.7f;  // rail
+    blockHardness[67] = 2.0f;  // cobble stairs
+    blockHardness[68] = 1.0f;  // wall sign
 
     lightOpacity[6] = 0; // sapling
     lightOpacity[8] = 3; // water moving
@@ -180,7 +252,7 @@ Block::Block(int id, int tex, const Material& mat)
 {
     blocksList[id] = this;
     opaqueCubeLookup[id] = isOpaqueCube();
-    lightOpacity[id] = isOpaqueCube() ? 255 : 0;
+    lightOpacity[id] = isOpaqueCube() ? 15 : 0;
     lightValue[id] = 0;
     setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 }
@@ -238,4 +310,8 @@ AxisAlignedBB Block::getCollisionBoundingBoxFromPool(World& world, int x, int y,
 void Block::setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1) {
     minX = x0; minY = y0; minZ = z0;
     maxX = x1; maxY = y1; maxZ = z1;
+}
+
+float Block::getHardness(uint8_t blockID) {
+    return blockHardness[blockID];
 }

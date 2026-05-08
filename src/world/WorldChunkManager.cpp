@@ -104,14 +104,16 @@ bool World::pollGeneratedChunks() {
                 }
             }
 
-            // Fully finished! Touch all neighbors to fix boundaries
+            // Fully finished! Touch all neighbors (including diagonals) to fix boundaries
             chunk->generateBitmask();
-            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
-                if (auto n = getChunk(cx - 1, cz)) n->touchSection(i);
-                if (auto n = getChunk(cx + 1, cz)) n->touchSection(i);
-                if (auto n = getChunk(cx, cz - 1)) n->touchSection(i);
-                if (auto n = getChunk(cx, cz + 1)) n->touchSection(i);
-                chunk->touchSection(i);
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    if (auto n = getChunk(cx + dx, cz + dz)) {
+                        for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
+                            n->touchSection(i);
+                        }
+                    }
+                }
             }
 
             // IMPORTANT: Don't clear dirty flags here! They need to trigger rebuilds

@@ -5,7 +5,7 @@
 void GuiScreen::drawScreen(int mouseX, int mouseY, float partialTicks) {
     Shader& shader = mc->getGameRenderer().getUIShader();
     for (auto& button : controlList) {
-        button->drawButton(mc->getGameRenderer().getFontRenderer(), shader, mouseX, mouseY);
+        button->drawButton(mc, mc->getGameRenderer().getFontRenderer(), shader, mouseX, mouseY);
     }
 }
 

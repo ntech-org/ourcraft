@@ -70,9 +70,12 @@ public:
 class PacketSpawnEntity : public Packet {
 public:
     int32_t id;
-    uint8_t type; // 0 = Player, 1 = Zombie
+    uint8_t type; // 0 = Player, 1 = Zombie, 2 = Item
     double x, y, z;
     float yaw, pitch;
+    int32_t dataA = 0;
+    int32_t dataB = 0;
+    uint8_t dataC = 0;
 
     PacketType getType() const override { return PacketType::SpawnEntity; }
 
@@ -85,6 +88,9 @@ public:
         writeDouble(buffer, z);
         writeFloat(buffer, yaw);
         writeFloat(buffer, pitch);
+        writeInt(buffer, dataA);
+        writeInt(buffer, dataB);
+        writeByte(buffer, dataC);
     }
 
     void deserialize(const uint8_t* data, size_t size) override {
@@ -95,6 +101,9 @@ public:
         z = readDouble(data);
         yaw = readFloat(data);
         pitch = readFloat(data);
+        dataA = readInt(data);
+        dataB = readInt(data);
+        dataC = readByte(data);
     }
 };
 
@@ -393,5 +402,27 @@ public:
     void deserialize(const uint8_t* data, size_t size) override {
         x = readInt(data);
         z = readInt(data);
+    }
+};
+
+class PacketInventoryAdd : public Packet {
+public:
+    int32_t itemID = 0;
+    int32_t count = 0;
+    uint8_t metadata = 0;
+
+    PacketType getType() const override { return PacketType::InventoryAdd; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, itemID);
+        writeInt(buffer, count);
+        writeByte(buffer, metadata);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        itemID = readInt(data);
+        count = readInt(data);
+        metadata = readByte(data);
     }
 };

@@ -39,6 +39,8 @@ public:
 
     int getWidth() const { return m_width; }
     int getHeight() const { return m_height; }
+    GLFWwindow* getWindow() { return m_window; }
+    EntityPlayer& getPlayer() { return *m_player; }
     GameRenderer& getGameRenderer() { return *m_gameRenderer; }
     GameSettings& getSettings() { return m_settings; }
     std::shared_ptr<GuiScreen> getCurrentScreen() { return m_currentScreen; }
@@ -47,6 +49,9 @@ private:
 
     void init();
     void tick();
+    void resetBlockBreaking(bool sendStopPacket);
+    float getBreakDeltaForBlock(uint8_t blockID) const;
+    bool finishBreakingCurrentBlock();
 
     GLFWwindow* m_window;
     int m_width;
@@ -66,4 +71,12 @@ private:
     double m_lastFrameTime = 0.0;
     float m_fps = 0.0f;
     bool m_running = true;
+
+    bool m_isBreakingBlock = false;
+    int m_breakX = 0;
+    int m_breakY = 0;
+    int m_breakZ = 0;
+    int m_breakFace = -1;
+    float m_breakProgress = 0.0f;
+    int m_breakSwingTick = 0;
 };

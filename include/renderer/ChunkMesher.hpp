@@ -15,4 +15,5 @@ private:
     static void greedyMeshNorthSouth(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool south);
     static void greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool east);
     static void fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz);
+    static void crossMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz);
 };

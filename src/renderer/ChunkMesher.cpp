@@ -77,6 +77,7 @@ ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chu
     greedyMeshTopBottom(md, n, si, cx, cz, false); greedyMeshTopBottom(md, n, si, cx, cz, true);
     greedyMeshNorthSouth(md, n, si, cx, cz, false); greedyMeshNorthSouth(md, n, si, cx, cz, true);
     greedyMeshWestEast(md, n, si, cx, cz, false); greedyMeshWestEast(md, n, si, cx, cz, true);
+    crossMeshPass(md, n, si, cx, cz);
     fluidMeshPass(md, n, si, cx, cz);
     return md;
 }

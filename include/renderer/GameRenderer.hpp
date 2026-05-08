@@ -26,6 +26,7 @@ public:
 
     void render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps, std::shared_ptr<GuiScreen> currentScreen = nullptr);
     void resize(int width, int height);
+    void setBlockBreakingOverlay(bool active, int x, int y, int z, float progress);
 
     struct ProfilerResult {
         double frameTime = 0;
@@ -53,6 +54,7 @@ public:
 private:
     void setupFog(const glm::vec3& fogColor, float py, bool inWater, bool inLava);
     void renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening);
+    void renderBreakingOverlay();
     void renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode, const glm::vec3& fogColor);
     void renderFirstPersonArm(float partialTicks, const glm::mat4& projection);
 
@@ -93,4 +95,10 @@ private:
     Camera m_camera;
     Frustum m_frustum;
     int m_terrainTex = 0;
+
+    bool m_breakOverlayActive = false;
+    int m_breakOverlayX = 0;
+    int m_breakOverlayY = 0;
+    int m_breakOverlayZ = 0;
+    float m_breakOverlayProgress = 0.0f;
 };

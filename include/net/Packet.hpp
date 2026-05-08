@@ -18,7 +18,8 @@ enum class PacketType : uint8_t {
     BlockChange = 9,
     DestroyEntity = 10,
     ChunkRequest = 11,
-    ChunkUnload = 12
+    ChunkUnload = 12,
+    InventoryAdd = 13
 };
 
 class Packet {

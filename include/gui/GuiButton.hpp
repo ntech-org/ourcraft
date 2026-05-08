@@ -2,13 +2,15 @@
 #include "gui/Gui.hpp"
 #include <string>
 
+class Minecraft;
+
 class GuiButton : public Gui {
 public:
     GuiButton(int id, int x, int y, int width, int height, const std::string& text);
     virtual ~GuiButton() = default;
 
-    virtual void drawButton(FontRenderer& fontRenderer, Shader& shader, int mouseX, int mouseY);
-    bool mousePressed(int mouseX, int mouseY);
+    virtual void drawButton(Minecraft* mc, FontRenderer& fontRenderer, Shader& shader, int mouseX, int mouseY);
+    virtual bool mousePressed(int mouseX, int mouseY);
 
     int id;
     int x, y;

@@ -2,6 +2,7 @@
 
 #include "world/Material.hpp"
 #include <glm/vec3.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@ enum class BlockRenderLayer {
 
 enum class BlockRenderShape {
     FullCube,
+    Cross,
     Special
 };
 
@@ -28,6 +30,7 @@ public:
     static bool opaqueCubeLookup[256];
     static int lightOpacity[256];
     static int lightValue[256];
+    static float blockHardness[256];
 
     static const Block* stone;
     static const Block* grass;
@@ -84,6 +87,7 @@ public:
     static const Block* signWall;
 
     static void init();
+    static float getHardness(uint8_t blockID);
 
     Block(int id, int tex, const Material& mat);
     virtual ~Block() = default;

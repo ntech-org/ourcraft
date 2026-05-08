@@ -45,18 +45,30 @@ void EntityLiving::onUpdate() {
 
     prevRenderYawOffset = renderYawOffset;
 
-    // Body-follow-head logic from Infdev
+    // Body-follow-head and movement rotation logic
+    if (dist > 0.05f) {
+        float moveYaw = (float)(std::atan2(-dx, dz) * 180.0 / glm::pi<double>());
+        float yawDiff = moveYaw - renderYawOffset;
+        while (yawDiff < -180.0f) yawDiff += 360.0f;
+        while (yawDiff >= 180.0f) yawDiff -= 360.0f;
+        renderYawOffset += yawDiff * 0.1f;
+    }
+
+    while (renderYawOffset < -180.0f) renderYawOffset += 360.0f;
+    while (renderYawOffset >= 180.0f) renderYawOffset -= 360.0f;
+
     float yawDiff = rotationYaw - renderYawOffset;
     while (yawDiff < -180.0f) yawDiff += 360.0f;
     while (yawDiff >= 180.0f) yawDiff -= 360.0f;
 
     // Clamp head yaw relative to body to [-75, 75] degrees
-    bool isReversed = yawDiff < -90.0f || yawDiff >= 90.0f;
     if (yawDiff < -75.0f) yawDiff = -75.0f;
     if (yawDiff >= 75.0f) yawDiff = 75.0f;
 
     renderYawOffset = rotationYaw - yawDiff;
-    renderYawOffset += yawDiff * 0.1f; // Body slowly turns to follow head
+    if (yawDiff * yawDiff > 2500.0f) {
+        renderYawOffset += yawDiff * 0.2f;
+    }
 
     if (hurtTime > 0) hurtTime--;
 

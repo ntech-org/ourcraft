@@ -15,6 +15,7 @@ public:
     ~RenderEngine();
 
     int getTexture(const std::string& name);
+    int createTexture(int width, int height, const unsigned char* data);
     void bindTexture(int textureID);
     
     void registerTextureFX(std::unique_ptr<TextureFX> fx);

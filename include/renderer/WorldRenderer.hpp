@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <queue>
+#include <unordered_set>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -57,11 +58,20 @@ private:
         std::uint64_t key;
         std::shared_ptr<Chunk> chunk;
         int sectionIndex;
+        std::uint32_t requestedVersion = 0;
+        int priority = 0;
+    };
+
+    struct MeshTaskPriority {
+        bool operator()(const MeshTask& lhs, const MeshTask& rhs) const {
+            return lhs.priority > rhs.priority;
+        }
     };
 
     struct MeshResult {
         std::uint64_t key;
         ChunkMeshData meshData;
+        std::uint32_t requestedVersion;
         std::uint32_t version;
         double buildMs;
     };
@@ -75,7 +85,8 @@ private:
     void meshWorkerLoop();
 
     std::vector<std::thread> m_meshWorkers;
-    std::queue<MeshTask> m_taskQueue;
+    std::priority_queue<MeshTask, std::vector<MeshTask>, MeshTaskPriority> m_taskQueue;
+    std::unordered_set<std::uint64_t> m_queuedTasks;
     std::queue<MeshResult> m_resultQueue;
 
     std::mutex m_taskMutex;

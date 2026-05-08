@@ -26,7 +26,7 @@ void GuiMainMenu::actionPerformed(GuiButton* button) {
         mc->startSingleplayer();
     }
     if (button->id == 0) {
-        mc->displayGuiScreen(std::make_shared<GuiOptions>());
+        mc->displayGuiScreen(std::make_shared<GuiOptions>(shared_from_this()));
     }
     if (button->id == 4) {
         // Quit

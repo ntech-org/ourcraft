@@ -47,10 +47,9 @@ bool SaveHandler::loadChunk(Chunk& chunk) {
 }
 
 void SaveHandler::saveChunk(const Chunk& chunk) {
-    if (chunk.getState() < ChunkState::Generated) return;
-    
-    int cx = chunk.getX();
-    int cz = chunk.getZ();
+    if (chunk.getState() != ChunkState::Complete) return;
+
+    int cx = chunk.getX();    int cz = chunk.getZ();
     RegionFile* region = getRegionFile(cx, cz);
     
     std::vector<uint8_t> data(Chunk::SIZE + Chunk::SIZE / 2 * 3);

@@ -26,6 +26,10 @@ struct ChunkTask {
     std::shared_ptr<Chunk> chunkE;
     std::shared_ptr<Chunk> chunkS;
     std::shared_ptr<Chunk> chunkSE;
+
+    bool operator<(const ChunkTask& other) const {
+        return static_cast<int>(type) < static_cast<int>(other.type);
+    }
 };
 
 class ChunkLoader {
@@ -50,7 +54,7 @@ private:
     WorldGenerator& m_generator;
     class World* m_world;
     std::unique_ptr<SaveHandler> m_saveHandler;
-    std::queue<ChunkTask> m_requestQueue;
+    std::priority_queue<ChunkTask> m_requestQueue;
     std::queue<std::shared_ptr<Chunk>> m_resultQueue;
     
     std::mutex m_requestMutex;

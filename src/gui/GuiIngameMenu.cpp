@@ -26,7 +26,7 @@ void GuiIngameMenu::actionPerformed(GuiButton* button) {
         mc->displayGuiScreen(nullptr);
     }
     if (button->id == 0) {
-        mc->displayGuiScreen(std::make_shared<GuiOptions>());
+        mc->displayGuiScreen(std::make_shared<GuiOptions>(shared_from_this()));
     }
     if (button->id == 5) {
         mc->saveAndQuit();

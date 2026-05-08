@@ -1,16 +1,27 @@
 #include "renderer/GameRenderer.hpp"
+#include "Minecraft.hpp"
 #include "renderer/Tessellator.hpp"
 #include "world/Block.hpp"
 #include "world/Material.hpp"
 #include "renderer/TextureFX.hpp"
 #include "gui/GuiScreen.hpp"
 
+#include "entities/EntityItem.hpp"
 #include "entities/EntityLiving.hpp"
 #include "InputHandler.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+
+namespace {
+float interpAngle(float prev, float current, float pTicks) {
+    float diff = current - prev;
+    while (diff < -180.0f) diff += 360.0f;
+    while (diff >= 180.0f) diff -= 360.0f;
+    return prev + diff * pTicks;
+}
+}
 
 GameRenderer::GameRenderer(GLFWwindow* window, World& world, EntityPlayer& player)
     : m_window(window), m_world(world), m_player(player)
@@ -33,7 +44,8 @@ GameRenderer::GameRenderer(GLFWwindow* window, World& world, EntityPlayer& playe
     m_uiShader = std::make_unique<Shader>("assets/shaders/ui.vert", "assets/shaders/ui.frag");
     m_playerModel = std::make_unique<ModelBiped>();
     m_zombieModel = std::make_unique<ModelZombie>();
-    m_fontRenderer = std::make_unique<FontRenderer>(m_renderEngine.get(), "/default.png");
+    m_fontRenderer = std::make_unique<FontRenderer>(m_renderEngine.get(), "/minecraft.ttf");
+    m_fontRenderer->setGuiScale(m_guiScale);
 
     m_renderEngine->registerTextureFX(std::make_unique<TextureWaterFX>());
     m_renderEngine->registerTextureFX(std::make_unique<TextureWaterFlowFX>());
@@ -43,18 +55,33 @@ GameRenderer::GameRenderer(GLFWwindow* window, World& world, EntityPlayer& playe
 
 GameRenderer::~GameRenderer() {}
 
+void GameRenderer::setBlockBreakingOverlay(bool active, int x, int y, int z, float progress) {
+    m_breakOverlayActive = active;
+    m_breakOverlayX = x;
+    m_breakOverlayY = y;
+    m_breakOverlayZ = z;
+    m_breakOverlayProgress = std::clamp(progress, 0.0f, 1.0f);
+}
+
 void GameRenderer::resize(int width, int height) {
     m_width = width;
     m_height = height;
     glViewport(0, 0, width, height);
 
     m_guiScale = 1;
-    while (m_guiScale < 3 && m_width / (m_guiScale + 1) >= 320 && m_height / (m_guiScale + 1) >= 240) {
+    int targetScale = m_player.getMinecraft().getSettings().guiScale;
+    if (targetScale == 0) targetScale = 8; // Auto/Max
+
+    while (m_guiScale < targetScale && m_width / (m_guiScale + 1) >= 320 && m_height / (m_guiScale + 1) >= 240) {
         m_guiScale++;
     }
 
     m_scaledWidth = (float)m_width / (float)m_guiScale;
     m_scaledHeight = (float)m_height / (float)m_guiScale;
+
+    if (m_fontRenderer) {
+        m_fontRenderer->setGuiScale(m_guiScale);
+    }
 }
 
 
@@ -119,13 +146,16 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     glClearColor(fogColor.r, fogColor.g, fogColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    float fov = 70.0f;
+    float fov = m_player.getMinecraft().getSettings().fov;
+    float armFov = 70.0f;
     if (m_player.isInsideOfMaterial(Material::water)) {
         fov = 60.0f;
+        armFov = 60.0f;
     }
 
     const float aspect = m_height > 0 ? (float)m_width / (float)m_height : 1.0f;
     glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, 0.05f, 1000.0f);
+    glm::mat4 armProjection = glm::perspective(glm::radians(armFov), aspect, 0.05f, 1000.0f);
 
 
     double renderStart = glfwGetTime();
@@ -157,7 +187,7 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     // Final Pass: First person hand (on top of everything)
     if (cameraMode == 0) {
         glDisable(GL_CULL_FACE);
-        renderFirstPersonArm(partialTicks, projection);
+        renderFirstPersonArm(partialTicks, armProjection);
         glEnable(GL_CULL_FACE);
     }
 
@@ -220,6 +250,74 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_frustum.update(projection * view);
     m_worldRenderer->updateDirtyMeshes(64);
     m_worldRenderer->renderOpaque(m_frustum, *m_basicShader);
+    renderBreakingOverlay();
+}
+
+void GameRenderer::renderBreakingOverlay() {
+    if (!m_breakOverlayActive || m_breakOverlayProgress <= 0.0f) return;
+    if (m_world.getBlockID(m_breakOverlayX, m_breakOverlayY, m_breakOverlayZ) == 0) return;
+
+    const int stage = std::clamp((int)std::floor(m_breakOverlayProgress * 10.0f), 0, 9);
+    const int tex = 240 + stage;
+    const float u0 = (float)((tex & 15) * 16) / 256.0f;
+    const float v0 = (float)((tex >> 4) * 16) / 256.0f;
+    const float u1 = u0 + 16.0f / 256.0f;
+    const float v1 = v0 + 16.0f / 256.0f;
+
+    const float x0 = (float)m_breakOverlayX;
+    const float y0 = (float)m_breakOverlayY;
+    const float z0 = (float)m_breakOverlayZ;
+    const float x1 = x0 + 1.0f;
+    const float y1 = y0 + 1.0f;
+    const float z1 = z0 + 1.0f;
+    const float eps = 0.001f;
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.0f, -1.0f);
+    glDisable(GL_CULL_FACE);
+
+    m_renderEngine->bindTexture(m_terrainTex);
+    Tessellator* t = Tessellator::instance;
+    t->startDrawingQuads();
+    t->setColorRGBA(255, 255, 255, 180);
+
+    // Bottom
+    t->addVertexWithUV(x0 - eps, y0 - eps, z1 + eps, u0, v1);
+    t->addVertexWithUV(x1 + eps, y0 - eps, z1 + eps, u1, v1);
+    t->addVertexWithUV(x1 + eps, y0 - eps, z0 - eps, u1, v0);
+    t->addVertexWithUV(x0 - eps, y0 - eps, z0 - eps, u0, v0);
+    // Top
+    t->addVertexWithUV(x0 - eps, y1 + eps, z0 - eps, u0, v0);
+    t->addVertexWithUV(x1 + eps, y1 + eps, z0 - eps, u1, v0);
+    t->addVertexWithUV(x1 + eps, y1 + eps, z1 + eps, u1, v1);
+    t->addVertexWithUV(x0 - eps, y1 + eps, z1 + eps, u0, v1);
+    // North
+    t->addVertexWithUV(x0 - eps, y0 - eps, z0 - eps, u0, v1);
+    t->addVertexWithUV(x1 + eps, y0 - eps, z0 - eps, u1, v1);
+    t->addVertexWithUV(x1 + eps, y1 + eps, z0 - eps, u1, v0);
+    t->addVertexWithUV(x0 - eps, y1 + eps, z0 - eps, u0, v0);
+    // South
+    t->addVertexWithUV(x0 - eps, y1 + eps, z1 + eps, u0, v0);
+    t->addVertexWithUV(x1 + eps, y1 + eps, z1 + eps, u1, v0);
+    t->addVertexWithUV(x1 + eps, y0 - eps, z1 + eps, u1, v1);
+    t->addVertexWithUV(x0 - eps, y0 - eps, z1 + eps, u0, v1);
+    // West
+    t->addVertexWithUV(x0 - eps, y0 - eps, z1 + eps, u0, v1);
+    t->addVertexWithUV(x0 - eps, y0 - eps, z0 - eps, u1, v1);
+    t->addVertexWithUV(x0 - eps, y1 + eps, z0 - eps, u1, v0);
+    t->addVertexWithUV(x0 - eps, y1 + eps, z1 + eps, u0, v0);
+    // East
+    t->addVertexWithUV(x1 + eps, y0 - eps, z0 - eps, u0, v1);
+    t->addVertexWithUV(x1 + eps, y0 - eps, z1 + eps, u1, v1);
+    t->addVertexWithUV(x1 + eps, y1 + eps, z1 + eps, u1, v0);
+    t->addVertexWithUV(x1 + eps, y1 + eps, z0 - eps, u0, v0);
+    t->draw();
+
+    glEnable(GL_CULL_FACE);
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glDisable(GL_BLEND);
 }
 
 void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode, const glm::vec3& fogColor) {
@@ -268,12 +366,77 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
         float b = getEntityBrightness(ex, ey, ez);
         m_entityShader->setVec3("colorTint", glm::vec3(b));
 
+        if (auto* item = dynamic_cast<EntityItem*>(entity)) {
+            const bool isBlockItem = item->itemID > 0 && Block::blocksList[item->itemID] != nullptr;
+            if (isBlockItem) {
+                m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
+            } else {
+                m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/items.png"));
+            }
+
+            const float u0 = (float)(((isBlockItem ? Block::blocksList[item->itemID]->blockIndexInTexture : item->itemID) & 15) * 16) / 256.0f;
+            const float v0 = (float)(((isBlockItem ? Block::blocksList[item->itemID]->blockIndexInTexture : item->itemID) >> 4) * 16) / 256.0f;
+            const float u1 = u0 + 16.0f / 256.0f;
+            const float v1 = v0 + 16.0f / 256.0f;
+
+            glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), glm::vec3(
+                (float)ex,
+                (float)ey + 0.15f + std::sin((float)glfwGetTime() * 2.0f + (float)item->entityID) * 0.05f,
+                (float)ez
+            ));
+            modelMat = glm::rotate(modelMat, glm::radians(-m_camera.yaw + 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            modelMat = glm::scale(modelMat, glm::vec3(0.35f, 0.35f, 0.35f));
+            m_entityShader->setMat4("model", modelMat);
+
+            Tessellator* t = Tessellator::instance;
+            if (isBlockItem) {
+                t->startDrawingQuads();
+                t->setColorOpaque(255, 255, 255);
+                // top/bottom
+                t->addVertexWithUV(-0.5f,  0.5f, -0.5f, u0, v1);
+                t->addVertexWithUV( 0.5f,  0.5f, -0.5f, u1, v1);
+                t->addVertexWithUV( 0.5f,  0.5f,  0.5f, u1, v0);
+                t->addVertexWithUV(-0.5f,  0.5f,  0.5f, u0, v0);
+                t->addVertexWithUV(-0.5f, -0.5f,  0.5f, u0, v1);
+                t->addVertexWithUV( 0.5f, -0.5f,  0.5f, u1, v1);
+                t->addVertexWithUV( 0.5f, -0.5f, -0.5f, u1, v0);
+                t->addVertexWithUV(-0.5f, -0.5f, -0.5f, u0, v0);
+                // north/south/east/west
+                t->addVertexWithUV(-0.5f, -0.5f, -0.5f, u0, v1);
+                t->addVertexWithUV( 0.5f, -0.5f, -0.5f, u1, v1);
+                t->addVertexWithUV( 0.5f,  0.5f, -0.5f, u1, v0);
+                t->addVertexWithUV(-0.5f,  0.5f, -0.5f, u0, v0);
+                t->addVertexWithUV(-0.5f,  0.5f,  0.5f, u0, v0);
+                t->addVertexWithUV( 0.5f,  0.5f,  0.5f, u1, v0);
+                t->addVertexWithUV( 0.5f, -0.5f,  0.5f, u1, v1);
+                t->addVertexWithUV(-0.5f, -0.5f,  0.5f, u0, v1);
+                t->addVertexWithUV( 0.5f, -0.5f, -0.5f, u0, v1);
+                t->addVertexWithUV( 0.5f, -0.5f,  0.5f, u1, v1);
+                t->addVertexWithUV( 0.5f,  0.5f,  0.5f, u1, v0);
+                t->addVertexWithUV( 0.5f,  0.5f, -0.5f, u0, v0);
+                t->addVertexWithUV(-0.5f, -0.5f,  0.5f, u0, v1);
+                t->addVertexWithUV(-0.5f, -0.5f, -0.5f, u1, v1);
+                t->addVertexWithUV(-0.5f,  0.5f, -0.5f, u1, v0);
+                t->addVertexWithUV(-0.5f,  0.5f,  0.5f, u0, v0);
+                t->draw();
+            } else {
+                t->startDrawingQuads();
+                t->setColorOpaque(255, 255, 255);
+                t->addVertexWithUV(-0.5f, 0.0f, 0.0f, u0, v1);
+                t->addVertexWithUV(0.5f, 0.0f, 0.0f, u1, v1);
+                t->addVertexWithUV(0.5f, 1.0f, 0.0f, u1, v0);
+                t->addVertexWithUV(-0.5f, 1.0f, 0.0f, u0, v0);
+                t->draw();
+            }
+            return;
+        }
+
         m_renderEngine->bindTexture(m_renderEngine->getTexture(dynamic_cast<EntityPlayer*>(entity) ? "/char.png" : "/mob/zombie.png"));
 
         float renderYaw = 0.0f, interpYaw = entity->rotationYaw, headPitch = entity->rotationPitch;
         if (auto living = dynamic_cast<EntityLiving*>(entity)) {
-            renderYaw = living->prevRenderYawOffset + (living->renderYawOffset - living->prevRenderYawOffset) * pTicks;
-            interpYaw = living->prevRotationYaw + (living->rotationYaw - living->prevRotationYaw) * pTicks;
+            renderYaw = interpAngle(living->prevRenderYawOffset, living->renderYawOffset, pTicks);
+            interpYaw = interpAngle(living->prevRotationYaw, living->rotationYaw, pTicks);
             headPitch = living->prevRotationPitch + (living->rotationPitch - living->prevRotationPitch) * pTicks;
         }
 
@@ -457,6 +620,83 @@ void GameRenderer::renderHUD() {
     float centerX = m_scaledWidth / 2.0f;
     drawTexturedModalRect(centerX - 91.0f, m_scaledHeight - 22.0f, 0, 0, 182, 22); // Hotbar
     drawTexturedModalRect(centerX - 91.0f - 1.0f + (float)m_player.inventory.currentSlot * 20.0f, m_scaledHeight - 22.0f - 1.0f, 0, 22, 24, 22); // Selection
+
+    auto drawBlockStack3D = [&](const Block* block, float x, float y) {
+        if (!block) return;
+        Tessellator* t = Tessellator::instance;
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
+
+        auto tileUV = [](int tex, float& u0, float& v0, float& u1, float& v1) {
+            u0 = (float)((tex & 15) * 16) / 256.0f;
+            v0 = (float)((tex >> 4) * 16) / 256.0f;
+            u1 = u0 + 16.0f / 256.0f;
+            v1 = v0 + 16.0f / 256.0f;
+        };
+
+        float u0, v0, u1, v1;
+        const int texTop = block->getTexture(1);
+        const int texSide = block->getTexture(2);
+
+        y -= 1.5f; // Center offset
+
+        t->startDrawingQuads();
+        tileUV(texTop, u0, v0, u1, v1);
+        t->setColorRGBA(230, 230, 230, 255);
+        t->addVertexWithUV(x + 2.0f, y + 6.0f, 0.0f, u0, v1);
+        t->addVertexWithUV(x + 8.0f, y + 3.0f, 0.0f, u1, v1);
+        t->addVertexWithUV(x + 14.0f, y + 6.0f, 0.0f, u1, v0);
+        t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u0, v0);
+
+        tileUV(texSide, u0, v0, u1, v1);
+        t->setColorRGBA(170, 170, 170, 255);
+        t->addVertexWithUV(x + 2.0f, y + 6.0f, 0.0f, u0, v0);
+        t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u1, v0);
+        t->addVertexWithUV(x + 8.0f, y + 16.0f, 0.0f, u1, v1);
+        t->addVertexWithUV(x + 2.0f, y + 13.0f, 0.0f, u0, v1);
+
+        t->setColorRGBA(200, 200, 200, 255);
+        t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u0, v0);
+        t->addVertexWithUV(x + 14.0f, y + 6.0f, 0.0f, u1, v0);
+        t->addVertexWithUV(x + 14.0f, y + 13.0f, 0.0f, u1, v1);
+        t->addVertexWithUV(x + 8.0f, y + 16.0f, 0.0f, u0, v1);
+        t->draw();
+    };
+
+    auto drawBlockStack2D = [&](const Block* block, float x, float y) {
+        if (!block) return;
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
+        const int tex = block->getTexture(0);
+        drawTexturedModalRect(x, y, (tex & 15) * 16, (tex >> 4) * 16, 16, 16);
+    };
+
+    auto drawItemStack2D = [&](int itemID, float x, float y) {
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/items.png"));
+        const int tex = itemID & 255;
+        drawTexturedModalRect(x, y, (tex & 15) * 16, (tex >> 4) * 16, 16, 16);
+    };
+
+    for (int slot = 0; slot < InventoryPlayer::HOTBAR_SIZE; ++slot) {
+        const ItemStack& stack = m_player.inventory.mainInventory[slot];
+        if (stack.itemID <= 0 || stack.count <= 0) continue;
+
+        const float iconX = centerX - 91.0f + (float)slot * 20.0f + 3.0f;
+        const float iconY = m_scaledHeight - 19.0f;
+        if (Block::blocksList[stack.itemID]) {
+            if (Block::blocksList[stack.itemID]->getRenderShape() == BlockRenderShape::Cross) {
+                drawBlockStack2D(Block::blocksList[stack.itemID], iconX, iconY);
+            } else {
+                drawBlockStack3D(Block::blocksList[stack.itemID], iconX, iconY);
+            }
+        } else {
+            drawItemStack2D(stack.itemID, iconX, iconY);
+        }
+
+        if (stack.count > 1) {
+            char countBuf[8];
+            std::snprintf(countBuf, sizeof(countBuf), "%d", stack.count);
+            m_fontRenderer->drawStringWithShadow(*m_uiShader, countBuf, iconX + 17.0f - m_fontRenderer->getStringWidth(countBuf), iconY + 9.0f, 0xFFFFFFFF);
+        }
+    }
 
     if (m_player.gameMode == GameMode::SURVIVAL) {
         m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/icons.png"));

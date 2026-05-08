@@ -2,10 +2,11 @@
 
 #include <GLFW/glfw3.h>
 #include "entities/EntityPlayer.hpp"
+#include "util/GameSettings.hpp"
 
 class InputHandler {
 public:
-    InputHandler(GLFWwindow* window, EntityPlayer& player);
+    InputHandler(GLFWwindow* window, EntityPlayer& player, GameSettings& settings);
 
     void update();
     void handleKey(int key, int scancode, int action, int mods);
@@ -22,11 +23,15 @@ public:
 
     bool isLeftClick() { bool r = m_leftClick; m_leftClick = false; return r; }
     bool isRightClick() { bool r = m_rightClick; m_rightClick = false; return r; }
+    bool isLeftMouseDown() const { return m_leftMousePressed; }
+    bool isRightMouseDown() const { return m_rightMousePressed; }
+    bool shouldToggleInventory() { bool r = m_inventoryPressed; m_inventoryPressed = false; return r; }
     bool isEscPressed() { bool r = m_escPressed; m_escPressed = false; return r; }
 
 private:
     GLFWwindow* m_window;
     EntityPlayer& m_player;
+    GameSettings& m_settings;
 
     bool m_firstMouse = true;
     float m_lastX = 0.0f;
@@ -52,9 +57,9 @@ private:
     bool m_rightClick = false;
     bool m_escPressed = false;
     bool m_escWasPressed = false; // To handle press/release
+    bool m_ePressed = false;
+    bool m_inventoryPressed = false;
 
     bool m_spacePressed = false;
     int m_spaceTapTicks = 0;
 };
-
-

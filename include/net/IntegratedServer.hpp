@@ -5,6 +5,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include "net/Server.hpp"
 #include "world/World.hpp"
 
@@ -29,6 +30,7 @@ private:
         int32_t entityID;
         std::string username;
         std::unordered_map<uint64_t, ChunkState> sentChunks;
+        std::unordered_set<int32_t> sentEntities;
     };
     std::map<ENetPeer*, PlayerSession> m_players;
 };

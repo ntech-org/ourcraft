@@ -6,7 +6,7 @@
 
 class Minecraft;
 
-class GuiScreen : public Gui {
+class GuiScreen : public Gui, public std::enable_shared_from_this<GuiScreen> {
 public:
     virtual ~GuiScreen() = default;
 
@@ -22,6 +22,8 @@ public:
     
     static bool isCtrlKeyDown();
     static bool isShiftKeyDown();
+
+    std::shared_ptr<GuiScreen> parentScreen = nullptr;
 
 protected:
     virtual void actionPerformed(GuiButton* button) {}

@@ -6,7 +6,7 @@
 Chunk::Chunk(int x, int z) : m_x(x), m_z(z) {
     m_blocks.resize(SIZE, 0);
     m_metadata.resize(SIZE / 2, 0);
-    m_skylight.resize(SIZE / 2, 0xFF);
+    m_skylight.resize(SIZE / 2, 0);
     m_blocklight.resize(SIZE / 2, 0);
     m_heightMap.resize(WIDTH * DEPTH, 0);
 }

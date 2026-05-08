@@ -26,6 +26,21 @@ int RenderEngine::getTexture(const std::string& name) {
     return id;
 }
 
+int RenderEngine::createTexture(int width, int height, const unsigned char* data) {
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    
+    return (int)texture;
+}
+
 void RenderEngine::bindTexture(int textureID) {
     if (textureID >= 0) {
         glBindTexture(GL_TEXTURE_2D, textureID);

@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <iostream>
 
-InputHandler::InputHandler(GLFWwindow* window, EntityPlayer& player)
-    : m_window(window), m_player(player) 
+InputHandler::InputHandler(GLFWwindow* window, EntityPlayer& player, GameSettings& settings)
+    : m_window(window), m_player(player), m_settings(settings) 
 {
     int width, height;
     glfwGetWindowSize(window, &width, &height);
@@ -126,6 +126,12 @@ void InputHandler::update() {
         m_escPressed = true;
     }
     m_escWasPressed = esc;
+
+    bool e = glfwGetKey(m_window, GLFW_KEY_E) == GLFW_PRESS;
+    if (e && !m_ePressed) {
+        m_inventoryPressed = true;
+    }
+    m_ePressed = e;
 }
 
 
@@ -158,7 +164,7 @@ void InputHandler::handleMouse(double xposIn, double yposIn) {
     m_lastX = xpos;
     m_lastY = ypos;
 
-    float sensitivity = 0.15f;
+    float sensitivity = m_settings.mouseSensitivity * 0.5f;
     xoffset *= sensitivity;
     yoffset *= sensitivity;
 

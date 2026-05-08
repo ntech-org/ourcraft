@@ -508,100 +508,90 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
 
 void World::calculateInitialSkylight(Chunk& chunk) {
     chunk.generateHeightMap();
-    int cx = chunk.getX() << 4, cz = chunk.getZ() << 4;
-    std::vector<LightNode> skyQueue, blockQueue;
+    const int cx = chunk.getX() << 4;
+    const int cz = chunk.getZ() << 4;
 
+    std::vector<LightNode> skyQueue;
+    std::vector<LightNode> blockQueue;
+    skyQueue.reserve(Chunk::SIZE / 2);
+    blockQueue.reserve(Chunk::SIZE / 32);
+
+    // Rebuild vertical skylight from scratch to avoid stale/light-leak state.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            int h = chunk.getHeight(x, z);
-            for (int y = Chunk::HEIGHT - 1; y >= h; --y) chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 15);
-            for (int y = h - 1; y >= 0; --y) chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 0);
-
-            // Seed vertical column for 15-to-14 horizontal spread
-            skyQueue.push_back({cx + x, h, cz + z});
-            if (h > 0) skyQueue.push_back({cx + x, h - 1, cz + z});
-
-            for (int y = 0; y < Chunk::HEIGHT; ++y) if (Block::lightValue[chunk.getBlockID(x, y, z)] > 0) blockQueue.push_back({cx + x, y, cz + z});
-
-            // Seed internal horizontal spread for sunlight shafts (1-block holes)
-            for (int dx = -1; dx <= 1; ++dx) {
-                for (int dz = -1; dz <= 1; ++dz) {
-                    if (std::abs(dx) + std::abs(dz) != 1) continue;
-                    int nx = x + dx, nz = z + dz;
-                    if (nx >= 0 && nx < 16 && nz >= 0 && nz < 16) {
-                        int nh = chunk.getHeight(nx, nz);
-                        if (nh > h) {
-                            for (int y = h; y < nh; ++y) skyQueue.push_back({cx + x, y, cz + z});
-                        }
+            int sky = 15;
+            for (int y = Chunk::HEIGHT - 1; y >= 0; --y) {
+                const int idx = (x << 11) | (z << 7) | y;
+                const uint8_t id = chunk.getBlockID(x, y, z);
+                int opacity = 0;
+                if (id != 0) {
+                    opacity = std::clamp(Block::lightOpacity[id], 1, 15);
+                    if (sky > 0) {
+                        sky -= opacity;
+                        if (sky < 0) sky = 0;
                     }
                 }
+                chunk.setLightInternal(LightType::Sky, idx, sky);
+                if (sky > 0) {
+                    skyQueue.push_back({cx + x, y, cz + z});
+                }
+
+                const int emitted = Block::lightValue[id];
+                chunk.setLightInternal(LightType::Block, idx, emitted);
+                if (emitted > 0) {
+                    blockQueue.push_back({cx + x, y, cz + z});
+                }
             }
         }
     }
 
-    // Modern industry standard boundary seeding (Lock-free fast path)
-    std::shared_ptr<Chunk> spW = getChunk((cx - 1) >> 4, cz >> 4);
-    std::shared_ptr<Chunk> spE = getChunk((cx + 16) >> 4, cz >> 4);
-    std::shared_ptr<Chunk> spN = getChunk(cx >> 4, (cz - 1) >> 4);
-    std::shared_ptr<Chunk> spS = getChunk(cx >> 4, (cz + 16) >> 4);
-    Chunk* neighborW = spW.get(); Chunk* neighborE = spE.get();
-    Chunk* neighborN = spN.get(); Chunk* neighborS = spS.get();
-
-    auto seedBoundary = [&](Chunk* nChunk, int nx, int nz) {
-        if (!nChunk) return;
+    // Seed boundary light from already-loaded neighbors for seamless joins.
+    auto seedNeighborBoundary = [&](Chunk* neighbor, int wx, int wz) {
+        if (!neighbor) return;
         for (int y = 0; y < Chunk::HEIGHT; ++y) {
-            int nlx = nx & 15, nlz = nz & 15;
-            int idx = (nlx << 11) | (nlz << 7) | y;
-            if (nChunk->getLightInternal(LightType::Sky, idx) > 0) skyQueue.push_back({nx, y, nz});
-            if (nChunk->getLightInternal(LightType::Block, idx) > 0) blockQueue.push_back({nx, y, nz});
+            const int nidx = ((wx & 15) << 11) | ((wz & 15) << 7) | y;
+            if (neighbor->getLightInternal(LightType::Sky, nidx) > 0) {
+                skyQueue.push_back({wx, y, wz});
+            }
+            if (neighbor->getLightInternal(LightType::Block, nidx) > 0) {
+                blockQueue.push_back({wx, y, wz});
+            }
         }
     };
 
-    auto seedOurBoundary = [&](int nx, int nz) {
-        for (int y = 0; y < Chunk::HEIGHT; ++y) {
-            int nlx = nx & 15, nlz = nz & 15;
-            int idx = (nlx << 11) | (nlz << 7) | y;
-            if (chunk.getLightInternal(LightType::Sky, idx) > 0) skyQueue.push_back({nx, y, nz});
-            if (chunk.getLightInternal(LightType::Block, idx) > 0) blockQueue.push_back({nx, y, nz});
-        }
-    };
+    Chunk* neighborW = getChunk(chunk.getX() - 1, chunk.getZ()).get();
+    Chunk* neighborE = getChunk(chunk.getX() + 1, chunk.getZ()).get();
+    Chunk* neighborN = getChunk(chunk.getX(), chunk.getZ() - 1).get();
+    Chunk* neighborS = getChunk(chunk.getX(), chunk.getZ() + 1).get();
 
     for (int i = 0; i < 16; ++i) {
-        // Boundary seeding: Seed our boundary from neighbors AND seed neighbors from our boundary
-        auto seedBoth = [&](Chunk* nChunk, int myX, int myZ, int nX, int nZ) {
-            for (int y = 0; y < Chunk::HEIGHT; ++y) {
-                // If neighbor has light, it might flow into us
-                if (nChunk) {
-                    int nIdx = ((nX & 15) << 11) | ((nZ & 15) << 7) | y;
-                    if (nChunk->getLightInternal(LightType::Sky, nIdx) > 0) skyQueue.push_back({nX, y, nZ});
-                    if (nChunk->getLightInternal(LightType::Block, nIdx) > 0) blockQueue.push_back({nX, y, nZ});
-                }
-                // If we have light, it might flow into neighbor
-                int myIdx = ((myX & 15) << 11) | ((myZ & 15) << 7) | y;
-                if (chunk.getLightInternal(LightType::Sky, myIdx) > 0) skyQueue.push_back({myX, y, myZ});
-                if (chunk.getLightInternal(LightType::Block, myIdx) > 0) blockQueue.push_back({myX, y, myZ});
-            }
-        };
-
-        seedBoth(neighborW, cx, cz + i, cx - 1, cz + i);
-        seedBoth(neighborE, cx + 15, cz + i, cx + 16, cz + i);
-        seedBoth(neighborN, cx + i, cz, cx + i, cz - 1);
-        seedBoth(neighborS, cx + i, cz + 15, cx + i, cz + 16);
+        seedNeighborBoundary(neighborW, cx - 1, cz + i);
+        seedNeighborBoundary(neighborE, cx + 16, cz + i);
+        seedNeighborBoundary(neighborN, cx + i, cz - 1);
+        seedNeighborBoundary(neighborS, cx + i, cz + 16);
     }
 
-    propagateLight(LightType::Sky, skyQueue); propagateLight(LightType::Block, blockQueue);
+    propagateLight(LightType::Sky, skyQueue);
+    propagateLight(LightType::Block, blockQueue);
 }
 
 void World::predictLighting(Chunk& chunk) {
     chunk.generateHeightMap();
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            int h = chunk.getHeight(x, z);
-            for (int y = Chunk::HEIGHT - 1; y >= h; --y) {
-                chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 15);
-            }
-            for (int y = h - 1; y >= 0; --y) {
-                chunk.setLightInternal(LightType::Sky, (x << 11) | (z << 7) | y, 0);
+            int sky = 15;
+            for (int y = Chunk::HEIGHT - 1; y >= 0; --y) {
+                const int idx = (x << 11) | (z << 7) | y;
+                const uint8_t id = chunk.getBlockID(x, y, z);
+                if (id != 0) {
+                    const int opacity = std::clamp(Block::lightOpacity[id], 1, 15);
+                    if (sky > 0) {
+                        sky -= opacity;
+                        if (sky < 0) sky = 0;
+                    }
+                }
+                chunk.setLightInternal(LightType::Sky, idx, sky);
+                chunk.setLightInternal(LightType::Block, idx, Block::lightValue[id]);
             }
         }
     }

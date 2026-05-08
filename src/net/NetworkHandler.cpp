@@ -1,6 +1,7 @@
 #include "net/NetworkHandler.hpp"
 #include "net/NetworkManager.hpp"
 #include "net/Packets.hpp"
+#include "entities/EntityItem.hpp"
 #include "entities/EntityZombie.hpp"
 #include <stdexcept>
 #include <cstring>
@@ -83,6 +84,10 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
         std::unique_ptr<Entity> entity;
         if (packet.type == 1) {
             entity = std::make_unique<EntityZombie>(m_world);
+        } else if (packet.type == 2) {
+            auto item = std::make_unique<EntityItem>(m_world, packet.dataA, packet.dataB, packet.dataC);
+            item->pickupDelay = 0;
+            entity = std::move(item);
         } else {
             entity = std::make_unique<EntityPlayer>(m_world);
         }
@@ -179,5 +184,9 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
         PacketChunkUnload packet;
         packet.deserialize(ptr, size - 1);
         m_world.removeChunk(packet.x, packet.z);
+    } else if (type == PacketType::InventoryAdd) {
+        PacketInventoryAdd packet;
+        packet.deserialize(ptr, size - 1);
+        m_player.inventory.addItem(packet.itemID, packet.count, packet.metadata);
     }
 }

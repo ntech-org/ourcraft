@@ -33,8 +33,9 @@ void WorldRenderer::meshWorkerLoop() {
             std::unique_lock<std::mutex> lock(m_taskMutex);
             m_cv.wait(lock, [this] { return !m_taskQueue.empty() || !m_running; });
             if (!m_running) break;
-            task = m_taskQueue.front();
+            task = m_taskQueue.top();
             m_taskQueue.pop();
+            m_queuedTasks.erase(task.key);
         }
 
         const auto buildStart = clock::now();
@@ -44,6 +45,7 @@ void WorldRenderer::meshWorkerLoop() {
         MeshResult result;
         result.key = task.key;
         result.meshData = std::move(meshData);
+        result.requestedVersion = task.requestedVersion;
         result.version = task.chunk->getSectionVersion(task.sectionIndex);
         result.buildMs = std::chrono::duration<double, std::milli>(buildEnd - buildStart).count();
 
@@ -104,6 +106,14 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
 
         auto it = m_sections.find(result.key);
         if (it != m_sections.end()) {
+            if (result.version != result.requestedVersion) {
+                it->second.isBuilding = false;
+                it->second.chunk->touchSection(it->second.sectionIndex);
+                ++m_stats.meshBuilds;
+                m_stats.meshBuildMs += result.buildMs;
+                resultsProcessed++;
+                continue;
+            }
             it->second.bounds = result.meshData.bounds;
             it->second.mesh.upload(result.meshData.opaque);
             it->second.translucentMesh.upload(result.meshData.translucent);
@@ -136,13 +146,28 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
             // Only rebuild if chunk is fully processed
             if (state == ChunkState::Complete || state == ChunkState::Decorated || state == ChunkState::Lighted) {
                 entry.isBuilding = true;
-                entry.chunk->clearSectionDirty(entry.sectionIndex);
-
-                MeshTask task { it->first, entry.chunk, entry.sectionIndex };
+                const std::uint64_t taskKey = it->first;
+                bool enqueued = false;
                 {
                     std::lock_guard<std::mutex> lock(m_taskMutex);
-                    m_taskQueue.push(task);
+                    if (m_queuedTasks.insert(taskKey).second) {
+                        MeshTask task;
+                        task.key = taskKey;
+                        task.chunk = entry.chunk;
+                        task.sectionIndex = entry.sectionIndex;
+                        task.requestedVersion = currentVersion;
+                        task.priority = 0;
+                        m_taskQueue.push(std::move(task));
+                        enqueued = true;
+                    }
                 }
+                if (!enqueued) {
+                    entry.isBuilding = false;
+                    ++it;
+                    continue;
+                }
+                entry.chunk->clearSectionDirty(entry.sectionIndex);
+
                 m_cv.notify_one();
                 if (++buildsStarted >= limit) {
                     break;

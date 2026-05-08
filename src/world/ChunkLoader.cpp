@@ -72,7 +72,7 @@ void ChunkLoader::workerLoop() {
             std::unique_lock<std::mutex> lock(m_requestMutex);
             m_cv.wait(lock, [this] { return !m_requestQueue.empty() || !m_running; });
             if (!m_running && m_requestQueue.empty()) break;
-            task = std::move(m_requestQueue.front());
+            task = std::move(m_requestQueue.top());
             m_requestQueue.pop();
         }
 
