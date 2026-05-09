@@ -363,7 +363,7 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
         auto check = [&](int nx, int ny, int nz) {
             if (ny < 0 || ny >= Chunk::HEIGHT) return;
             Chunk* nChunk = getRawChunk(nx, nz);
-            if (!nChunk) return;
+            if (!nChunk || !nChunk->isLightWipeComplete()) return;
 
             int nlx = nx & 15, nlz = nz & 15;
             int nidx = (nlx << 11) | (nlz << 7) | ny;
@@ -377,6 +377,17 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
             if (newLight > oldLight) {
                 nChunk->setLightInternal(type, nidx, newLight);
                 nChunk->markSectionDirtyInternal(ny >> 4);
+                
+                // If we are on a section boundary, mark the adjacent section as dirty too
+                if ((ny & 15) == 0 && ny > 0) nChunk->markSectionDirtyInternal((ny >> 4) - 1);
+                else if ((ny & 15) == 15 && ny < Chunk::HEIGHT - 1) nChunk->markSectionDirtyInternal((ny >> 4) + 1);
+
+                // If we are on a chunk boundary, mark the neighbor chunk section as dirty
+                if (nlx == 0) { if (auto nb = getRawChunk(nx - 1, nz)) nb->markSectionDirtyInternal(ny >> 4); }
+                else if (nlx == 15) { if (auto nb = getRawChunk(nx + 1, nz)) nb->markSectionDirtyInternal(ny >> 4); }
+                if (nlz == 0) { if (auto nb = getRawChunk(nx, nz - 1)) nb->markSectionDirtyInternal(ny >> 4); }
+                else if (nlz == 15) { if (auto nb = getRawChunk(nx, nz + 1)) nb->markSectionDirtyInternal(ny >> 4); }
+
                 if (queue.size() < 10000000) queue.push_back({nx, ny, nz});
             }
         };
@@ -416,7 +427,7 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
         auto check = [&](int nx, int ny, int nz) {
             if (ny < 0 || ny >= Chunk::HEIGHT) return;
             Chunk* nChunk = getRawChunk(nx, nz);
-            if (!nChunk) return;
+            if (!nChunk || !nChunk->isLightWipeComplete()) return;
 
             int nlx = nx & 15, nlz = nz & 15;
             int nidx = (nlx << 11) | (nlz << 7) | ny;
@@ -434,6 +445,16 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
             if (dependent) {
                 nChunk->setLightInternal(type, nidx, 0);
                 nChunk->markSectionDirtyInternal(ny >> 4);
+
+                // Boundary dirtying
+                if ((ny & 15) == 0 && ny > 0) nChunk->markSectionDirtyInternal((ny >> 4) - 1);
+                else if ((ny & 15) == 15 && ny < Chunk::HEIGHT - 1) nChunk->markSectionDirtyInternal((ny >> 4) + 1);
+
+                if (nlx == 0) { if (auto nb = getRawChunk(nx - 1, nz)) nb->markSectionDirtyInternal(ny >> 4); }
+                else if (nlx == 15) { if (auto nb = getRawChunk(nx + 1, nz)) nb->markSectionDirtyInternal(ny >> 4); }
+                if (nlz == 0) { if (auto nb = getRawChunk(nx, nz - 1)) nb->markSectionDirtyInternal(ny >> 4); }
+                else if (nlz == 15) { if (auto nb = getRawChunk(nx, nz + 1)) nb->markSectionDirtyInternal(ny >> 4); }
+
                 removeQueue.push_back({nx, ny, nz, neighborLight});
             } else if (neighborLight > 0) {
                 addQueue.push_back({nx, ny, nz});
@@ -455,16 +476,19 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
 
     {
         std::vector<LightNode> addQueue; std::vector<LightRemovalNode> removeQueue;
-        if (newBlockLight > 0) { setLightValue(LightType::Block, x, y, z, newBlockLight); addQueue.push_back({x, y, z}); }
-        else {
-            setLightValue(LightType::Block, x, y, z, 0);
-            if (oldBlockLight > 0) removeQueue.push_back({x, y, z, oldBlockLight});
-            else {
-                int current = getSavedLightValue(LightType::Block, x, y, z);
-                if (current > 0) removeQueue.push_back({x, y, z, current});
-                else queueNeighbors(x, y, z, addQueue);
-            }
+        int currentSaved = getSavedLightValue(LightType::Block, x, y, z);
+
+        if (newOpacity > oldOpacity || newBlockLight < currentSaved) {
+            if (currentSaved > 0) removeQueue.push_back({x, y, z, currentSaved});
+            setLightValue(LightType::Block, x, y, z, newBlockLight);
+            if (newBlockLight > 0) addQueue.push_back({x, y, z});
+        } else if (newBlockLight > currentSaved) {
+            setLightValue(LightType::Block, x, y, z, newBlockLight);
+            addQueue.push_back({x, y, z});
+        } else if (newOpacity < oldOpacity) {
+            queueNeighbors(x, y, z, addQueue);
         }
+
         if (!removeQueue.empty()) unpropagateLight(LightType::Block, removeQueue, addQueue);
         if (!addQueue.empty()) propagateLight(LightType::Block, addQueue);
     }
@@ -525,7 +549,7 @@ void World::calculateInitialSkylight(Chunk& chunk) {
                 const uint8_t id = chunk.getBlockID(x, y, z);
                 int opacity = 0;
                 if (id != 0) {
-                    opacity = std::clamp(Block::lightOpacity[id], 1, 15);
+                    opacity = Block::lightOpacity[id];
                     if (sky > 0) {
                         sky -= opacity;
                         if (sky < 0) sky = 0;
@@ -544,6 +568,8 @@ void World::calculateInitialSkylight(Chunk& chunk) {
             }
         }
     }
+
+    chunk.setLightWipeComplete(true);
 
     // Seed boundary light from already-loaded neighbors for seamless joins.
     auto seedNeighborBoundary = [&](Chunk* neighbor, int wx, int wz) {
@@ -595,4 +621,5 @@ void World::predictLighting(Chunk& chunk) {
             }
         }
     }
+    chunk.setLightWipeComplete(true);
 }

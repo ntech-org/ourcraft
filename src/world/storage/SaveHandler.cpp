@@ -37,6 +37,7 @@ bool SaveHandler::loadChunk(Chunk& chunk) {
             std::memcpy(const_cast<uint8_t*>(chunk.getSkylight()), data.data() + Chunk::SIZE + Chunk::SIZE / 2, Chunk::SIZE / 2);
             std::memcpy(const_cast<uint8_t*>(chunk.getBlocklight()), data.data() + Chunk::SIZE + Chunk::SIZE, Chunk::SIZE / 2);
             chunk.setState(ChunkState::Complete);
+            chunk.setLightWipeComplete(true);
             chunk.generateHeightMap();
             return true;
         }
@@ -87,6 +88,7 @@ bool SaveHandler::loadLegacyChunk(Chunk& chunk) {
     std::memcpy(const_cast<uint8_t*>(chunk.getBlocklight()), blockLight.data(), Chunk::SIZE / 2);
     
     chunk.setState(ChunkState::Complete);
+    chunk.setLightWipeComplete(true);
     chunk.generateHeightMap();
     
     // Save to region immediately for conversion

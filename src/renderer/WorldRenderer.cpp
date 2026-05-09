@@ -239,7 +239,8 @@ void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool sho
         AABB columnBounds = { {0, 0, 0}, {16, 128, 16} };
         if (!frustum.intersects(columnBounds, relativeChunkPos)) continue;
 
-        shader.setMat4("model", glm::translate(glm::mat4(1.0f), relativeChunkPos));
+        shader.setMat4("model", glm::mat4(1.0f));
+        t->setTranslation(relativeChunkPos.x, relativeChunkPos.y, relativeChunkPos.z);
 
         // Vertical lines
         for (int i = 0; i <= 16; i += 16) {
@@ -256,6 +257,7 @@ void WorldRenderer::renderDebug(const Frustum& frustum, Shader& shader, bool sho
             t->addVertex(0, y, 16); t->addVertex(0, y, 0);
         }
     }
+    t->setTranslation(0, 0, 0);
     t->draw();
 }
 

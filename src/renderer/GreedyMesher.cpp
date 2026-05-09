@@ -44,7 +44,15 @@ bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
 
 float getWaterDepth(const IBlockAccess& n, int x, int y, int z) {
     float d = 0;
-    for (int i = 0; i < 64 && (y + i) < Chunk::HEIGHT; ++i) if (n.getBlockMaterial(x, y + i, z).isLiquid()) d += 1.0f;
+    // Only count depth if the column of liquid is continuous from y+1 upwards.
+    // This prevents "underwater" darkening in air pockets/caves below oceans.
+    for (int i = 0; (y + i + 1) < Chunk::HEIGHT; ++i) {
+        if (n.getBlockMaterial(x, y + i + 1, z).isLiquid()) {
+            d += 1.0f;
+        } else {
+            break;
+        }
+    }
     return d;
 }
 }

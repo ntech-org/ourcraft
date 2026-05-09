@@ -146,6 +146,8 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
 
         if (!hasLight) {
             m_world.predictLighting(*chunk);
+        } else {
+            chunk->setLightWipeComplete(true);
         }
 
         chunk->setState(ChunkState::Complete);

@@ -51,11 +51,16 @@ public:
     inline void setLightInternal(LightType type, int index, int val) {
         std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
         int byteIndex = index >> 1;
-        if ((index & 1) == 0) {
-            data[byteIndex] = (data[byteIndex] & 0xF0) | (val & 0x0F);
-        } else {
-            data[byteIndex] = (data[byteIndex] & 0x0F) | ((val & 0x0F) << 4);
-        }
+        std::atomic_ref<uint8_t> byteRef(data[byteIndex]);
+        uint8_t expected = byteRef.load(std::memory_order_relaxed);
+        uint8_t desired;
+        do {
+            if ((index & 1) == 0) {
+                desired = (expected & 0xF0) | (val & 0x0F);
+            } else {
+                desired = (expected & 0x0F) | ((val & 0x0F) << 4);
+            }
+        } while (!byteRef.compare_exchange_weak(expected, desired, std::memory_order_relaxed, std::memory_order_relaxed));
     }
 
     void markSectionDirtyInternal(int sectionIndex);
@@ -87,6 +92,9 @@ public:
     ChunkState getState() const { return m_state; }
     void setState(ChunkState state) { m_state = state; }
 
+    bool isLightWipeComplete() const { return m_lightWipeComplete.load(std::memory_order_acquire); }
+    void setLightWipeComplete(bool complete) { m_lightWipeComplete.store(complete, std::memory_order_release); }
+
     std::mutex& getBlockMutex() { return m_blockMutex; }
     std::mutex& getLightMutex() { return m_lightMutex; }
 
@@ -111,6 +119,7 @@ private:
     std::mutex m_blockMutex;
     std::mutex m_lightMutex;
     std::atomic<ChunkState> m_state { ChunkState::Empty };
+    std::atomic<bool> m_lightWipeComplete { false };
     uint8_t m_primaryBitmask = 0xFF;
 
     static inline int getIndex(int x, int y, int z) {
