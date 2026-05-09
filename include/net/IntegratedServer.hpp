@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include "net/Server.hpp"
 #include "world/World.hpp"
+#include "entities/InventoryPlayer.hpp"
 
 class IntegratedServer {
 public:
@@ -16,6 +17,7 @@ public:
 
     void start();
     void stop();
+    void setDedicated(bool dedicated) { m_isDedicated = dedicated; }
 
 private:
     void run();
@@ -25,10 +27,13 @@ private:
     std::unique_ptr<World> m_world;
     std::thread m_thread;
     std::atomic<bool> m_running{false};
+    bool m_isDedicated = false;
 
     struct PlayerSession {
         int32_t entityID;
         std::string username;
+        InventoryPlayer inventory;
+        ItemStack cursorStack;
         std::unordered_map<uint64_t, ChunkState> sentChunks;
         std::unordered_set<int32_t> sentEntities;
     };

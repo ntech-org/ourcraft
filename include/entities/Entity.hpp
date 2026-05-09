@@ -14,6 +14,7 @@ public:
     virtual void onUpdate();
     void moveEntity(double dx, double dy, double dz);
     void setPosition(double x, double y, double z);
+    void setPosAndPrev(double x, double y, double z);
     void setSize(float width, float height);
 
     World& worldObj;
@@ -27,6 +28,12 @@ public:
     AxisAlignedBB boundingBox;
     bool onGround = false;
     bool handlePhysics = true;
+
+    // Server-side synchronization and interpolation
+    int posRotationIncrements = 0;
+    double serverPosX = 0.0, serverPosY = 0.0, serverPosZ = 0.0;
+    double serverYaw = 0.0, serverPitch = 0.0;
+
     bool isCollidedHorizontally = false;
     bool isCollided = false;
     float width = 0.6f;

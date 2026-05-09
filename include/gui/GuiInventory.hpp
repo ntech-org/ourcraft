@@ -25,7 +25,7 @@ private:
     void drawItemStack2D(int itemID, float x, float y);
     void drawCursorStack(int mouseX, int mouseY);
 
-    ItemStack m_cursorStack {};
+    int16_t m_actionCount = 0;
     bool m_draggingLeft = false;
     std::array<bool, InventoryPlayer::INVENTORY_SIZE> m_dragVisited {};
 };

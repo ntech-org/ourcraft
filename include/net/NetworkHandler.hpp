@@ -11,7 +11,7 @@
 
 class NetworkHandler {
 public:
-    NetworkHandler(World& world, EntityPlayer& player);
+    NetworkHandler(World& world, EntityPlayer& player, bool startServer = true);
     ~NetworkHandler();
 
     bool connect(const std::string& address, int port);
@@ -20,6 +20,7 @@ public:
     void sendPlayerPosition(const EntityPlayer& player);
     void sendDigging(DiggingAction action, int x, int y, int z, int face);
     void sendPlacement(int x, int y, int z, int face, int id, int meta);
+    void sendPacket(const Packet& packet);
 
     int32_t getPlayerID() const { return m_playerID; }
 
@@ -32,4 +33,8 @@ private:
     std::unique_ptr<IntegratedServer> m_server;
     std::unique_ptr<Client> m_client;
     int32_t m_playerID = -1;
+
+    double m_lastX = 0, m_lastY = 0, m_lastZ = 0;
+    float m_lastYaw = 0, m_lastPitch = 0;
+    int m_posUpdateTimer = 0;
 };

@@ -67,6 +67,55 @@ public:
     }
 };
 
+class PacketPlayerRotation : public Packet {
+public:
+    float yaw, pitch;
+    bool onGround;
+
+    PacketType getType() const override { return PacketType::PlayerRotation; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeFloat(buffer, yaw);
+        writeFloat(buffer, pitch);
+        writeByte(buffer, onGround ? 1 : 0);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        yaw = readFloat(data);
+        pitch = readFloat(data);
+        onGround = readByte(data) != 0;
+    }
+};
+
+class PacketPlayerPosLook : public Packet {
+public:
+    double x, y, z;
+    float yaw, pitch;
+    bool onGround;
+
+    PacketType getType() const override { return PacketType::PlayerPosLook; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeDouble(buffer, x);
+        writeDouble(buffer, y);
+        writeDouble(buffer, z);
+        writeFloat(buffer, yaw);
+        writeFloat(buffer, pitch);
+        writeByte(buffer, onGround ? 1 : 0);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        x = readDouble(data);
+        y = readDouble(data);
+        z = readDouble(data);
+        yaw = readFloat(data);
+        pitch = readFloat(data);
+        onGround = readByte(data) != 0;
+    }
+};
+
 class PacketSpawnEntity : public Packet {
 public:
     int32_t id;
@@ -424,5 +473,123 @@ public:
         itemID = readInt(data);
         count = readInt(data);
         metadata = readByte(data);
+    }
+};
+
+class PacketWindowItems : public Packet {
+public:
+    uint8_t windowId;
+    struct Item { int32_t id; int32_t count; uint8_t metadata; };
+    std::vector<Item> items;
+
+    PacketType getType() const override { return PacketType::WindowItems; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeByte(buffer, windowId);
+        writeInt(buffer, (int32_t)items.size());
+        for (const auto& item : items) {
+            writeInt(buffer, item.id);
+            writeInt(buffer, item.count);
+            writeByte(buffer, item.metadata);
+        }
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        windowId = readByte(data);
+        int32_t count = readInt(data);
+        items.resize(count);
+        for (int i = 0; i < count; ++i) {
+            items[i].id = readInt(data);
+            items[i].count = readInt(data);
+            items[i].metadata = readByte(data);
+        }
+    }
+};
+
+class PacketSetSlot : public Packet {
+public:
+    uint8_t windowId;
+    int32_t slot;
+    int32_t itemID;
+    int32_t count;
+    uint8_t metadata;
+
+    PacketType getType() const override { return PacketType::SetSlot; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeByte(buffer, windowId);
+        writeInt(buffer, slot);
+        writeInt(buffer, itemID);
+        writeInt(buffer, count);
+        writeByte(buffer, metadata);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        windowId = readByte(data);
+        slot = readInt(data);
+        itemID = readInt(data);
+        count = readInt(data);
+        metadata = readByte(data);
+    }
+};
+
+class PacketClickWindow : public Packet {
+public:
+    uint8_t windowId;
+    int32_t slot;
+    uint8_t button;
+    int16_t actionId;
+    bool shift;
+    int32_t itemID;
+    int32_t count;
+    uint8_t metadata;
+
+    PacketType getType() const override { return PacketType::ClickWindow; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeByte(buffer, windowId);
+        writeInt(buffer, slot);
+        writeByte(buffer, button);
+        writeInt(buffer, (int32_t)actionId);
+        writeByte(buffer, shift ? 1 : 0);
+        writeInt(buffer, itemID);
+        writeInt(buffer, count);
+        writeByte(buffer, metadata);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        windowId = readByte(data);
+        slot = readInt(data);
+        button = readByte(data);
+        actionId = (int16_t)readInt(data);
+        shift = readByte(data) != 0;
+        itemID = readInt(data);
+        count = readInt(data);
+        metadata = readByte(data);
+    }
+};
+
+class PacketConfirmTransaction : public Packet {
+public:
+    uint8_t windowId;
+    int16_t actionId;
+    bool accepted;
+
+    PacketType getType() const override { return PacketType::ConfirmTransaction; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeByte(buffer, windowId);
+        writeInt(buffer, (int32_t)actionId);
+        writeByte(buffer, accepted ? 1 : 0);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        windowId = readByte(data);
+        actionId = (int16_t)readInt(data);
+        accepted = readByte(data) != 0;
     }
 };

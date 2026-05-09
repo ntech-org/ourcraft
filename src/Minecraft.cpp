@@ -5,6 +5,7 @@
 #include "gui/GuiMainMenu.hpp"
 #include "gui/GuiIngameMenu.hpp"
 #include "gui/GuiInventory.hpp"
+#include <iostream>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -33,7 +34,7 @@ void Minecraft::init() {
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
-    m_player->setPosition(999999999.0, 128.0, 0.0);
+    m_player->setPosition(0.0, 128.0, 0.0);
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -76,6 +77,36 @@ void Minecraft::startSingleplayer() {
     displayGuiScreen(nullptr);
 }
 
+void Minecraft::startMultiplayer(const std::string& address, int port) {
+    // Stop integrated server if running, just in case
+    if (m_networkHandler) m_networkHandler->stopServer();
+    m_networkHandler.reset();
+
+    // Re-initialize client to clean state
+    m_world = std::make_unique<World>();
+    m_world->isRemote = true;
+    m_player = std::make_unique<EntityPlayer>(*m_world);
+    m_player->setMinecraft(this);
+    m_player->isLocalPlayer = true;
+    m_player->setPosition(0.0, 128.0, 0.0);
+
+    m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
+    m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
+
+    // Pass 'false' to NOT start an integrated server for manual multiplayer
+    m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player, false);
+
+    if (!m_networkHandler->connect(address, port)) {
+        std::cerr << "[Minecraft] Failed to connect to " << address << ":" << port << std::endl;
+        displayGuiScreen(std::make_shared<GuiMainMenu>());
+        return;
+    }
+
+    m_gameRenderer->getWorldRenderer().rebuildSectionList();
+    m_gameState = GameState::InGame;
+    displayGuiScreen(nullptr);
+}
+
 void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
     if (m_currentScreen) m_currentScreen->onGuiClosed();
     m_currentScreen = screen;
@@ -100,25 +131,36 @@ void Minecraft::run() {
         for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
         m_gameRenderer->getProfiler().updateTime = (glfwGetTime() - updateStart) * 1000.0;
 
-        m_gameRenderer->render(m_timer.renderPartialTicks,
-                               m_inputHandler->getCameraMode(),
-                               m_inputHandler->isDebugVisible(),
-                               m_inputHandler->isChunkBoundariesVisible(),
-                               m_inputHandler->isProfilerVisible(),
-                               m_fps,
-                               m_currentScreen);
+        if (!glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) {
+            m_gameRenderer->render(m_timer.renderPartialTicks,
+                                   m_inputHandler->getCameraMode(),
+                                   m_inputHandler->isDebugVisible(),
+                                   m_inputHandler->isChunkBoundariesVisible(),
+                                   m_inputHandler->isProfilerVisible(),
+                                   m_fps,
+                                   m_currentScreen);
 
-        glfwSwapBuffers(m_window);
+            glfwSwapBuffers(m_window);
+        } else {
+            // Window is minimized. Skip rendering to avoid blocking in glfwSwapBuffers,
+            // but keep ticking the network and game logic.
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        
         glfwPollEvents();
     }
 }
 
 void Minecraft::tick() {
+    // Always update network regardless of pause state to keep connection alive
+    if (m_networkHandler) {
+        m_networkHandler->update();
+    }
+
     if (m_currentScreen) {
         m_currentScreen->updateScreen();
     } else {
         m_world->update(0.05f);
-        m_networkHandler->update();
         m_inputHandler->update();
 
         if (m_hitDelayTimer > 0) m_hitDelayTimer--;

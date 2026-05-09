@@ -2,8 +2,9 @@
 
 InventoryPlayer::InventoryPlayer() {
     for (int i = 0; i < INVENTORY_SIZE; ++i) {
-        mainInventory[i] = {0, 0};
+        mainInventory[i] = {0, 0, 0};
     }
+    cursorStack = {0, 0, 0};
     // Infdev-style starter hotbar for rapid building/testing.
     mainInventory[0] = {1, 64};  // Stone
     mainInventory[1] = {3, 64};  // Dirt
@@ -96,4 +97,66 @@ void InventoryPlayer::prevSlot() {
 
 void InventoryPlayer::setSlot(int slot) {
     if (slot >= 0 && slot < HOTBAR_SIZE) currentSlot = slot;
+}
+
+void InventoryPlayer::handleClick(int slot, bool rightClick) {
+    if (slot < -1 || slot >= INVENTORY_SIZE) return;
+
+    if (slot >= 0) {
+        ItemStack& target = mainInventory[slot];
+        const bool cursorEmpty = cursorStack.isEmpty();
+        const bool targetEmpty = target.isEmpty();
+
+        if (rightClick) {
+            if (cursorEmpty) {
+                if (!targetEmpty) {
+                    const int take = (target.count + 1) / 2;
+                    cursorStack = target;
+                    cursorStack.count = take;
+                    target.count -= take;
+                    if (target.count <= 0) target = {0, 0, 0};
+                }
+            } else {
+                if (targetEmpty) {
+                    target = cursorStack;
+                    target.count = 1;
+                    cursorStack.count -= 1;
+                    if (cursorStack.count <= 0) cursorStack = {0, 0, 0};
+                } else if (target.itemID == cursorStack.itemID &&
+                           target.metadata == cursorStack.metadata &&
+                           target.count < MAX_STACK_SIZE) {
+                    target.count += 1;
+                    cursorStack.count -= 1;
+                    if (cursorStack.count <= 0) cursorStack = {0, 0, 0};
+                }
+            }
+        } else {
+            if (cursorEmpty) {
+                if (!targetEmpty) {
+                    cursorStack = target;
+                    target = {0, 0, 0};
+                }
+            } else if (targetEmpty) {
+                target = cursorStack;
+                cursorStack = {0, 0, 0};
+            } else if (target.itemID == cursorStack.itemID && target.metadata == cursorStack.metadata) {
+                const int free = MAX_STACK_SIZE - target.count;
+                const int moved = std::min(free, cursorStack.count);
+                target.count += moved;
+                cursorStack.count -= moved;
+                if (cursorStack.count <= 0) cursorStack = {0, 0, 0};
+            } else {
+                std::swap(target, cursorStack);
+            }
+        }
+    } else if (slot == -1) {
+        if (!cursorStack.isEmpty()) {
+            if (rightClick) {
+                cursorStack.count -= 1;
+                if (cursorStack.count <= 0) cursorStack = {0, 0, 0};
+            } else {
+                cursorStack = {0, 0, 0};
+            }
+        }
+    }
 }

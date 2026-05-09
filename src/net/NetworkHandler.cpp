@@ -6,12 +6,15 @@
 #include <stdexcept>
 #include <cstring>
 
-NetworkHandler::NetworkHandler(World& world, EntityPlayer& player)
+NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startServer)
     : m_world(world), m_player(player) 
 {
     NetworkManager::init();
-    m_server = std::make_unique<IntegratedServer>();
-    m_server->start();
+    
+    if (startServer) {
+        m_server = std::make_unique<IntegratedServer>();
+        m_server->start();
+    }
 
     m_client = std::make_unique<Client>();
     m_client->onPacketReceived = [this](const uint8_t* data, size_t size) {
@@ -40,14 +43,43 @@ void NetworkHandler::stopServer() {
 }
 
 void NetworkHandler::sendPlayerPosition(const EntityPlayer& player) {
-    PacketPlayerPosition posPacket;
-    posPacket.x = player.posX;
-    posPacket.y = player.posY;
-    posPacket.z = player.posZ;
-    posPacket.yaw = player.rotationYaw;
-    posPacket.pitch = player.rotationPitch;
-    posPacket.onGround = player.onGround;
-    m_client->sendPacket(posPacket, false);
+    double dx = player.posX - m_lastX;
+    double dy = player.posY - m_lastY;
+    double dz = player.posZ - m_lastZ;
+    float dYaw = player.rotationYaw - m_lastYaw;
+    float dPitch = player.rotationPitch - m_lastPitch;
+
+    bool moved = (dx * dx + dy * dy + dz * dz) > 9e-4; // 0.03 blocks
+    bool turned = std::abs(dYaw) > 0.1f || std::abs(dPitch) > 0.1f;
+
+    if (moved && turned) {
+        PacketPlayerPosLook packet;
+        packet.x = player.posX; packet.y = player.posY; packet.z = player.posZ;
+        packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch;
+        packet.onGround = player.onGround;
+        m_client->sendPacket(packet, false);
+    } else if (moved) {
+        PacketPlayerPosition packet;
+        packet.x = player.posX; packet.y = player.posY; packet.z = player.posZ;
+        packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch; // Fallback for old servers
+        packet.onGround = player.onGround;
+        m_client->sendPacket(packet, false);
+    } else if (turned) {
+        PacketPlayerRotation packet;
+        packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch;
+        packet.onGround = player.onGround;
+        m_client->sendPacket(packet, false);
+    } else if (++m_posUpdateTimer >= 20) {
+        // Keep-alive/Sync every second
+        PacketPlayerRotation packet;
+        packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch;
+        packet.onGround = player.onGround;
+        m_client->sendPacket(packet, false);
+        m_posUpdateTimer = 0;
+    }
+
+    if (moved) { m_lastX = player.posX; m_lastY = player.posY; m_lastZ = player.posZ; }
+    if (turned) { m_lastYaw = player.rotationYaw; m_lastPitch = player.rotationPitch; }
 }
 
 void NetworkHandler::sendDigging(DiggingAction action, int x, int y, int z, int face) {
@@ -65,6 +97,12 @@ void NetworkHandler::sendPlacement(int x, int y, int z, int face, int id, int me
     packet.blockID = (uint8_t)id;
     packet.metadata = (uint8_t)meta;
     m_client->sendPacket(packet, true);
+}
+
+void NetworkHandler::sendPacket(const Packet& packet) {
+    if (m_client) {
+        m_client->sendPacket(packet);
+    }
 }
 
 void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
@@ -92,10 +130,17 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
             entity = std::make_unique<EntityPlayer>(m_world);
         }
         entity->entityID = packet.id;
-        entity->setPosition(packet.x, packet.y, packet.z);
+        entity->setPosAndPrev(packet.x, packet.y, packet.z);
         entity->rotationYaw = packet.yaw;
         entity->rotationPitch = packet.pitch;
         entity->handlePhysics = false;
+
+        entity->serverPosX = packet.x;
+        entity->serverPosY = packet.y;
+        entity->serverPosZ = packet.z;
+        entity->serverYaw = packet.yaw;
+        entity->serverPitch = packet.pitch;
+
         m_world.spawnEntity(std::move(entity));
     } else if (type == PacketType::MoveEntity) {
         PacketMoveEntity packet;
@@ -104,17 +149,12 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
 
         for (auto& entity : m_world.getEntities()) {
             if (entity->entityID == packet.id) {
-                entity->prevPosX = entity->posX;
-                entity->prevPosY = entity->posY;
-                entity->prevPosZ = entity->posZ;
-                entity->prevRotationYaw = entity->rotationYaw;
-                entity->prevRotationPitch = entity->rotationPitch;
-
-                entity->posX = packet.x; entity->posY = packet.y; entity->posZ = packet.z;
-                entity->rotationYaw = packet.yaw; entity->rotationPitch = packet.pitch;
-                float w2 = entity->width / 2.0f;
-                entity->boundingBox = AxisAlignedBB(entity->posX - w2, entity->posY, entity->posZ - w2,
-                                                   entity->posX + w2, entity->posY + entity->height, entity->posZ + w2);
+                entity->serverPosX = packet.x;
+                entity->serverPosY = packet.y;
+                entity->serverPosZ = packet.z;
+                entity->serverYaw = packet.yaw;
+                entity->serverPitch = packet.pitch;
+                entity->posRotationIncrements = 3;
                 break;
             }
         }
@@ -190,5 +230,27 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
         PacketInventoryAdd packet;
         packet.deserialize(ptr, size - 1);
         m_player.inventory.addItem(packet.itemID, packet.count, packet.metadata);
+    } else if (type == PacketType::WindowItems) {
+        PacketWindowItems packet;
+        packet.deserialize(ptr, size - 1);
+        if (packet.windowId == 0) {
+            for (size_t i = 0; i < packet.items.size() && i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+                m_player.inventory.mainInventory[i] = {packet.items[i].id, packet.items[i].count, packet.items[i].metadata};
+            }
+        }
+    } else if (type == PacketType::SetSlot) {
+        PacketSetSlot packet;
+        packet.deserialize(ptr, size - 1);
+        if (packet.windowId == 0) {
+            if (packet.slot == -1) {
+                m_player.inventory.cursorStack = {packet.itemID, packet.count, packet.metadata};
+            } else if (packet.slot >= 0 && packet.slot < InventoryPlayer::INVENTORY_SIZE) {
+                m_player.inventory.mainInventory[packet.slot] = {packet.itemID, packet.count, packet.metadata};
+            }
+        }
+    } else if (type == PacketType::ConfirmTransaction) {
+        PacketConfirmTransaction packet;
+        packet.deserialize(ptr, size - 1);
+        // If rejected, the server should follow up with SetSlot/WindowItems to correct the client.
     }
 }

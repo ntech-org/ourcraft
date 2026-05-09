@@ -1,25 +1,25 @@
 #pragma once
 #include <string>
 #include <memory>
-#include <map>
 #include <mutex>
-#include "world/storage/RegionFile.hpp"
 #include "world/Chunk.hpp"
+
+namespace rocksdb {
+    class DB;
+}
 
 class SaveHandler {
 public:
     SaveHandler(const std::string& worldDir);
-    ~SaveHandler() = default;
+    ~SaveHandler();
 
     bool loadChunk(Chunk& chunk);
     void saveChunk(const Chunk& chunk);
 
 private:
     std::string m_worldDir;
-    std::map<std::pair<int, int>, std::unique_ptr<RegionFile>> m_regions;
-    std::mutex m_regionMutex;
+    std::unique_ptr<rocksdb::DB> m_db;
 
-    RegionFile* getRegionFile(int chunkX, int chunkZ);
     std::string getLegacyChunkPath(int chunkX, int chunkZ);
     bool loadLegacyChunk(Chunk& chunk);
 };

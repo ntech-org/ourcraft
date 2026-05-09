@@ -12,14 +12,20 @@ enum class PacketType : uint8_t {
     SpawnEntity = 3,
     MoveEntity = 4,
     PlayerPosition = 5,
-    LoginResponse = 6,
-    PlayerDigging = 7,
-    BlockPlacement = 8,
-    BlockChange = 9,
-    DestroyEntity = 10,
-    ChunkRequest = 11,
-    ChunkUnload = 12,
-    InventoryAdd = 13
+    PlayerRotation =  6,
+    PlayerPosLook = 7,
+    LoginResponse = 8,
+    PlayerDigging = 9,
+    BlockPlacement = 10,
+    BlockChange = 11,
+    DestroyEntity = 12,
+    ChunkRequest = 13,
+    ChunkUnload = 14,
+    InventoryAdd = 15,
+    WindowItems = 16,
+    SetSlot = 17,
+    ClickWindow = 18,
+    ConfirmTransaction = 19
 };
 
 class Packet {

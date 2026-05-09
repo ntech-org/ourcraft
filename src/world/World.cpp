@@ -238,7 +238,6 @@ void World::update(float dt) {
         }
     }
     for (auto& e : m_entities) {
-        if (isRemote && !e->isLocalPlayer) continue;
         e->onUpdate();
     }
 }

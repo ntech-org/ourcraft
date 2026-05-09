@@ -20,11 +20,18 @@ void Entity::setPosition(double x, double y, double z) {
     if (z < -BORDER) z = -BORDER;
     if (z > BORDER) z = BORDER;
 
-    prevPosX = posX = x;
-    prevPosY = posY = y;
-    prevPosZ = posZ = z;
+    posX = x;
+    posY = y;
+    posZ = z;
     float w2 = width / 2.0f;
     boundingBox = AxisAlignedBB(x - w2, y, z - w2, x + w2, y + height, z + w2);
+}
+
+void Entity::setPosAndPrev(double x, double y, double z) {
+    setPosition(x, y, z);
+    prevPosX = posX;
+    prevPosY = posY;
+    prevPosZ = posZ;
 }
 
 void Entity::setSize(float w, float h) {
@@ -39,6 +46,28 @@ void Entity::onUpdate() {
     prevRotationYaw = rotationYaw;
     prevRotationPitch = rotationPitch;
     prevDistanceWalkedModified = distanceWalkedModified;
+
+    if (worldObj.isRemote && !isLocalPlayer) {
+        if (posRotationIncrements > 0) {
+            double targetX = serverPosX;
+            double targetY = serverPosY;
+            double targetZ = serverPosZ;
+            
+            double yawDiff = serverYaw - (double)rotationYaw;
+            while (yawDiff < -180.0) yawDiff += 360.0;
+            while (yawDiff >= 180.0) yawDiff -= 360.0;
+
+            double nextX = posX + (targetX - posX) / (double)posRotationIncrements;
+            double nextY = posY + (targetY - posY) / (double)posRotationIncrements;
+            double nextZ = posZ + (targetZ - posZ) / (double)posRotationIncrements;
+
+            rotationYaw = (float)((double)rotationYaw + yawDiff / (double)posRotationIncrements);
+            rotationPitch = (float)((double)rotationPitch + (serverPitch - (double)rotationPitch) / (double)posRotationIncrements);
+
+            posRotationIncrements--;
+            setPosition(nextX, nextY, nextZ);
+        }
+    }
 }
 
 void Entity::moveEntity(double dx, double dy, double dz) {

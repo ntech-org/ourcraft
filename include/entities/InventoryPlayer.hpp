@@ -30,7 +30,9 @@ public:
     void nextSlot();
     void prevSlot();
     void setSlot(int slot);
+    void handleClick(int slot, bool rightClick);
 
     ItemStack mainInventory[INVENTORY_SIZE];
+    ItemStack cursorStack;
     int currentSlot = 0;
 };

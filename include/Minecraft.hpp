@@ -34,6 +34,7 @@ public:
     void displayGuiScreen(std::shared_ptr<GuiScreen> screen);
     void saveAndQuit();
     void startSingleplayer();
+    void startMultiplayer(const std::string& address, int port);
     void setGameState(GameState state) { m_gameState = state; }
     GameState getGameState() const { return m_gameState; }
 
@@ -41,6 +42,7 @@ public:
     int getHeight() const { return m_height; }
     GLFWwindow* getWindow() { return m_window; }
     EntityPlayer& getPlayer() { return *m_player; }
+    NetworkHandler* getNetworkHandler() { return m_networkHandler.get(); }
     GameRenderer& getGameRenderer() { return *m_gameRenderer; }
     GameSettings& getSettings() { return m_settings; }
     std::shared_ptr<GuiScreen> getCurrentScreen() { return m_currentScreen; }

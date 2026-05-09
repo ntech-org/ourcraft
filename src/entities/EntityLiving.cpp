@@ -84,6 +84,18 @@ void EntityLiving::onUpdate() {
     }
     swingProgress = (float)swingProgressInt / 8.0f;
 
+    if (worldObj.isRemote && !isLocalPlayer) {
+        prevLimbSwing = limbSwing;
+        prevLimbSwingAmount = limbSwingAmount;
+        float f = dist * 4.0f;
+        if (f > 1.0f) f = 1.0f;
+        limbSwingAmount += (f - limbSwingAmount) * 0.4f;
+        limbSwing += limbSwingAmount;
+
+        // Skip all movement/physics/liquid logic for remote entities on client
+        return;
+    }
+
     handleWaterMovement();
     handleLavaMovement();
 
@@ -98,81 +110,43 @@ void EntityLiving::onUpdate() {
             if (inWater) {
                 // Infdev Water Physics
                 float waterDrag = 0.8f;
-
-                // Buoyancy based on liquid level:
-                // In deep water (decay low), buoyancy is stable (around 0.04f).
-                // In shallow water (decay high), buoyancy is boosted to allow jumping out.
                 int decay = ((BlockFluid*)Block::waterMoving)->getEffectiveFlowDecay(worldObj, (int)std::floor(posX), (int)std::floor(posY), (int)std::floor(posZ));
-
-                // Base buoyancy of 0.04f.
-                // As decay increases (getting shallower), add a jump boost up to 0.16f.
                 float jumpBoost = (decay < 0 ? 0.0f : (0.16f * ((float)decay / 8.0f)));
                 float buoyancy = 0.04f + jumpBoost;
 
-                if (jumping) {
-                    motionY += buoyancy;
-                }
-
+                if (jumping) motionY += buoyancy;
                 moveEntity(motionX, motionY, motionZ);
-
-                motionX *= waterDrag;
-                motionY *= waterDrag;
-                motionZ *= waterDrag;
-
-                if (isFlying) {
-                    // Sinking suppressed
-                } else {
-                    motionY -= 0.02f; // Sinking force
-                }
+                motionX *= waterDrag; motionY *= waterDrag; motionZ *= waterDrag;
+                if (!isFlying) motionY -= 0.02f;
 
                 if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
                     motionY = 0.30000001192092896;
-                    }
+                }
             } else if (inLava) {
                 // Infdev Lava Physics
                 float lavaDrag = 0.5f;
-
                 int decay = ((BlockFluid*)Block::lavaMoving)->getEffectiveFlowDecay(worldObj, (int)std::floor(posX), (int)std::floor(posY), (int)std::floor(posZ));
                 float jumpBoost = (decay < 0 ? 0.0f : (0.16f * ((float)decay / 8.0f)));
                 float buoyancy = 0.04f + jumpBoost;
 
-                if (jumping) {
-                    motionY += buoyancy;
-                }
-
+                if (jumping) motionY += buoyancy;
                 moveEntity(motionX, motionY, motionZ);
-
-                motionX *= lavaDrag;
-                motionY *= lavaDrag;
-                motionZ *= lavaDrag;
-
-                if (isFlying) {
-                    // Sinking suppressed
-                } else {
-                    motionY -= 0.02f; // Sinking force
-                }
+                motionX *= lavaDrag; motionY *= lavaDrag; motionZ *= lavaDrag;
+                if (!isFlying) motionY -= 0.02f;
 
                 if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
                     motionY = 0.30000001192092896;
                 }
-            } else {            // Infdev Ground/Air Physics
+            } else {
                 moveEntity(motionX, motionY, motionZ);
-
                 float drag = 0.91f;
-                if (onGround) {
-                    // Ground drag depends on the block below, 0.6 is default (sand/dirt/stone)
-                    drag = 0.6f * 0.91f;
-                }
+                if (onGround) drag = 0.6f * 0.91f;
 
                 motionX *= drag;
                 motionY *= 0.98f;
                 motionZ *= drag;
 
-                if (isFlying) {
-                    // Gravity suppressed
-                } else {
-                    motionY -= 0.08f; // Gravity
-                }
+                if (!isFlying) motionY -= 0.08f;
             }
         }
     }
@@ -197,7 +171,7 @@ void EntityLiving::updateEntityActionState() {
     // regular walking/jumping logic for non-player entities. Player overrides this with flying/sneaking/sprinting logic.
     isFlying = false;
 
-    if (jumping && onGround && !inWater) {
+    if (jumping && onGround && (!inWater && !inLava)) {
         motionY = 0.42;
     }
 

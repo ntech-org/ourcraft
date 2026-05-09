@@ -2,6 +2,7 @@
 #include "Minecraft.hpp"
 #include "renderer/Tessellator.hpp"
 #include "world/Block.hpp"
+#include "net/Packets.hpp"
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -39,85 +40,47 @@ void GuiInventory::getSlotPosition(float left, float top, int slot, float& outX,
 }
 
 void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightClick) {
-    if (slot < 0 || slot >= InventoryPlayer::INVENTORY_SIZE) return;
-    ItemStack& target = inv.mainInventory[slot];
+    if (slot < -1 || slot >= InventoryPlayer::INVENTORY_SIZE) return;
 
-    const bool cursorEmpty = m_cursorStack.isEmpty();
-    const bool targetEmpty = target.isEmpty();
+    inv.handleClick(slot, rightClick);
 
-    if (rightClick) {
-        if (cursorEmpty) {
-            if (targetEmpty) return;
-            const int take = (target.count + 1) / 2;
-            m_cursorStack = target;
-            m_cursorStack.count = take;
-            target.count -= take;
-            if (target.count <= 0) target = {0, 0, 0};
-            return;
+    if (mc->getNetworkHandler()) {
+        PacketClickWindow packet;
+        packet.windowId = 0;
+        packet.slot = slot;
+        packet.button = rightClick ? 1 : 0;
+        packet.actionId = ++m_actionCount;
+        packet.shift = false;
+        if (slot >= 0) {
+            packet.itemID = inv.mainInventory[slot].itemID;
+            packet.count = inv.mainInventory[slot].count;
+            packet.metadata = inv.mainInventory[slot].metadata;
+        } else {
+            packet.itemID = 0; packet.count = 0; packet.metadata = 0;
         }
-
-        if (targetEmpty) {
-            target = m_cursorStack;
-            target.count = 1;
-            m_cursorStack.count -= 1;
-            if (m_cursorStack.count <= 0) m_cursorStack = {0, 0, 0};
-            return;
-        }
-
-        if (target.itemID == m_cursorStack.itemID &&
-            target.metadata == m_cursorStack.metadata &&
-            target.count < InventoryPlayer::MAX_STACK_SIZE) {
-            target.count += 1;
-            m_cursorStack.count -= 1;
-            if (m_cursorStack.count <= 0) m_cursorStack = {0, 0, 0};
-        }
-        return;
+        mc->getNetworkHandler()->sendPacket(packet);
     }
-
-    if (cursorEmpty) {
-        if (targetEmpty) return;
-        m_cursorStack = target;
-        target = {0, 0, 0};
-        return;
-    }
-
-    if (targetEmpty) {
-        target = m_cursorStack;
-        m_cursorStack = {0, 0, 0};
-        return;
-    }
-
-    if (target.itemID == m_cursorStack.itemID && target.metadata == m_cursorStack.metadata) {
-        const int free = InventoryPlayer::MAX_STACK_SIZE - target.count;
-        const int moved = std::min(free, m_cursorStack.count);
-        target.count += moved;
-        m_cursorStack.count -= moved;
-        if (m_cursorStack.count <= 0) m_cursorStack = {0, 0, 0};
-        return;
-    }
-
-    std::swap(target, m_cursorStack);
 }
 
 void GuiInventory::handleDragDistribution(InventoryPlayer& inv, int slot) {
-    if (!m_draggingLeft || slot < 0 || slot >= InventoryPlayer::INVENTORY_SIZE || m_cursorStack.isEmpty()) return;
+    if (!m_draggingLeft || slot < 0 || slot >= InventoryPlayer::INVENTORY_SIZE || inv.cursorStack.isEmpty()) return;
     if (m_dragVisited[slot]) return;
     m_dragVisited[slot] = true;
 
     ItemStack& target = inv.mainInventory[slot];
     if (target.isEmpty()) {
-        target = m_cursorStack;
+        target = inv.cursorStack;
         target.count = 1;
-        m_cursorStack.count -= 1;
-    } else if (target.itemID == m_cursorStack.itemID &&
-               target.metadata == m_cursorStack.metadata &&
+        inv.cursorStack.count -= 1;
+    } else if (target.itemID == inv.cursorStack.itemID &&
+               target.metadata == inv.cursorStack.metadata &&
                target.count < InventoryPlayer::MAX_STACK_SIZE) {
         target.count += 1;
-        m_cursorStack.count -= 1;
+        inv.cursorStack.count -= 1;
     }
 
-    if (m_cursorStack.count <= 0) {
-        m_cursorStack = {0, 0, 0};
+    if (inv.cursorStack.count <= 0) {
+        inv.cursorStack = {0, 0, 0};
         m_draggingLeft = false;
     }
 }
@@ -223,8 +186,9 @@ void GuiInventory::drawInventorySlots(float left, float top, int mouseX, int mou
 }
 
 void GuiInventory::drawCursorStack(int mouseX, int mouseY) {
-    if (m_cursorStack.isEmpty()) return;
-    drawStackAt(m_cursorStack, (float)mouseX - 8.0f, (float)mouseY - 8.0f, false);
+    InventoryPlayer& inv = mc->getPlayer().inventory;
+    if (inv.cursorStack.isEmpty()) return;
+    drawStackAt(inv.cursorStack, (float)mouseX - 8.0f, (float)mouseY - 8.0f, false);
 }
 
 void GuiInventory::drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -243,7 +207,7 @@ void GuiInventory::drawScreen(int mouseX, int mouseY, float partialTicks) {
     InventoryPlayer& inv = mc->getPlayer().inventory;
     GLFWwindow* window = glfwGetCurrentContext();
     const bool leftDown = window && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    if (leftDown && m_draggingLeft && !m_cursorStack.isEmpty()) {
+    if (leftDown && m_draggingLeft && !inv.cursorStack.isEmpty()) {
         const int slot = getSlotFromMouse(left, top, mouseX, mouseY);
         handleDragDistribution(inv, slot);
     }
@@ -273,22 +237,12 @@ void GuiInventory::mouseClicked(int mouseX, int mouseY, int button) {
     const float top = (height - GUI_HEIGHT) * 0.5f;
 
     const int slot = getSlotFromMouse(left, top, mouseX, mouseY);
-    if (slot >= 0) {
-        handleClickOnSlot(inv, slot, button == GLFW_MOUSE_BUTTON_RIGHT);
-        if (button == GLFW_MOUSE_BUTTON_LEFT && !m_cursorStack.isEmpty()) {
-            m_draggingLeft = true;
-            m_dragVisited.fill(false);
-            m_dragVisited[slot] = true;
-        }
-    } else {
-        if (!m_cursorStack.isEmpty()) {
-            if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-                m_cursorStack.count -= 1;
-                if (m_cursorStack.count <= 0) m_cursorStack = {0, 0, 0};
-            } else {
-                m_cursorStack = {0, 0, 0};
-            }
-        }
+    handleClickOnSlot(inv, slot, button == GLFW_MOUSE_BUTTON_RIGHT);
+
+    if (slot >= 0 && button == GLFW_MOUSE_BUTTON_LEFT && !inv.cursorStack.isEmpty()) {
+        m_draggingLeft = true;
+        m_dragVisited.fill(false);
+        m_dragVisited[slot] = true;
     }
 
     GuiScreen::mouseClicked(mouseX, mouseY, button);

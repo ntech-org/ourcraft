@@ -64,7 +64,11 @@ IntegratedServer::~IntegratedServer() {
 void IntegratedServer::start() {
     if (m_running) return;
     m_running = true;
-    m_thread = std::thread(&IntegratedServer::run, this);
+    if (m_isDedicated) {
+        run();
+    } else {
+        m_thread = std::thread(&IntegratedServer::run, this);
+    }
 }
 
 void IntegratedServer::stop() {
@@ -73,9 +77,6 @@ void IntegratedServer::stop() {
     
     if (m_world) {
         m_world->saveAllChunks();
-        // Give it a bit of time to process saves if needed, or wait for loader
-        // Actually World::pollGeneratedChunks is usually called in run loop.
-        // We'll just let it finish the loop.
     }
 
     if (m_thread.joinable()) {
@@ -111,7 +112,7 @@ void IntegratedServer::run() {
                 entitiesById[entity->entityID] = entity.get();
             }
 
-            // Server-Authoritative Automatic Chunk Pushing (Rate-Limited & Distance-Sorted)
+            // Server-Authoritative Automatic Chunk Pushing
             for (auto& [peer, session] : m_players) {
                 auto playerIt = entitiesById.find(session.entityID);
                 Entity* player = playerIt == entitiesById.end() ? nullptr : playerIt->second;
@@ -146,32 +147,14 @@ void IntegratedServer::run() {
                     if (currentState < ChunkState::Lighted) continue;
 
                     auto it = session.sentChunks.find(key);
-                    bool shouldSend = false;
                     if (it == session.sentChunks.end()) {
-                        shouldSend = true;
-                    } else if (it->second < ChunkState::Complete && currentState == ChunkState::Complete) {
-                        shouldSend = true;
-                    }
-
-                    if (shouldSend) {
                         PacketChunkData packet;
-                        packet.x = cx;
-                        packet.z = cz;
+                        packet.x = cx; packet.z = cz;
+                        packet.primaryBitmask = 0xFF;
                         packet.blockPtr = chunk->getBlocks();
                         packet.metaPtr = chunk->getMetadata();
-
-                        static const std::vector<uint8_t> zeroLight(Chunk::SIZE / 2, 0);
-
-                        if (currentState == ChunkState::Complete) {
-                            packet.skyPtr = chunk->getSkylight();
-                            packet.blockLightPtr = chunk->getBlocklight();
-                        } else {
-                            packet.skyPtr = zeroLight.data();
-                            packet.blockLightPtr = zeroLight.data();
-                        }
-
-                        packet.primaryBitmask = chunk->getPrimaryBitmask();
-
+                        packet.skyPtr = chunk->getSkylight();
+                        packet.blockLightPtr = chunk->getBlocklight();
                         m_server->sendPacket(peer, packet, true);
                         session.sentChunks[key] = currentState;
                         chunksSentThisTick++;
@@ -179,25 +162,7 @@ void IntegratedServer::run() {
                 }
             }
 
-            // Broadcast updates for chunks that just became Complete
-            auto completeChunks = m_world->popCompleteChunks();
-            for (auto& chunk : completeChunks) {
-                PacketChunkData packet;
-                packet.x = chunk->getX();
-                packet.z = chunk->getZ();
-                packet.blockPtr = chunk->getBlocks();
-                packet.metaPtr = chunk->getMetadata();
-                packet.skyPtr = chunk->getSkylight();
-                packet.blockLightPtr = chunk->getBlocklight();
-                packet.primaryBitmask = chunk->getPrimaryBitmask();
-
-                m_server->broadcastPacket(packet, true);
-                
-                uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(packet.x)) << 32) | static_cast<uint32_t>(packet.z);
-                for (auto& [p, s] : m_players) s.sentChunks[key] = ChunkState::Complete;
-            }
-
-            m_world->popNewChunks(); 
+            m_world->popNewChunks();
 
             auto removedEntities = m_world->popRemovedEntities();
             for (int32_t id : removedEntities) {
@@ -213,7 +178,6 @@ void IntegratedServer::run() {
             static int unloadTimer = 0;
             if (++unloadTimer >= 20 * 10) { // Every 10 seconds
                 unloadTimer = 0;
-                
                 std::vector<std::pair<int, int>> toUnload;
                 for (const auto& chunk : m_world->getAllChunks()) {
                     bool keep = false;
@@ -224,7 +188,7 @@ void IntegratedServer::run() {
 
                         int dx = std::abs(chunk->getX() - (int)std::floor(player->posX / 16.0));
                         int dz = std::abs(chunk->getZ() - (int)std::floor(player->posZ / 16.0));
-                        if (dx <= 12 && dz <= 12) { // Keep slightly more than view radius
+                        if (dx <= 12 && dz <= 12) {
                             keep = true;
                             break;
                         }
@@ -236,19 +200,34 @@ void IntegratedServer::run() {
 
                 for (auto& pos : toUnload) {
                     m_world->removeChunk(pos.first, pos.second);
-                    
                     PacketChunkUnload packet;
                     packet.x = pos.first; packet.z = pos.second;
                     m_server->broadcastPacket(packet, true);
-                    
                     uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(pos.first)) << 32) | static_cast<uint32_t>(pos.second);
                     for (auto& [peer, session] : m_players) session.sentChunks.erase(key);
                 }
             }
 
+            // 1. Broadcast entity positions BEFORE world update resets prevPos
+            for (const auto& entity : m_world->getEntities()) {
+                if (entity->posX != entity->prevPosX || entity->posY != entity->prevPosY || entity->posZ != entity->prevPosZ ||
+                    entity->rotationYaw != entity->prevRotationYaw || entity->rotationPitch != entity->prevRotationPitch) {
+                    
+                    PacketMoveEntity move;
+                    move.id = entity->entityID;
+                    move.x = entity->posX;
+                    move.y = entity->posY;
+                    move.z = entity->posZ;
+                    move.yaw = entity->rotationYaw;
+                    move.pitch = entity->rotationPitch;
+                    m_server->broadcastPacket(move, false);
+                }
+            }
+
+            // 2. Update world (this resets prevPos to currentPos)
             m_world->update(0.05f);
 
-            // Server-authoritative item pickup.
+            // 3. Server-authoritative item pickup.
             struct PendingPickup {
                 ENetPeer* peer;
                 int itemID;
@@ -276,17 +255,24 @@ void IntegratedServer::run() {
                 }
             }
             for (const PendingPickup& pickup : pickups) {
-                PacketInventoryAdd packet;
-                packet.itemID = pickup.itemID;
-                packet.count = pickup.count;
-                packet.metadata = pickup.metadata;
-                m_server->sendPacket(pickup.peer, packet, true);
+                if (m_players.count(pickup.peer)) {
+                    PlayerSession& session = m_players[pickup.peer];
+                    session.inventory.addItem(pickup.itemID, pickup.count, pickup.metadata);
+                    PacketWindowItems packet;
+                    packet.windowId = 0;
+                    for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+                        packet.items.push_back({session.inventory.mainInventory[i].itemID, 
+                                              session.inventory.mainInventory[i].count, 
+                                              session.inventory.mainInventory[i].metadata});
+                    }
+                    m_server->sendPacket(pickup.peer, packet, true);
+                }
             }
             for (int32_t id : removeItemEntityIDs) {
                 m_world->removeEntity(id);
             }
 
-            // Spawn any new entities (e.g. dropped items) for each player.
+            // 4. Spawn any new entities for each player.
             for (auto& [peer, session] : m_players) {
                 for (const auto& entity : m_world->getEntities()) {
                     if (!session.sentEntities.insert(entity->entityID).second) continue;
@@ -308,17 +294,6 @@ void IntegratedServer::run() {
                 }
             }
             
-            // Broadcast entity positions
-            for (const auto& entity : m_world->getEntities()) {
-                PacketMoveEntity move;
-                move.id = entity->entityID;
-                move.x = entity->posX;
-                move.y = entity->posY;
-                move.z = entity->posZ;
-                move.yaw = entity->rotationYaw;
-                move.pitch = entity->rotationPitch;
-                m_server->broadcastPacket(move, false);
-            }
             lastTick = now;
         }
 
@@ -336,7 +311,6 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         packet.deserialize(ptr, size - 1);
         std::cout << "Server: Player " << packet.username << " logged in." << std::endl;
         
-        // Create server-side player entity
         auto player = std::make_unique<EntityPlayer>(*m_world);
         player->setPosition(8.0, 100.0, 8.0);
         EntityPlayer* pPtr = player.get();
@@ -344,14 +318,21 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         
         int32_t eid = pPtr->entityID; 
         m_players[peer] = {eid, packet.username, {}, {}};
+        PlayerSession& session = m_players[peer];
 
         PacketLoginResponse resp;
         resp.entityID = eid;
         m_server->sendPacket(peer, resp);
 
-        // Chunks and entities will be handled by the main loop automatically
+        PacketWindowItems invPacket;
+        invPacket.windowId = 0;
+        for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+            invPacket.items.push_back({session.inventory.mainInventory[i].itemID, 
+                                     session.inventory.mainInventory[i].count, 
+                                     session.inventory.mainInventory[i].metadata});
+        }
+        m_server->sendPacket(peer, invPacket, true);
 
-        // Send all existing entities to new player
         for (const auto& entity : m_world->getEntities()) {
             PacketSpawnEntity spawn;
             spawn.id = entity->entityID;
@@ -369,17 +350,25 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             m_server->sendPacket(peer, spawn);
             m_players[peer].sentEntities.insert(entity->entityID);
         }
-    } else if (type == PacketType::PlayerPosition) {
-        PacketPlayerPosition packet;
-        packet.deserialize(ptr, size - 1);
-        
+    } else if (type == PacketType::PlayerPosition || type == PacketType::PlayerRotation || type == PacketType::PlayerPosLook) {
         if (m_players.count(peer)) {
             int32_t eid = m_players[peer].entityID;
             for (auto& entity : m_world->getEntities()) {
                 if (entity->entityID == eid) {
-                    entity->setPosition(packet.x, packet.y, packet.z);
-                    entity->rotationYaw = packet.yaw;
-                    entity->rotationPitch = packet.pitch;
+                    if (type == PacketType::PlayerPosition || type == PacketType::PlayerPosLook) {
+                        PacketPlayerPosition p; 
+                        p.deserialize(ptr, size - 1);
+                        entity->setPosition(p.x, p.y, p.z);
+                        if (type == PacketType::PlayerPosLook) {
+                            entity->rotationYaw = p.yaw;
+                            entity->rotationPitch = p.pitch;
+                        }
+                    } else if (type == PacketType::PlayerRotation) {
+                        PacketPlayerRotation p;
+                        p.deserialize(ptr, size - 1);
+                        entity->rotationYaw = p.yaw;
+                        entity->rotationPitch = p.pitch;
+                    }
                     break;
                 }
             }
@@ -388,7 +377,6 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         PacketPlayerDigging packet;
         packet.deserialize(ptr, size - 1);
         if (packet.action == DiggingAction::STOP) {
-            // Aborted breaking - do nothing or reset server-side state if we had any
         } else if (packet.action == DiggingAction::FINISH) {
             const uint8_t oldID = m_world->getBlockID(packet.x, packet.y, packet.z);
             const uint8_t oldMeta = m_world->getBlockMetadata(packet.x, packet.y, packet.z);
@@ -406,18 +394,27 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
     } else if (type == PacketType::BlockPlacement) {
         PacketBlockPlacement packet;
         packet.deserialize(ptr, size - 1);
-        
         int x = packet.x, y = packet.y, z = packet.z;
         if (packet.face == 0) y--; else if (packet.face == 1) y++;
         else if (packet.face == 2) z--; else if (packet.face == 3) z++;
         else if (packet.face == 4) x--; else if (packet.face == 5) x++;
-        
         m_world->setBlockAndMetadataWithNotify(x, y, z, packet.blockID, packet.metadata);
     } else if (type == PacketType::ChunkRequest) {
         PacketChunkRequest packet;
         packet.deserialize(ptr, size - 1);
         m_world->requestChunk(packet.x, packet.z);
     } else if (type == PacketType::ChunkUnload) {
-        // Handle unloading if necessary, or let world cleanup handle it
+    } else if (type == PacketType::ClickWindow) {
+        PacketClickWindow packet;
+        packet.deserialize(ptr, size - 1);
+        if (m_players.count(peer)) {
+            PlayerSession& session = m_players[peer];
+            session.inventory.handleClick(packet.slot, packet.button != 0);
+            PacketConfirmTransaction resp;
+            resp.windowId = packet.windowId;
+            resp.actionId = packet.actionId;
+            resp.accepted = true;
+            m_server->sendPacket(peer, resp, true);
+        }
     }
 }
