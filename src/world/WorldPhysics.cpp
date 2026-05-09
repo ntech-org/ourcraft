@@ -7,6 +7,14 @@
 
 std::vector<AxisAlignedBB> World::getCollidingBoundingBoxes(const AxisAlignedBB& bb) {
     std::vector<AxisAlignedBB> list;
+
+    // World border collision
+    const double BORDER = 1000000000.0;
+    if (bb.minX < -BORDER) list.push_back(AxisAlignedBB(-BORDER - 100.0, -1000.0, -BORDER - 100.0, -BORDER, 1000.0, BORDER + 100.0));
+    if (bb.maxX > BORDER) list.push_back(AxisAlignedBB(BORDER, -1000.0, -BORDER - 100.0, BORDER + 100.0, 1000.0, BORDER + 100.0));
+    if (bb.minZ < -BORDER) list.push_back(AxisAlignedBB(-BORDER - 100.0, -1000.0, -BORDER - 100.0, BORDER + 100.0, 1000.0, -BORDER));
+    if (bb.maxZ > BORDER) list.push_back(AxisAlignedBB(-BORDER - 100.0, -1000.0, BORDER, BORDER + 100.0, 1000.0, BORDER + 100.0));
+
     int x0 = (int)std::floor(bb.minX), x1 = (int)std::floor(bb.maxX + 1.0);
     int y0 = (int)std::floor(bb.minY), y1 = (int)std::floor(bb.maxY + 1.0);
     int z0 = (int)std::floor(bb.minZ), z1 = (int)std::floor(bb.maxZ + 1.0);

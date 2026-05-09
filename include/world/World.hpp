@@ -40,11 +40,20 @@ enum class HitType {
     BLOCK
 };
 
+struct ChunkHasher {
+    std::size_t operator()(std::uint64_t key) const {
+        key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        key = (key ^ (key >> 27)) * 0x94d049bb133111ebULL;
+        key = key ^ (key >> 31);
+        return static_cast<std::size_t>(key);
+    }
+};
+
 struct HitResult {
     HitType type = HitType::NONE;
     int x, y, z;
     int sideHit;
-    glm::vec3 hitVec;
+    glm::dvec3 hitVec;
 };
 
 class World : public IBlockAccess {
@@ -107,7 +116,7 @@ public:
     bool handleMaterialAcceleration(const AxisAlignedBB& bb, const class Material& mat, Entity* entity);
     bool getIsAnyLiquid(const AxisAlignedBB& bb);
 
-    HitResult rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiquids = false);
+    HitResult rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiquids = false);
 
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;
@@ -151,7 +160,7 @@ private:
     std::mutex m_completeChunksMutex;
     std::vector<int32_t> m_removedEntities;
     std::mutex m_removedEntitiesMutex;
-    std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>> m_chunkLookup;
+    std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> m_chunkLookup;
     std::vector<std::unique_ptr<Entity>> m_entities;
     int32_t m_nextEntityID = 0;
 
@@ -168,7 +177,7 @@ private:
     uint64_t m_tickCount = 0;
 
 public:
-    std::unordered_set<std::uint64_t> m_pendingChunks;
-    std::unordered_set<std::uint64_t> m_pendingRequests;
+    std::unordered_set<std::uint64_t, ChunkHasher> m_pendingChunks;
+    std::unordered_set<std::uint64_t, ChunkHasher> m_pendingRequests;
 };
 

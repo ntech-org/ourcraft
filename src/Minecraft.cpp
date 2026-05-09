@@ -33,7 +33,7 @@ void Minecraft::init() {
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
-    m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->setPosition(999999999.0, 128.0, 0.0);
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -134,16 +134,16 @@ void Minecraft::tick() {
 
         // Raycast for block picking
         float reach = 5.0f;
-        glm::vec3 eyePos = glm::vec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
+        glm::dvec3 eyePos = glm::dvec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
         float yaw = glm::radians(m_player->rotationYaw);
         float pitch = glm::radians(m_player->rotationPitch);
-        glm::vec3 lookDir = glm::vec3(
+        glm::dvec3 lookDir = glm::dvec3(
             -std::sin(yaw) * std::cos(pitch),
             std::sin(pitch),
             std::cos(yaw) * std::cos(pitch)
         );
 
-        glm::vec3 endPos = eyePos + lookDir * reach;
+        glm::dvec3 endPos = eyePos + lookDir * (double)reach;
         HitResult hit = m_world->rayTraceBlocks(eyePos, endPos, true);
 
         const bool leftDown = m_inputHandler->isLeftMouseDown();

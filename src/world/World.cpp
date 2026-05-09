@@ -243,7 +243,7 @@ void World::update(float dt) {
     }
 }
 
-HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiquids) {
+HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiquids) {
     if (std::isnan(start.x) || std::isnan(start.y) || std::isnan(start.z)) return {HitType::NONE};
     if (std::isnan(end.x) || std::isnan(end.y) || std::isnan(end.z)) return {HitType::NONE};
 
@@ -263,6 +263,8 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiqui
 
     int count = 200;
     while (count-- >= 0) {
+        if (x1 == x2 && y1 == y2 && z1 == z2) return {HitType::NONE};
+
         bool changedX = true, changedY = true, changedZ = true;
         double nextX = 999.0, nextY = 999.0, nextZ = 999.0;
 
@@ -280,13 +282,13 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiqui
         int side = -1;
         if (dx < dy && dx < dz) {
             side = (x2 > x1) ? 4 : 5;
-            start.x = (float)nextX; start.y += (float)(vy * dx); start.z += (float)(vz * dx);
+            start.x = nextX; start.y += vy * dx; start.z += vz * dx;
         } else if (dy < dz) {
             side = (y2 > y1) ? 0 : 1;
-            start.x += (float)(vx * dy); start.y = (float)nextY; start.z += (float)(vz * dy);
+            start.x += vx * dy; start.y = nextY; start.z += vz * dy;
         } else {
             side = (z2 > z1) ? 2 : 3;
-            start.x += (float)(vx * dz); start.y += (float)(vy * dz); start.z = (float)nextZ;
+            start.x += vx * dz; start.y += vy * dz; start.z = nextZ;
         }
 
         x1 = (int)std::floor(start.x) - (side == 5 ? 1 : 0);
@@ -299,8 +301,6 @@ HitResult World::rayTraceBlocks(glm::vec3 start, glm::vec3 end, bool ignoreLiqui
                 return {HitType::BLOCK, x1, y1, z1, side, start};
             }
         }
-
-        if (x1 == x2 && y1 == y2 && z1 == z2) break;
     }
     return {HitType::NONE};
 }
@@ -330,7 +330,7 @@ void World::setLightValue(LightType type, int x, int y, int z, int val) {
 
 void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
     size_t head = 0;
-    std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>> localCache;
+    std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> localCache;
     std::shared_ptr<Chunk> lastChunk = nullptr;
     int lastCX = -999999, lastCZ = -999999;
 
@@ -400,7 +400,7 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
 
 void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& removeQueue, std::vector<LightNode>& addQueue) {
     size_t head = 0;
-    std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>> localCache;
+    std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> localCache;
     std::shared_ptr<Chunk> lastChunk = nullptr;
     int lastCX = -999999, lastCZ = -999999;
 

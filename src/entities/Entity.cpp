@@ -14,6 +14,12 @@ Entity::Entity(World& world)
 
 Entity::~Entity() {}
 void Entity::setPosition(double x, double y, double z) {
+    const double BORDER = 1000000000.0;
+    if (x < -BORDER) x = -BORDER;
+    if (x > BORDER) x = BORDER;
+    if (z < -BORDER) z = -BORDER;
+    if (z > BORDER) z = BORDER;
+
     prevPosX = posX = x;
     prevPosY = posY = y;
     prevPosZ = posZ = z;
@@ -100,6 +106,14 @@ void Entity::moveEntity(double dx, double dy, double dz) {
     posX = (boundingBox.minX + boundingBox.maxX) / 2.0;
     posY = boundingBox.minY - (double)ySize;
     posZ = (boundingBox.minZ + boundingBox.maxZ) / 2.0;
+
+    const double BORDER = 1000000000.0;
+    if (posX < -BORDER || posX > BORDER || posZ < -BORDER || posZ > BORDER) {
+        posX = std::clamp(posX, -BORDER, BORDER);
+        posZ = std::clamp(posZ, -BORDER, BORDER);
+        float w2 = width / 2.0f;
+        boundingBox = AxisAlignedBB(posX - w2, posY + (double)ySize, posZ - w2, posX + w2, posY + (double)ySize + (double)height, posZ + w2);
+    }
 
     isCollidedHorizontally = origDX != dx || origDZ != dz;
     isCollided = isCollidedHorizontally || origDY != dy;
