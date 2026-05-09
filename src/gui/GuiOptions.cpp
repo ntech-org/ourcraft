@@ -30,11 +30,12 @@ void GuiOptions::initGui() {
 void GuiOptions::drawScreen(int mouseX, int mouseY, float partialTicks) {
     drawDefaultBackground();
 
-    Shader& shader = mc->getGameRenderer().getUIShader();
-    FontRenderer& font = mc->getGameRenderer().getFontRenderer();
+    Shader& uiShader = mc->getGameRenderer().getUIShader();
+    Shader& textShader = mc->getGameRenderer().getTextShader();
+    Font& font = mc->getFont();
     
     glDisable(GL_DEPTH_TEST);
-    drawCenteredString(font, shader, "Options", (float)width / 2, 20, 0xFFFFFFFF);
+    drawCenteredString(font, textShader, "Options", (float)width / 2, 20, 0xFFFFFFFF);
     GuiScreen::drawScreen(mouseX, mouseY, partialTicks);
     glEnable(GL_DEPTH_TEST);
 }

@@ -15,7 +15,7 @@ void GuiSlider::updateText() {
     }
 }
 
-void GuiSlider::drawButton(Minecraft* mc, FontRenderer& fontRenderer, Shader& shader, int mouseX, int mouseY) {
+void GuiSlider::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX, int mouseY) {
     if (!visible) return;
 
     GLFWwindow* window = mc->getWindow();
@@ -45,7 +45,7 @@ void GuiSlider::drawButton(Minecraft* mc, FontRenderer& fontRenderer, Shader& sh
     drawTexturedModalRect(shader, knobX, (float)y, 0, 46 + knobState * 20, 4, 20);
     drawTexturedModalRect(shader, knobX + 4.0f, (float)y, 196, 46 + knobState * 20, 4, 20);
 
-    drawCenteredString(fontRenderer, shader, text, (float)x + (float)width / 2.0f, (float)y + (float)(height - 8) / 2.0f, 0xFFE0E0E0);
+    drawCenteredString(font, mc->getGameRenderer().getTextShader(), text, (float)x + (float)width / 2.0f, (float)y + (float)(height - 8) / 2.0f, 0xFFE0E0E0);
 }
 
 bool GuiSlider::mousePressed(int mouseX, int mouseY) {

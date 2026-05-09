@@ -5,7 +5,7 @@
 GuiButton::GuiButton(int id, int x, int y, int width, int height, const std::string& text)
     : id(id), x(x), y(y), width(width), height(height), text(text) {}
 
-void GuiButton::drawButton(Minecraft* mc, FontRenderer& fontRenderer, Shader& shader, int mouseX, int mouseY) {
+void GuiButton::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX, int mouseY) {
     if (!visible) return;
 
     mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture("/gui/gui.png"));
@@ -26,7 +26,7 @@ void GuiButton::drawButton(Minecraft* mc, FontRenderer& fontRenderer, Shader& sh
     if (!enabled) textColor = 0xFFA0A0A0;
     else if (hovered) textColor = 0xFFFFFFA0;
 
-    drawCenteredString(fontRenderer, shader, text, (float)x + (float)width / 2.0f, (float)y + (float)(height - 8) / 2.0f, textColor);
+    drawCenteredString(font, mc->getGameRenderer().getTextShader(), text, (float)x + (float)width / 2.0f, (float)y + (float)(height - 8) / 2.0f, textColor);
 }
 
 bool GuiButton::mousePressed(int mouseX, int mouseY) {

@@ -17,7 +17,7 @@ target("ourcraft")
     add_files("src/**.cpp")
     remove_files("src/server_main.cpp")
     add_includedirs("include")
-    add_packages("glfw", "glad", "glm", "enet", "stb", "zstd", "zlib", "freetype", "rocksdb")
+    add_packages("glfw", "glad", "glm", "enet", "stb", "zstd", "zlib", "rocksdb", "freetype")
 
     if is_plat("windows") then
         add_syslinks("user32", "gdi32", "shell32")

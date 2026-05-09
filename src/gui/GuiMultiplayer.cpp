@@ -22,16 +22,18 @@ void GuiMultiplayer::updateScreen() {
 
 void GuiMultiplayer::drawScreen(int mouseX, int mouseY, float partialTicks) {
     drawDefaultBackground();
-    
-    Shader& shader = mc->getGameRenderer().getUIShader();
-    FontRenderer& font = mc->getGameRenderer().getFontRenderer();
-    
+
+    Shader& uiShader = mc->getGameRenderer().getUIShader();
+    Shader& textShader = mc->getGameRenderer().getTextShader();
+    Font& font = mc->getFont();
+    float scale = (float)mc->getGameRenderer().getGuiScale();
+
     glDisable(GL_DEPTH_TEST);
-    drawCenteredString(font, shader, "Multiplayer", (float)width / 2, 40, 0xFFFFFFFF);
-    drawString(font, shader, "Server Address:", (float)width / 2 - 100, (float)height / 4 + 35, 0xFFA0A0A0);
+    drawCenteredString(font, textShader, "Multiplayer", (float)width / 2, 40, 0xFFFFFFFF);
+    drawString(font, textShader, "Server Address:", (float)width / 2 - 100, (float)height / 4 + 35, 0xFFA0A0A0);
 
     if (m_serverAddressField) {
-        m_serverAddressField->drawTextField(mc, font, shader);
+        m_serverAddressField->drawTextField(mc, font, textShader);
     }
 
     GuiScreen::drawScreen(mouseX, mouseY, partialTicks);

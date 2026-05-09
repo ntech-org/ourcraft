@@ -42,10 +42,9 @@ GameRenderer::GameRenderer(GLFWwindow* window, World& world, EntityPlayer& playe
     m_entityShader = std::make_unique<Shader>("assets/shaders/entity.vert", "assets/shaders/entity.frag");
     m_debugShader = std::make_unique<Shader>("assets/shaders/debug.vert", "assets/shaders/debug.frag");
     m_uiShader = std::make_unique<Shader>("assets/shaders/ui.vert", "assets/shaders/ui.frag");
+    m_textShader = std::make_unique<Shader>("assets/shaders/text.vert", "assets/shaders/text.frag");
     m_playerModel = std::make_unique<ModelBiped>();
     m_zombieModel = std::make_unique<ModelZombie>();
-    m_fontRenderer = std::make_unique<FontRenderer>(m_renderEngine.get(), "/minecraft.ttf");
-    m_fontRenderer->setGuiScale(m_guiScale);
 
     m_renderEngine->registerTextureFX(std::make_unique<TextureWaterFX>());
     m_renderEngine->registerTextureFX(std::make_unique<TextureWaterFlowFX>());
@@ -78,10 +77,6 @@ void GameRenderer::resize(int width, int height) {
 
     m_scaledWidth = (float)m_width / (float)m_guiScale;
     m_scaledHeight = (float)m_height / (float)m_guiScale;
-
-    if (m_fontRenderer) {
-        m_fontRenderer->setGuiScale(m_guiScale);
-    }
 }
 
 
@@ -197,17 +192,17 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 
     double uiStart = glfwGetTime();
     renderUI(showDebug, showProfiler, fps, cameraMode);
-    
+
     if (currentScreen) {
         double mx, my;
         glfwGetCursorPos(m_window, &mx, &my);
-        
+
         int ww, wh, fw, fh;
         glfwGetWindowSize(m_window, &ww, &wh);
         glfwGetFramebufferSize(m_window, &fw, &fh);
         mx *= (double)fw / (double)ww;
         my *= (double)fh / (double)wh;
-        
+
         mx /= (double)m_guiScale;
         my /= (double)m_guiScale;
         currentScreen->drawScreen((int)mx, (int)my, partialTicks);
@@ -241,7 +236,7 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
         m_basicShader->setFloat("fogDensity", 2.0f);
     } else {
         m_basicShader->setInt("fogMode", 0);
-        m_basicShader->setFloat("fogNear", 64.0f); 
+        m_basicShader->setFloat("fogNear", 64.0f);
         m_basicShader->setFloat("fogFar", 256.0f);
     }
 
@@ -368,7 +363,7 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
 
         float b = getEntityBrightness(ex, ey, ez);
         m_entityShader->setVec3("colorTint", glm::vec3(b));
-        
+
         // Relative coordinates for rendering
         glm::vec3 relativePos = glm::vec3(glm::dvec3(ex, ey, ez) - m_camera.position);
 
@@ -538,9 +533,25 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
 void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode) {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE); // Ensure UI isn't culled
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    int sw, sh;
+    glfwGetFramebufferSize(m_window, &sw, &sh);
+    m_player.getMinecraft().getFont().setDisplayContext(sw, sh, (float)m_guiScale);
+
+    glm::mat4 projection = glm::ortho(0.0f, m_scaledWidth, m_scaledHeight, 0.0f, -1.0f, 1.0f);
+
+    glm::mat4 view = glm::mat4(1.0f);
+
     m_uiShader->use();
-    m_uiShader->setMat4("projection", glm::ortho(0.0f, (float)m_scaledWidth, (float)m_scaledHeight, 0.0f, -1.0f, 1.0f));
-    m_uiShader->setMat4("view", glm::mat4(1.0f));
+    m_uiShader->setMat4("projection", projection);
+    m_uiShader->setMat4("view", view);
+
+    m_textShader->use();
+    m_textShader->setMat4("projection", projection);
+    m_textShader->setMat4("view", view);
+
     m_uiShader->setBool("hasTexture", true);
 
     Tessellator::instance->setColorOpaque_I(0xFFFFFFFF);
@@ -580,7 +591,7 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
         stats.meshBuilds, stats.meshBuildMs,
         cameraMode == 0 ? "First Person" : (cameraMode == 1 ? "Third Person Back" : "Third Person Front"));
 
-    m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, 2.0f, 0xFFFFFFFF);
+    m_player.getMinecraft().getFont().drawString(getTextShader(), buf, 2.0f, 2.0f, 0xFFFFFFFF, false);
 
     if (showProfiler) {
         std::snprintf(buf, sizeof(buf),
@@ -592,7 +603,7 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
             "  UI: %.2f ms",
             m_profiler.updateTime, m_profiler.renderTime,
             m_profiler.worldTime, m_profiler.entityTime, m_profiler.uiTime);
-        m_fontRenderer->drawString(*m_uiShader, buf, 2.0f, (float)m_scaledHeight - 80.0f, 0xFFFFFFFF);
+        m_player.getMinecraft().getFont().drawString(getTextShader(), buf, 2.0f, (float)m_scaledHeight - 80.0f, 0xFFFFFFFF, false);
 
         // Frame time graph
         Tessellator* t = Tessellator::instance;
@@ -644,28 +655,30 @@ void GameRenderer::renderHUD() {
         const int texTop = block->getTexture(1);
         const int texSide = block->getTexture(2);
 
-        y -= 1.5f; // Center offset
+        float s = 1.15f; 
+        float ox = x + 8.0f;
+        float oy = y + 8.5f; // Moved up from 10.0f
 
         t->startDrawingQuads();
         tileUV(texTop, u0, v0, u1, v1);
         t->setColorRGBA(230, 230, 230, 255);
-        t->addVertexWithUV(x + 2.0f, y + 6.0f, 0.0f, u0, v1);
-        t->addVertexWithUV(x + 8.0f, y + 3.0f, 0.0f, u1, v1);
-        t->addVertexWithUV(x + 14.0f, y + 6.0f, 0.0f, u1, v0);
-        t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u0, v0);
+        t->addVertexWithUV(ox - 6.0f * s, oy - 4.0f * s, 0.0f, u0, v1);
+        t->addVertexWithUV(ox, oy - 7.0f * s, 0.0f, u1, v1);
+        t->addVertexWithUV(ox + 6.0f * s, oy - 4.0f * s, 0.0f, u1, v0);
+        t->addVertexWithUV(ox, oy - 1.0f * s, 0.0f, u0, v0);
 
         tileUV(texSide, u0, v0, u1, v1);
         t->setColorRGBA(170, 170, 170, 255);
-        t->addVertexWithUV(x + 2.0f, y + 6.0f, 0.0f, u0, v0);
-        t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u1, v0);
-        t->addVertexWithUV(x + 8.0f, y + 16.0f, 0.0f, u1, v1);
-        t->addVertexWithUV(x + 2.0f, y + 13.0f, 0.0f, u0, v1);
+        t->addVertexWithUV(ox - 6.0f * s, oy - 4.0f * s, 0.0f, u0, v0);
+        t->addVertexWithUV(ox, oy - 1.0f * s, 0.0f, u1, v0);
+        t->addVertexWithUV(ox, oy + 6.0f * s, 0.0f, u1, v1);
+        t->addVertexWithUV(ox - 6.0f * s, oy + 3.0f * s, 0.0f, u0, v1);
 
         t->setColorRGBA(200, 200, 200, 255);
-        t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u0, v0);
-        t->addVertexWithUV(x + 14.0f, y + 6.0f, 0.0f, u1, v0);
-        t->addVertexWithUV(x + 14.0f, y + 13.0f, 0.0f, u1, v1);
-        t->addVertexWithUV(x + 8.0f, y + 16.0f, 0.0f, u0, v1);
+        t->addVertexWithUV(ox, oy - 1.0f * s, 0.0f, u0, v0);
+        t->addVertexWithUV(ox + 6.0f * s, oy - 4.0f * s, 0.0f, u1, v0);
+        t->addVertexWithUV(ox + 6.0f * s, oy + 3.0f * s, 0.0f, u1, v1);
+        t->addVertexWithUV(ox, oy + 6.0f * s, 0.0f, u0, v1);
         t->draw();
     };
 
@@ -686,6 +699,7 @@ void GameRenderer::renderHUD() {
         const ItemStack& stack = m_player.inventory.mainInventory[slot];
         if (stack.itemID <= 0 || stack.count <= 0) continue;
 
+        m_uiShader->use();
         const float iconX = centerX - 91.0f + (float)slot * 20.0f + 3.0f;
         const float iconY = m_scaledHeight - 19.0f;
         if (Block::blocksList[stack.itemID]) {
@@ -701,7 +715,8 @@ void GameRenderer::renderHUD() {
         if (stack.count > 1) {
             char countBuf[8];
             std::snprintf(countBuf, sizeof(countBuf), "%d", stack.count);
-            m_fontRenderer->drawStringWithShadow(*m_uiShader, countBuf, iconX + 17.0f - m_fontRenderer->getStringWidth(countBuf), iconY + 9.0f, 0xFFFFFFFF);
+            Font& font = m_player.getMinecraft().getFont();
+            font.drawString(getTextShader(), countBuf, iconX + 16.0f - (float)font.getStringWidth(countBuf), iconY + 9.0f, 0xFFFFFFFF, true);
         }
     }
 
@@ -732,6 +747,11 @@ void GameRenderer::renderHUD() {
 }
 
 void GameRenderer::renderCrosshair() {
+    m_uiShader->use();
+    m_uiShader->setBool("hasTexture", true);
+    m_uiShader->setMat4("projection", glm::ortho(0.0f, m_scaledWidth, m_scaledHeight, 0.0f, -1.0f, 1.0f));
+    m_uiShader->setMat4("view", glm::mat4(1.0f));
+
     m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/icons.png"));
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR); // Invert colors
@@ -742,7 +762,7 @@ void GameRenderer::renderCrosshair() {
 
 void GameRenderer::renderUnderwaterOverlay() {
     m_renderEngine->bindTexture(m_renderEngine->getTexture("/water.png"));
-    
+
     Tessellator* t = Tessellator::instance;
     float b = m_world.getDaylightStrength();
     m_uiShader->use();

@@ -7,9 +7,12 @@
 #include "util/Timer.hpp"
 #include "entities/EntityPlayer.hpp"
 #include "renderer/GameRenderer.hpp"
+#include "renderer/ModernFont.hpp"
 #include "InputHandler.hpp"
 #include "net/NetworkHandler.hpp"
 #include "util/GameSettings.hpp"
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 enum class GameState {
     MainMenu,
@@ -45,6 +48,7 @@ public:
     NetworkHandler* getNetworkHandler() { return m_networkHandler.get(); }
     GameRenderer& getGameRenderer() { return *m_gameRenderer; }
     GameSettings& getSettings() { return m_settings; }
+    Font& getFont() { return *m_font; }
     std::shared_ptr<GuiScreen> getCurrentScreen() { return m_currentScreen; }
 
 private:
@@ -64,6 +68,8 @@ private:
     std::unique_ptr<GameRenderer> m_gameRenderer;
     std::unique_ptr<InputHandler> m_inputHandler;
     std::unique_ptr<NetworkHandler> m_networkHandler;
+    std::unique_ptr<Font> m_font;
+    FT_Library m_ft = nullptr;
 
     GameSettings m_settings;
     std::shared_ptr<GuiScreen> m_currentScreen;

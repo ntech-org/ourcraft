@@ -1,5 +1,6 @@
 #pragma once
 #include "gui/Gui.hpp"
+#include "renderer/ModernFont.hpp"
 #include <string>
 
 class Minecraft;
@@ -9,7 +10,7 @@ public:
     GuiButton(int id, int x, int y, int width, int height, const std::string& text);
     virtual ~GuiButton() = default;
 
-    virtual void drawButton(Minecraft* mc, FontRenderer& fontRenderer, Shader& shader, int mouseX, int mouseY);
+    virtual void drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX, int mouseY);
     virtual bool mousePressed(int mouseX, int mouseY);
 
     int id;

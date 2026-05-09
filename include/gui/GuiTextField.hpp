@@ -1,9 +1,9 @@
 #pragma once
 #include "gui/Gui.hpp"
+#include "renderer/ModernFont.hpp"
 #include <string>
 
 class Minecraft;
-class FontRenderer;
 class Shader;
 
 class GuiTextField : public Gui {
@@ -20,7 +20,7 @@ public:
 
     void keyTyped(int key, int scancode, int action, int mods);
     void mouseClicked(int mouseX, int mouseY, int button);
-    void drawTextField(Minecraft* mc, FontRenderer& fontRenderer, Shader& shader);
+    void drawTextField(Minecraft* mc, Font& font, Shader& shader);
 
     int id;
     int x, y;

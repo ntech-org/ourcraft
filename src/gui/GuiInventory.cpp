@@ -100,33 +100,35 @@ void GuiInventory::drawBlockStack3D(int blockID, float x, float y) {
         v1 = v0 + 16.0f / 256.0f;
     };
 
+    float u0, v0, u1, v1;
     const int texTop = block->getTexture(1);
     const int texSide = block->getTexture(2);
-    float u0, v0, u1, v1;
 
-    // Shift Y slightly up to center the 13px tall isometric block in 16px slot
-    y -= 1.5f;
+    // Scaling up to fill the slot better. Original was roughly 13px tall, making it ~15px now.
+    float s = 1.15f;
+    float ox = x + 8.0f;
+    float oy = y + 8.5f; // Moved up from 10.0f
 
     t->startDrawingQuads();
     tileUV(texTop, u0, v0, u1, v1);
     t->setColorRGBA(230, 230, 230, 255);
-    t->addVertexWithUV(x + 2.0f, y + 6.0f, 0.0f, u0, v1);
-    t->addVertexWithUV(x + 8.0f, y + 3.0f, 0.0f, u1, v1);
-    t->addVertexWithUV(x + 14.0f, y + 6.0f, 0.0f, u1, v0);
-    t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u0, v0);
+    t->addVertexWithUV(ox - 6.0f * s, oy - 4.0f * s, 0.0f, u0, v1);
+    t->addVertexWithUV(ox, oy - 7.0f * s, 0.0f, u1, v1);
+    t->addVertexWithUV(ox + 6.0f * s, oy - 4.0f * s, 0.0f, u1, v0);
+    t->addVertexWithUV(ox, oy - 1.0f * s, 0.0f, u0, v0);
 
     tileUV(texSide, u0, v0, u1, v1);
     t->setColorRGBA(170, 170, 170, 255);
-    t->addVertexWithUV(x + 2.0f, y + 6.0f, 0.0f, u0, v0);
-    t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u1, v0);
-    t->addVertexWithUV(x + 8.0f, y + 16.0f, 0.0f, u1, v1);
-    t->addVertexWithUV(x + 2.0f, y + 13.0f, 0.0f, u0, v1);
+    t->addVertexWithUV(ox - 6.0f * s, oy - 4.0f * s, 0.0f, u0, v0);
+    t->addVertexWithUV(ox, oy - 1.0f * s, 0.0f, u1, v0);
+    t->addVertexWithUV(ox, oy + 6.0f * s, 0.0f, u1, v1);
+    t->addVertexWithUV(ox - 6.0f * s, oy + 3.0f * s, 0.0f, u0, v1);
 
     t->setColorRGBA(200, 200, 200, 255);
-    t->addVertexWithUV(x + 8.0f, y + 9.0f, 0.0f, u0, v0);
-    t->addVertexWithUV(x + 14.0f, y + 6.0f, 0.0f, u1, v0);
-    t->addVertexWithUV(x + 14.0f, y + 13.0f, 0.0f, u1, v1);
-    t->addVertexWithUV(x + 8.0f, y + 16.0f, 0.0f, u0, v1);
+    t->addVertexWithUV(ox, oy - 1.0f * s, 0.0f, u0, v0);
+    t->addVertexWithUV(ox + 6.0f * s, oy - 4.0f * s, 0.0f, u1, v0);
+    t->addVertexWithUV(ox + 6.0f * s, oy + 3.0f * s, 0.0f, u1, v1);
+    t->addVertexWithUV(ox, oy + 6.0f * s, 0.0f, u0, v1);
     t->draw();
 }
 
@@ -147,15 +149,17 @@ void GuiInventory::drawItemStack2D(int itemID, float x, float y) {
 }
 
 void GuiInventory::drawStackAt(const ItemStack& stack, float x, float y, bool highlight) {
-    Shader& shader = mc->getGameRenderer().getUIShader();
-    FontRenderer& font = mc->getGameRenderer().getFontRenderer();
+    Shader& uiShader = mc->getGameRenderer().getUIShader();
+    Shader& textShader = mc->getGameRenderer().getTextShader();
+    Font& font = mc->getFont();
 
     if (highlight) {
-        drawRect(shader, x - 1.0f, y - 1.0f, x + 17.0f, y + 17.0f, 0x70FFFFFF);
+        drawRect(uiShader, x - 1.0f, y - 1.0f, x + 17.0f, y + 17.0f, 0x70FFFFFF);
     }
 
     if (stack.isEmpty()) return;
 
+    uiShader.use();
     if (stack.itemID > 0 && Block::blocksList[stack.itemID]) {
         if (Block::blocksList[stack.itemID]->getRenderShape() == BlockRenderShape::Cross) {
             drawBlockStack2D(stack.itemID, x, y);
@@ -169,7 +173,8 @@ void GuiInventory::drawStackAt(const ItemStack& stack, float x, float y, bool hi
     if (stack.count > 1) {
         char buf[8];
         std::snprintf(buf, sizeof(buf), "%d", stack.count);
-        font.drawStringWithShadow(shader, buf, x + 19.0f - font.getStringWidth(buf), y + 9.0f, 0xFFFFFFFF);
+        // Larger font needs slightly more margin to prevent slot overflow
+        font.drawString(textShader, buf, x + 17.0f - (float)font.getStringWidth(buf), y + 9.0f, 0xFFFFFFFF, true);
     }
 }
 
@@ -195,7 +200,7 @@ void GuiInventory::drawScreen(int mouseX, int mouseY, float partialTicks) {
     drawDefaultBackground();
 
     Shader& shader = mc->getGameRenderer().getUIShader();
-    FontRenderer& font = mc->getGameRenderer().getFontRenderer();
+    Font& font = mc->getFont();
     RenderEngine& renderEngine = mc->getGameRenderer().getRenderEngine();
 
     const float left = (width - GUI_WIDTH) * 0.5f;

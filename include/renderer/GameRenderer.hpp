@@ -13,7 +13,6 @@
 #include "renderer/Frustum.hpp"
 #include "renderer/ModelBiped.hpp"
 #include "renderer/ModelZombie.hpp"
-#include "renderer/FontRenderer.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
@@ -41,11 +40,12 @@ public:
     };
 
     RenderEngine& getRenderEngine() { return *m_renderEngine; }
+    RenderEngine* getRenderEnginePtr() { return m_renderEngine.get(); }
     WorldRenderer& getWorldRenderer() { return *m_worldRenderer; }
     Camera& getCamera() { return m_camera; }
     ProfilerResult& getProfiler() { return m_profiler; }
-    FontRenderer& getFontRenderer() { return *m_fontRenderer; }
     Shader& getUIShader() { return *m_uiShader; }
+    Shader& getTextShader() { return *m_textShader; }
 
     float getScaledWidth() const { return m_scaledWidth; }
     float getScaledHeight() const { return m_scaledHeight; }
@@ -86,9 +86,9 @@ private:
     std::unique_ptr<Shader> m_entityShader;
     std::unique_ptr<Shader> m_debugShader;
     std::unique_ptr<Shader> m_uiShader;
+    std::unique_ptr<Shader> m_textShader;
     std::unique_ptr<ModelBiped> m_playerModel;
     std::unique_ptr<ModelZombie> m_zombieModel;
-    std::unique_ptr<FontRenderer> m_fontRenderer;
 
     ProfilerResult m_profiler;
     

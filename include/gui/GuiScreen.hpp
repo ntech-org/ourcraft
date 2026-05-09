@@ -25,6 +25,9 @@ public:
     static bool isCtrlKeyDown();
     static bool isShiftKeyDown();
 
+    void drawString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color);
+    void drawCenteredString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color);
+
     std::shared_ptr<GuiScreen> parentScreen = nullptr;
 
 protected:

@@ -76,10 +76,11 @@ void GuiTextField::mouseClicked(int mouseX, int mouseY, int button) {
     setFocused(over);
 }
 
-void GuiTextField::drawTextField(Minecraft* mc, FontRenderer& fontRenderer, Shader& shader) {
+void GuiTextField::drawTextField(Minecraft* mc, Font& font, Shader& shader) {
     if (!visible) return;
 
-    // Draw border and background
+    // Draw border and background (using uiShader)
+    shader.use();
     drawRect(shader, (float)x - 1, (float)y - 1, (float)x + (float)width + 1, (float)y + (float)height + 1, 0xFFA0A0A0);
     drawRect(shader, (float)x, (float)y, (float)x + (float)width, (float)y + (float)height, 0xFF000000);
 
@@ -89,5 +90,5 @@ void GuiTextField::drawTextField(Minecraft* mc, FontRenderer& fontRenderer, Shad
         display += "_";
     }
 
-    fontRenderer.drawString(shader, display, (float)x + 4, (float)y + ((float)height - 8) / 2.0f, color);
+    font.drawString(mc->getGameRenderer().getTextShader(), display, (float)x + 4, (float)y + ((float)height - 8) / 2.0f, color, false);
 }

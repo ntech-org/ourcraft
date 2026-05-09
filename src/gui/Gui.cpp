@@ -60,13 +60,14 @@ void Gui::drawGradientRect(Shader& shader, float x1, float y1, float x2, float y
     glDisable(GL_BLEND);
 }
 
-void Gui::drawCenteredString(FontRenderer& fontRenderer, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
-    fontRenderer.drawStringWithShadow(shader, text, x - (float)fontRenderer.getStringWidth(text) / 2.0f, y, color);
+void Gui::drawCenteredString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
+    font.drawString(shader, text, x - (float)font.getStringWidth(text) / 2.0f, y, color, true); 
 }
 
-void Gui::drawString(FontRenderer& fontRenderer, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
-    fontRenderer.drawStringWithShadow(shader, text, x, y, color);
+void Gui::drawString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
+    font.drawString(shader, text, x, y, color, true);
 }
+
 
 void Gui::drawTexturedModalRect(Shader& shader, float x, float y, int u, int v, int width, int height) {
     float f = 0.00390625f; // 1/256

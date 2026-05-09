@@ -3,11 +3,20 @@
 #include "renderer/Tessellator.hpp"
 
 void GuiScreen::drawScreen(int mouseX, int mouseY, float partialTicks) {
-    Shader& shader = mc->getGameRenderer().getUIShader();
+    Shader& uiShader = mc->getGameRenderer().getUIShader();
     for (auto& button : controlList) {
-        button->drawButton(mc, mc->getGameRenderer().getFontRenderer(), shader, mouseX, mouseY);
+        button->drawButton(mc, mc->getFont(), uiShader, mouseX, mouseY);
     }
 }
+
+void GuiScreen::drawString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
+    Gui::drawString(font, mc->getGameRenderer().getTextShader(), text, x, y, color);
+}
+
+void GuiScreen::drawCenteredString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
+    Gui::drawCenteredString(font, mc->getGameRenderer().getTextShader(), text, x, y, color);
+}
+
 
 void GuiScreen::keyTyped(int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
@@ -39,17 +48,31 @@ void GuiScreen::setWorldAndResolution(Minecraft* mc, float width, float height) 
 void GuiScreen::drawDefaultBackground() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    Shader& shader = mc->getGameRenderer().getUIShader();
-    shader.use();
-    shader.setMat4("projection", glm::ortho(0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f));
-    shader.setMat4("view", glm::mat4(1.0f));
+    int sw, sh;
+    glfwGetFramebufferSize(mc->getWindow(), &sw, &sh);
+    mc->getFont().setDisplayContext(sw, sh, (float)mc->getGameRenderer().getGuiScale());
+
+    glm::mat4 projection = glm::ortho(0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f);
+    glm::mat4 view = glm::mat4(1.0f);
+
+    Shader& uiShader = mc->getGameRenderer().getUIShader();
+    uiShader.use();
+    uiShader.setMat4("projection", projection);
+    uiShader.setMat4("view", view);
+
+    Shader& textShader = mc->getGameRenderer().getTextShader();
+    textShader.use();
+    textShader.setMat4("projection", projection);
+    textShader.setMat4("view", view);
 
     if (mc->getGameState() == GameState::InGame || mc->getGameState() == GameState::Paused) {
-        drawGradientRect(shader, 0, 0, (float)width, (float)height, 0xC0101010, 0xD0101010);
+        drawGradientRect(uiShader, 0, 0, (float)width, (float)height, 0xC0101010, 0xD0101010);
     } else {
         mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture("/dirt.png"));
-        shader.setBool("hasTexture", true);
+        uiShader.setBool("hasTexture", true);
         Tessellator* t = Tessellator::instance;
         float s = 32.0f;
         t->startDrawingQuads();

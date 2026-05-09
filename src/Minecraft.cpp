@@ -6,6 +6,7 @@
 #include "gui/GuiIngameMenu.hpp"
 #include "gui/GuiInventory.hpp"
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -15,6 +16,9 @@
 Minecraft::Minecraft(GLFWwindow* window, int width, int height)
     : m_window(window), m_width(width), m_height(height), m_timer(20.0f)
 {
+    if (FT_Init_FreeType(&m_ft)) {
+        std::cerr << "[Minecraft] Failed to initialize FreeType" << std::endl;
+    }
     Tessellator::init();
     init();
 }
@@ -23,6 +27,7 @@ Minecraft::~Minecraft() {
     if (m_gameState != GameState::MainMenu) {
         saveAndQuit();
     }
+    if (m_ft) FT_Done_FreeType(m_ft);
 }
 
 void Minecraft::init() {
@@ -38,6 +43,31 @@ void Minecraft::init() {
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
+
+    auto loadFile = [](const std::string& p) -> std::vector<uint8_t> {
+        std::string path = "assets/" + p;
+        if (p[0] == '/') path = "assets" + p;
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) return {};
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::vector<uint8_t> buffer(size);
+        file.read((char*)buffer.data(), size);
+        return buffer;
+    };
+
+    auto fontSet = std::make_unique<FontSet>(m_gameRenderer->getRenderEnginePtr(), 10.0f);
+
+    auto primaryData = loadFile("minecraft.ttf");
+    if (!primaryData.empty()) {
+        fontSet->addProvider(std::make_unique<FreeTypeGlyphProvider>(m_ft, primaryData, 10.0f));
+    }
+
+    auto fallbackData = loadFile("unifont.otf");
+    if (!fallbackData.empty()) {
+        fontSet->addProvider(std::make_unique<FreeTypeGlyphProvider>(m_ft, fallbackData, 10.0f));
+    }
+    m_font = std::make_unique<Font>(std::move(fontSet));
 
     displayGuiScreen(std::make_shared<GuiMainMenu>());
 }
@@ -152,7 +182,7 @@ void Minecraft::run() {
             // but keep ticking the network and game logic.
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        
+
         glfwPollEvents();
     }
 }
