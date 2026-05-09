@@ -15,6 +15,8 @@ public:
     virtual void updateScreen() {}
     virtual void drawScreen(int mouseX, int mouseY, float partialTicks);
     
+    virtual bool doesGuiPauseGame() const { return true; }
+    
     virtual void keyTyped(int key, int scancode, int action, int mods);
     virtual void mouseClicked(int mouseX, int mouseY, int button);
     

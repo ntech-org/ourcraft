@@ -18,6 +18,9 @@ public:
     void start();
     void stop();
     void setDedicated(bool dedicated) { m_isDedicated = dedicated; }
+    void setPaused(bool paused) { m_paused = paused; }
+    bool isPaused() const { return m_paused; }
+    int getPlayerCount() const { return (int)m_players.size(); }
 
 private:
     void run();
@@ -27,6 +30,7 @@ private:
     std::unique_ptr<World> m_world;
     std::thread m_thread;
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_paused{false};
     bool m_isDedicated = false;
 
     struct PlayerSession {

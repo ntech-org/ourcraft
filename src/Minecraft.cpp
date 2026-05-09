@@ -111,6 +111,7 @@ void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
     if (m_currentScreen) m_currentScreen->onGuiClosed();
     m_currentScreen = screen;
     if (m_currentScreen) {
+        resetBlockBreaking(true);
         glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         m_currentScreen->setWorldAndResolution(this, m_gameRenderer->getScaledWidth(), m_gameRenderer->getScaledHeight());
     } else {
@@ -132,7 +133,12 @@ void Minecraft::run() {
         m_gameRenderer->getProfiler().updateTime = (glfwGetTime() - updateStart) * 1000.0;
 
         if (!glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) {
-            m_gameRenderer->render(m_timer.renderPartialTicks,
+            float renderPartialTicks = m_timer.renderPartialTicks;
+            if (m_gameState == GameState::Paused) {
+                renderPartialTicks = 1.0f;
+            }
+
+            m_gameRenderer->render(renderPartialTicks,
                                    m_inputHandler->getCameraMode(),
                                    m_inputHandler->isDebugVisible(),
                                    m_inputHandler->isChunkBoundariesVisible(),
@@ -152,131 +158,160 @@ void Minecraft::run() {
 }
 
 void Minecraft::tick() {
+    if (m_gameState == GameState::MainMenu) {
+        if (m_currentScreen) m_currentScreen->updateScreen();
+        return;
+    }
+
     // Always update network regardless of pause state to keep connection alive
     if (m_networkHandler) {
         m_networkHandler->update();
     }
 
-    if (m_currentScreen) {
-        m_currentScreen->updateScreen();
+    bool shouldPause = false;
+    if (m_currentScreen && m_currentScreen->doesGuiPauseGame()) {
+        if (m_networkHandler && m_networkHandler->isSingleplayer()) {
+            if (m_networkHandler->getPlayerCount() <= 1) {
+                shouldPause = true;
+            }
+        }
+    }
+
+    if (shouldPause) {
+        setGameState(GameState::Paused);
+        if (m_networkHandler) m_networkHandler->setPaused(true);
+        m_timer.elapsedPartialTicks = 0.0f; // Prevent catch-up/oscillation accumulation
     } else {
+        setGameState(GameState::InGame);
+        if (m_networkHandler) m_networkHandler->setPaused(false);
+    }
+
+    if (getGameState() == GameState::Paused) {
+        if (m_currentScreen) m_currentScreen->updateScreen();
+    } else {
+        // Game is running (either no GUI, or a non-pausing GUI, or we are in multiplayer)
         m_world->update(0.05f);
-        m_inputHandler->update();
 
-        if (m_hitDelayTimer > 0) m_hitDelayTimer--;
-        if (m_rightClickDelayTimer > 0) m_rightClickDelayTimer--;
+        if (m_currentScreen) {
+            m_currentScreen->updateScreen();
+        } else {
+            m_inputHandler->update();
 
-        if (m_inputHandler->isEscPressed()) {
-            displayGuiScreen(std::make_shared<GuiIngameMenu>());
-        }
-        if (m_inputHandler->shouldToggleInventory()) {
-            displayGuiScreen(std::make_shared<GuiInventory>());
-            return;
-        }
+            if (m_hitDelayTimer > 0) m_hitDelayTimer--;
+            if (m_rightClickDelayTimer > 0) m_rightClickDelayTimer--;
 
-        // Raycast for block picking
-        float reach = 5.0f;
-        glm::dvec3 eyePos = glm::dvec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
-        float yaw = glm::radians(m_player->rotationYaw);
-        float pitch = glm::radians(m_player->rotationPitch);
-        glm::dvec3 lookDir = glm::dvec3(
-            -std::sin(yaw) * std::cos(pitch),
-            std::sin(pitch),
-            std::cos(yaw) * std::cos(pitch)
-        );
-
-        glm::dvec3 endPos = eyePos + lookDir * (double)reach;
-        HitResult hit = m_world->rayTraceBlocks(eyePos, endPos, true);
-
-        const bool leftDown = m_inputHandler->isLeftMouseDown();
-        if ((!leftDown || hit.type != HitType::BLOCK) && m_hitDelayTimer <= 0) {
-            resetBlockBreaking(true);
-        } else if (m_hitDelayTimer <= 0) {
-            const bool sameTarget = m_isBreakingBlock &&
-                                    m_breakX == hit.x &&
-                                    m_breakY == hit.y &&
-                                    m_breakZ == hit.z;
-
-            if (!sameTarget) {
-                resetBlockBreaking(true);
-                const uint8_t targetID = m_world->getBlockID(hit.x, hit.y, hit.z);
-                if (targetID > 0 && Block::getHardness(targetID) >= 0.0f) {
-                    m_isBreakingBlock = true;
-                    m_breakX = hit.x;
-                    m_breakY = hit.y;
-                    m_breakZ = hit.z;
-                    m_breakFace = hit.sideHit;
-                    m_breakProgress = 0.0f;
-                    m_breakSwingTick = 0;
-                    m_networkHandler->sendDigging(DiggingAction::START, hit.x, hit.y, hit.z, hit.sideHit);
-                    m_player->swing();
-                }
+            if (m_inputHandler->isEscPressed()) {
+                displayGuiScreen(std::make_shared<GuiIngameMenu>());
+            }
+            if (m_inputHandler->shouldToggleInventory()) {
+                displayGuiScreen(std::make_shared<GuiInventory>());
+                return;
             }
 
-            if (m_isBreakingBlock) {
-                const uint8_t targetID = m_world->getBlockID(m_breakX, m_breakY, m_breakZ);
-                if (targetID == 0 || Block::getHardness(targetID) < 0.0f) {
+            // Raycast for block picking
+            float reach = 5.0f;
+            glm::dvec3 eyePos = glm::dvec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
+            float yaw = glm::radians(m_player->rotationYaw);
+            float pitch = glm::radians(m_player->rotationPitch);
+            glm::dvec3 lookDir = glm::dvec3(
+                -std::sin(yaw) * std::cos(pitch),
+                std::sin(pitch),
+                std::cos(yaw) * std::cos(pitch)
+            );
+
+            glm::dvec3 endPos = eyePos + lookDir * (double)reach;
+            HitResult hit = m_world->rayTraceBlocks(eyePos, endPos, true);
+
+            const bool leftDown = m_inputHandler->isLeftMouseDown();
+            if ((!leftDown || hit.type != HitType::BLOCK) && m_hitDelayTimer <= 0) {
+                resetBlockBreaking(true);
+            } else if (m_hitDelayTimer <= 0) {
+                const bool sameTarget = m_isBreakingBlock &&
+                                        m_breakX == hit.x &&
+                                        m_breakY == hit.y &&
+                                        m_breakZ == hit.z;
+
+                if (!sameTarget) {
                     resetBlockBreaking(true);
-                } else if (m_player->gameMode == GameMode::CREATIVE) {
-                    m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
-                    m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
-                    m_player->swing();
-                    resetBlockBreaking(false);
-                    m_hitDelayTimer = 5;
-                } else {
-                    m_breakProgress = std::min(1.0f, m_breakProgress + getBreakDeltaForBlock(targetID));
-                    if ((++m_breakSwingTick % 4) == 0) {
+                    const uint8_t targetID = m_world->getBlockID(hit.x, hit.y, hit.z);
+                    if (targetID > 0 && Block::getHardness(targetID) >= 0.0f) {
+                        m_isBreakingBlock = true;
+                        m_breakX = hit.x;
+                        m_breakY = hit.y;
+                        m_breakZ = hit.z;
+                        m_breakFace = hit.sideHit;
+                        m_breakProgress = 0.0f;
+                        m_breakSwingTick = 0;
+                        m_networkHandler->sendDigging(DiggingAction::START, hit.x, hit.y, hit.z, hit.sideHit);
                         m_player->swing();
                     }
-                    if (m_breakProgress >= 1.0f) {
-                        finishBreakingCurrentBlock();
-                    }
                 }
-            }
-        }
-        if (m_isBreakingBlock) {
-            m_gameRenderer->setBlockBreakingOverlay(true, m_breakX, m_breakY, m_breakZ, m_breakProgress);
-        } else {
-            m_gameRenderer->setBlockBreakingOverlay(false, 0, 0, 0, 0.0f);
-        }
 
-
-        if (m_inputHandler->isRightMouseDown() && m_rightClickDelayTimer <= 0) {
-            resetBlockBreaking(true);
-            if (hit.type == HitType::BLOCK) {
-                int x = hit.x, y = hit.y, z = hit.z;
-                int face = hit.sideHit;
-                if (face == 0) y--; else if (face == 1) y++;
-                else if (face == 2) z--; else if (face == 3) z++;
-                else if (face == 4) x--; else if (face == 5) x++;
-
-                AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
-                if (!m_player->boundingBox.intersectsWith(blockBB)) {
-                    int itemID = m_player->inventory.getCurrentItemID();
-                    if (itemID > 0) {
-                        const bool shouldConsume = m_player->gameMode == GameMode::SURVIVAL;
-                        if (!shouldConsume || m_player->inventory.consumeCurrentItem(1)) {
-                            m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
+                if (m_isBreakingBlock) {
+                    const uint8_t targetID = m_world->getBlockID(m_breakX, m_breakY, m_breakZ);
+                    if (targetID == 0 || Block::getHardness(targetID) < 0.0f) {
+                        resetBlockBreaking(true);
+                    } else if (m_player->gameMode == GameMode::CREATIVE) {
+                        m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
+                        m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
+                        m_player->swing();
+                        resetBlockBreaking(false);
+                        m_hitDelayTimer = 5;
+                    } else {
+                        m_breakProgress = std::min(1.0f, m_breakProgress + getBreakDeltaForBlock(targetID));
+                        if ((++m_breakSwingTick % 4) == 0) {
                             m_player->swing();
-                            m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
-                            m_rightClickDelayTimer = 4;
+                        }
+                        if (m_breakProgress >= 1.0f) {
+                            finishBreakingCurrentBlock();
                         }
                     }
                 }
             }
-        }
+            if (m_isBreakingBlock) {
+                m_gameRenderer->setBlockBreakingOverlay(true, m_breakX, m_breakY, m_breakZ, m_breakProgress);
+            } else {
+                m_gameRenderer->setBlockBreakingOverlay(false, 0, 0, 0, 0.0f);
+            }
 
+            if (m_inputHandler->isRightMouseDown() && m_rightClickDelayTimer <= 0) {
+                resetBlockBreaking(true);
+                if (hit.type == HitType::BLOCK) {
+                    int x = hit.x, y = hit.y, z = hit.z;
+                    int face = hit.sideHit;
+                    if (face == 0) y--; else if (face == 1) y++;
+                    else if (face == 2) z--; else if (face == 3) z++;
+                    else if (face == 4) x--; else if (face == 5) x++;
 
+                    AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
+                    if (!m_player->boundingBox.intersectsWith(blockBB)) {
+                        int itemID = m_player->inventory.getCurrentItemID();
+                        if (itemID > 0) {
+                            const bool shouldConsume = m_player->gameMode == GameMode::SURVIVAL;
+                            if (!shouldConsume || m_player->inventory.consumeCurrentItem(1)) {
+                                m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
+                                m_player->swing();
+                                m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
+                                m_rightClickDelayTimer = 4;
+                            }
+                        }
+                    }
+                }
+            }
 
-        if (m_inputHandler->shouldReloadChunks()) {
-            m_gameRenderer->getWorldRenderer().rebuildSectionList();
+            if (m_inputHandler->shouldReloadChunks()) {
+                m_gameRenderer->getWorldRenderer().rebuildSectionList();
+            }
         }
 
         m_player->onUpdate();
         m_gameRenderer->getRenderEngine().updateTextureFX();
-        m_networkHandler->sendPlayerPosition(*m_player);
+        if (m_networkHandler) {
+            m_networkHandler->sendPlayerPosition(*m_player);
+        }
     }
 }
+
 
 void Minecraft::resetBlockBreaking(bool sendStopPacket) {
     if (sendStopPacket && m_isBreakingBlock && m_networkHandler) {

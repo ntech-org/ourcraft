@@ -42,6 +42,20 @@ void NetworkHandler::stopServer() {
     m_server.reset();
 }
 
+void NetworkHandler::setPaused(bool paused) {
+    if (m_server) {
+        m_server->setPaused(paused);
+    }
+}
+
+bool NetworkHandler::isSingleplayer() const {
+    return m_server != nullptr;
+}
+
+int NetworkHandler::getPlayerCount() const {
+    return m_server ? m_server->getPlayerCount() : 0;
+}
+
 void NetworkHandler::sendPlayerPosition(const EntityPlayer& player) {
     double dx = player.posX - m_lastX;
     double dy = player.posY - m_lastY;

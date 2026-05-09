@@ -100,7 +100,9 @@ void IntegratedServer::run() {
         m_world->pollGeneratedChunks();
 
         auto now = std::chrono::steady_clock::now();
-        if (now - lastTick >= std::chrono::milliseconds(50)) { // 20 TPS
+        if (m_paused) {
+            lastTick = now; // Prevent catch-up burst
+        } else if (now - lastTick >= std::chrono::milliseconds(50)) { // 20 TPS
             tickCounter++;
             if (tickCounter % 6000 == 0) { // Every 5 minutes
                 m_world->saveAllChunks();
