@@ -28,6 +28,7 @@ public:
     AxisAlignedBB boundingBox;
     bool onGround = false;
     bool handlePhysics = true;
+    bool isDead = false;
 
     // Server-side synchronization and interpolation
     int posRotationIncrements = 0;
@@ -57,6 +58,5 @@ public:
     bool isInsideOfMaterial(const class Material& material) const;
     bool isEntityInsideOpaqueBlock() const;
 };
-
 
 

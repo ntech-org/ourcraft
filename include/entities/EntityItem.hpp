@@ -14,4 +14,14 @@ public:
     int age = 0;
     int pickupDelay = 10;
     float hoverStart = 0.0f;
+    int pickupAnimationTicks = 0;
+    int pickupAnimationTotalTicks = 10;
+    double pickupStartX = 0.0;
+    double pickupStartY = 0.0;
+    double pickupStartZ = 0.0;
+    double pickupTargetX = 0.0;
+    double pickupTargetY = 0.0;
+    double pickupTargetZ = 0.0;
+
+    void startPickupAnimation(double targetX, double targetY, double targetZ);
 };

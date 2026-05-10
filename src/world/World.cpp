@@ -244,6 +244,7 @@ void World::update(float dt) {
     for (auto& e : m_entities) {
         e->onUpdate();
     }
+    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [](const auto& e) { return e->isDead; }), m_entities.end());
 }
 
 HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiquids) {
@@ -311,10 +312,17 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
 
 void World::spawnEntity(std::unique_ptr<Entity> e) { if (e->entityID == -1) e->entityID = m_nextEntityID++; m_entities.push_back(std::move(e)); }
 
-void World::removeEntity(int32_t id) {
-    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [id](const auto& e) { return e->entityID == id; }), m_entities.end());
-    std::lock_guard<std::mutex> lock(m_removedEntitiesMutex);
-    m_removedEntities.push_back(id);
+void World::removeEntity(int32_t id, bool notify) {
+    for (auto& entity : m_entities) {
+        if (entity->entityID == id) {
+            entity->isDead = true;
+            break;
+        }
+    }
+    if (notify) {
+        std::lock_guard<std::mutex> lock(m_removedEntitiesMutex);
+        m_removedEntities.push_back(id);
+    }
 }
 
 int World::getSavedLightValue(LightType type, int x, int y, int z) const {

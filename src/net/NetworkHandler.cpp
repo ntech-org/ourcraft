@@ -245,6 +245,29 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
         PacketDestroyEntity packet;
         packet.deserialize(ptr, size - 1);
         m_world.removeEntity(packet.id);
+    } else if (type == PacketType::CollectItem) {
+        PacketCollectItem packet;
+        packet.deserialize(ptr, size - 1);
+        double targetX = m_player.posX;
+        double targetY = m_player.posY + m_player.height * 0.3;
+        double targetZ = m_player.posZ;
+        for (auto& entity : m_world.getEntities()) {
+            if (entity->entityID != packet.collectorEntityID) continue;
+            targetX = entity->posX;
+            targetY = entity->posY + entity->height * 0.3;
+            targetZ = entity->posZ;
+            break;
+        }
+        targetX *= 0.995;
+        targetZ *= 0.995;
+        for (auto& entity : m_world.getEntities()) {
+            if (entity->entityID == packet.itemEntityID) {
+                if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
+                    item->startPickupAnimation(targetX, targetY, targetZ);
+                }
+                break;
+            }
+        }
     } else if (type == PacketType::ChunkUnload) {
         PacketChunkUnload packet;
         packet.deserialize(ptr, size - 1);

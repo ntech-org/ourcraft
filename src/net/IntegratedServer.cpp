@@ -298,11 +298,12 @@ void IntegratedServer::run() {
             // 3. Server-authoritative item pickup.
             struct PendingPickup {
                 ENetPeer* peer;
+                int collectorEntityID;
+                int itemEntityID;
                 int itemID;
                 int count;
                 uint8_t metadata;
             };
-            std::vector<int32_t> removeItemEntityIDs;
             std::vector<PendingPickup> pickups;
             for (const auto& entity : m_world->getEntities()) {
                 auto* item = dynamic_cast<EntityItem*>(entity.get());
@@ -314,11 +315,10 @@ void IntegratedServer::run() {
                     auto* player = dynamic_cast<EntityPlayer*>(it->second);
                     if (!player) continue;
 
-                    AxisAlignedBB pickupBox = player->boundingBox.expand(0.35, 0.35, 0.35);
+                    AxisAlignedBB pickupBox = player->boundingBox.expand(0.6, 0.6, 0.6);
                     if (!pickupBox.intersectsWith(item->boundingBox)) continue;
 
-                    pickups.push_back({peer, item->itemID, item->count, item->metadata});
-                    removeItemEntityIDs.push_back(item->entityID);
+                    pickups.push_back({peer, player->entityID, item->entityID, item->itemID, item->count, item->metadata});
                     break;
                 }
             }
@@ -335,9 +335,11 @@ void IntegratedServer::run() {
                     }
                     m_server->sendPacket(pickup.peer, packet, true);
                 }
-            }
-            for (int32_t id : removeItemEntityIDs) {
-                m_world->removeEntity(id);
+                PacketCollectItem collectPacket;
+                collectPacket.itemEntityID = pickup.itemEntityID;
+                collectPacket.collectorEntityID = pickup.collectorEntityID;
+                m_server->broadcastPacket(collectPacket, true);
+                m_world->removeEntity(pickup.itemEntityID, false);
             }
 
             // 4. Spawn any new entities for each player.
@@ -554,10 +556,12 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             m_world->setBlockWithNotify(packet.x, packet.y, packet.z, 0);
             if (oldID > 0 && Block::getHardness(oldID) >= 0.0f) {
                 auto item = std::make_unique<EntityItem>(*m_world, oldID, 1, oldMeta);
-                item->setPosition(packet.x + 0.5, packet.y + 0.35, packet.z + 0.5);
-                item->motionX = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.1;
-                item->motionY = 0.0;
-                item->motionZ = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.1;
+                double spread = 0.7;
+                item->setPosition(
+                    packet.x + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
+                    packet.y + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
+                    packet.z + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5
+                );
                 item->pickupDelay = 6;
                 m_world->spawnEntity(std::move(item));
             }

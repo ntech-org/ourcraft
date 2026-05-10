@@ -142,7 +142,7 @@ public:
     std::vector<int32_t> popRemovedEntities();
 
     void spawnEntity(std::unique_ptr<Entity> entity);
-    void removeEntity(int32_t id);
+    void removeEntity(int32_t id, bool notify = true);
     const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
 
     SaveHandler* getSaveHandler() const { return m_saveHandler.get(); }
@@ -189,4 +189,3 @@ public:
     std::unordered_set<std::uint64_t, ChunkHasher> m_pendingChunks;
     std::unordered_set<std::uint64_t, ChunkHasher> m_pendingRequests;
 };
-

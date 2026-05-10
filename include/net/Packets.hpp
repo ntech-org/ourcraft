@@ -434,6 +434,25 @@ public:
     }
 };
 
+class PacketCollectItem : public Packet {
+public:
+    int32_t itemEntityID;
+    int32_t collectorEntityID;
+
+    PacketType getType() const override { return PacketType::CollectItem; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, itemEntityID);
+        writeInt(buffer, collectorEntityID);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        itemEntityID = readInt(data);
+        collectorEntityID = readInt(data);
+    }
+};
+
 class PacketChunkRequest : public Packet {
 public:
     int32_t x, z;

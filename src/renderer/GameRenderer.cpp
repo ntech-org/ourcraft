@@ -36,6 +36,23 @@ FaceUV getTextureUV(int tex) {
     return {u0, v0, u0 + 16.0f / 256.0f, v0 + 16.0f / 256.0f};
 }
 
+bool isInventoryBlockModel(int itemID) {
+    return itemID > 0
+        && itemID < 256
+        && Block::blocksList[itemID]
+        && Block::blocksList[itemID]->getRenderShape() == BlockRenderShape::FullCube;
+}
+
+int getItemIconTexture(int itemID) {
+    if (itemID > 0 && itemID < 256 && Block::blocksList[itemID]) {
+        return Block::blocksList[itemID]->getTexture(2);
+    }
+    if (itemID >= 0 && itemID < 1024 && Item::itemsList[itemID]) {
+        return Item::itemsList[itemID]->iconIndex;
+    }
+    return itemID & 255;
+}
+
 void addFace(Tessellator* t, int side, const FaceUV& uv, float shade) {
     int c = std::clamp((int)std::round(255.0f * shade), 0, 255);
     t->setColorOpaque(c, c, c);
@@ -81,6 +98,73 @@ void addFace(Tessellator* t, int side, const FaceUV& uv, float shade) {
             t->addVertexWithUV(x1, y1, z0, uv.u1, uv.v0);
             t->addVertexWithUV(x1, y1, z1, uv.u0, uv.v0);
             break;
+    }
+}
+
+void renderFlatHeldItem(Tessellator* t, const FaceUV& uv) {
+    const float w = 1.0f;
+    const float h = 1.0f;
+    const float d = 1.0f / 16.0f;
+    const float eps = 0.001953125f;
+
+    // Front
+    t->addVertexWithUV(0.0f, 0.0f, 0.0f, uv.u1, uv.v1);
+    t->addVertexWithUV(w, 0.0f, 0.0f, uv.u0, uv.v1);
+    t->addVertexWithUV(w, h, 0.0f, uv.u0, uv.v0);
+    t->addVertexWithUV(0.0f, h, 0.0f, uv.u1, uv.v0);
+
+    // Back
+    t->addVertexWithUV(0.0f, h, -d, uv.u1, uv.v0);
+    t->addVertexWithUV(w, h, -d, uv.u0, uv.v0);
+    t->addVertexWithUV(w, 0.0f, -d, uv.u0, uv.v1);
+    t->addVertexWithUV(0.0f, 0.0f, -d, uv.u1, uv.v1);
+
+    // Left strips
+    for (int i = 0; i < 16; ++i) {
+        float step = (float)i / 16.0f;
+        float sideU = uv.u1 + (uv.u0 - uv.u1) * step - eps;
+        float x = w * step;
+
+        t->addVertexWithUV(x, 0.0f, -d, sideU, uv.v1);
+        t->addVertexWithUV(x, 0.0f, 0.0f, sideU, uv.v1);
+        t->addVertexWithUV(x, h, 0.0f, sideU, uv.v0);
+        t->addVertexWithUV(x, h, -d, sideU, uv.v0);
+    }
+
+    // Right strips
+    for (int i = 0; i < 16; ++i) {
+        float step = (float)i / 16.0f;
+        float sideU = uv.u1 + (uv.u0 - uv.u1) * step - eps;
+        float x = w * step + d;
+
+        t->addVertexWithUV(x, h, -d, sideU, uv.v0);
+        t->addVertexWithUV(x, h, 0.0f, sideU, uv.v0);
+        t->addVertexWithUV(x, 0.0f, 0.0f, sideU, uv.v1);
+        t->addVertexWithUV(x, 0.0f, -d, sideU, uv.v1);
+    }
+
+    // Top strips
+    for (int i = 0; i < 16; ++i) {
+        float step = (float)i / 16.0f;
+        float sideV = uv.v1 + (uv.v0 - uv.v1) * step - eps;
+        float y = h * step + d;
+
+        t->addVertexWithUV(0.0f, y, 0.0f, uv.u1, sideV);
+        t->addVertexWithUV(w, y, 0.0f, uv.u0, sideV);
+        t->addVertexWithUV(w, y, -d, uv.u0, sideV);
+        t->addVertexWithUV(0.0f, y, -d, uv.u1, sideV);
+    }
+
+    // Bottom strips
+    for (int i = 0; i < 16; ++i) {
+        float step = (float)i / 16.0f;
+        float sideV = uv.v1 + (uv.v0 - uv.v1) * step - eps;
+        float y = h * step;
+
+        t->addVertexWithUV(w, y, 0.0f, uv.u0, sideV);
+        t->addVertexWithUV(0.0f, y, 0.0f, uv.u1, sideV);
+        t->addVertexWithUV(0.0f, y, -d, uv.u1, sideV);
+        t->addVertexWithUV(w, y, -d, uv.u0, sideV);
     }
 }
 }
@@ -382,7 +466,7 @@ void GameRenderer::renderBreakingOverlay(const glm::mat4& projection, const glm:
 
     m_renderEngine->bindTexture(m_terrainTex);
     Tessellator* t = Tessellator::instance;
-    
+
     m_uiShader->use();
     m_uiShader->setMat4("projection", projection);
     m_uiShader->setMat4("view", view);
@@ -468,19 +552,14 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
         glm::vec3 relativePos = glm::vec3(glm::dvec3(ex, ey, ez) - m_camera.position);
 
         if (auto* item = dynamic_cast<EntityItem*>(entity)) {
-            const bool isBlockItem = item->itemID > 0 && Block::blocksList[item->itemID] != nullptr;
+            const bool isBlockItem = isInventoryBlockModel(item->itemID);
             if (isBlockItem) {
                 m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
             } else {
-                m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/items.png"));
+                m_renderEngine->bindTexture(m_renderEngine->getTexture(item->itemID < 256 ? "/terrain.png" : "/gui/items.png"));
             }
 
-            int tex = 0;
-            if (!isBlockItem && item->itemID >= 0 && item->itemID < 1024 && Item::itemsList[item->itemID]) {
-                tex = Item::itemsList[item->itemID]->iconIndex;
-            } else {
-                tex = item->itemID & 255;
-            }
+            const int tex = getItemIconTexture(item->itemID);
 
             const float spin = (((float)item->age + partialTicks) / 20.0f + item->hoverStart) * 57.29578f;
             float bob = std::sin(((float)item->age + partialTicks) / 10.0f + item->hoverStart) * 0.1f + 0.38f;
@@ -494,7 +573,12 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
             } else {
                 modelMat = glm::rotate(modelMat, glm::radians(-m_camera.yaw + 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             }
-            modelMat = glm::scale(modelMat, glm::vec3(isBlockItem ? 0.25f : 0.5f, isBlockItem ? 0.25f : 0.5f, isBlockItem ? 0.25f : 0.5f));
+            float itemScale = isBlockItem ? 0.25f : 0.5f;
+            if (item->pickupAnimationTicks > 0 && item->pickupAnimationTotalTicks > 0) {
+                float pickupProgress = 1.0f - ((float)item->pickupAnimationTicks / (float)item->pickupAnimationTotalTicks);
+                itemScale *= 1.0f - pickupProgress * 0.55f;
+            }
+            modelMat = glm::scale(modelMat, glm::vec3(itemScale, itemScale, itemScale));
             m_entityShader->setMat4("model", modelMat);
 
             Tessellator* t = Tessellator::instance;
@@ -611,7 +695,70 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     armBase = glm::rotate(armBase, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     armBase = glm::translate(armBase, glm::vec3(5.6f, 0.0f, 0.0f));
 
-    m_playerModel->renderFirstPersonArm(*m_entityShader, armBase, 0.0625f);
+    const ItemStack& stack = m_player.inventory.getCurrentStack();
+    if (stack.isEmpty()) {
+        m_playerModel->renderFirstPersonArm(*m_entityShader, armBase, 0.0625f);
+        return;
+    }
+
+    glDisable(GL_CULL_FACE);
+    glm::mat4 heldMat = glm::mat4(1.0f);
+    heldMat = glm::translate(heldMat, glm::vec3(std::sin(bobDist * glm::pi<float>()) * bobStr * 0.5f, -std::abs(std::cos(bobDist * glm::pi<float>()) * bobStr), 0.0f));
+    heldMat = glm::rotate(heldMat, glm::radians(std::sin(bobDist * glm::pi<float>()) * bobStr * 3.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    heldMat = glm::rotate(heldMat, glm::radians(std::abs(std::cos(bobDist * glm::pi<float>() + 0.2f) * bobStr) * 5.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    heldMat = glm::rotate(heldMat, glm::radians(bobPitch), glm::vec3(1.0f, 0.0f, 0.0f));
+    float var5 = 0.8f;
+    if (swingProgress > 0.0f) {
+        float var6 = ((float)m_player.swingProgressInt + partialTicks) / 8.0f;
+        float var7 = std::sin(var6 * glm::pi<float>());
+        float var8 = std::sin(std::sqrt(var6) * glm::pi<float>());
+        heldMat = glm::translate(heldMat, glm::vec3(-var8 * 0.4f, std::sin(std::sqrt(var6) * glm::pi<float>() * 2.0f) * 0.2f, -var7 * 0.2f));
+    }
+
+    heldMat = glm::translate(heldMat, glm::vec3(0.7f * var5, -0.65f * var5 - (1.0f - var5) * 0.6f + 0.04f, -0.9f * var5));
+    heldMat = glm::rotate(heldMat, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    heldMat = glm::rotate(heldMat, glm::radians(-6.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    if (swingProgress > 0.0f) {
+        float var6 = ((float)m_player.swingProgressInt + partialTicks) / 8.0f;
+        float var7 = std::sin(var6 * var6 * glm::pi<float>());
+        float var8 = std::sin(std::sqrt(var6) * glm::pi<float>());
+        heldMat = glm::rotate(heldMat, glm::radians(-var7 * 20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        heldMat = glm::rotate(heldMat, glm::radians(-var8 * 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        heldMat = glm::rotate(heldMat, glm::radians(-var8 * 80.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
+
+    heldMat = glm::scale(heldMat, glm::vec3(0.4f, 0.4f, 0.4f));
+    const bool isBlockItem = isInventoryBlockModel(stack.itemID);
+    if (isBlockItem) {
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
+        m_entityShader->setMat4("model", heldMat);
+
+        Tessellator* t = Tessellator::instance;
+        Block* block = Block::blocksList[stack.itemID];
+        static constexpr float kFaceShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
+        t->startDrawingQuads();
+        for (int side = 0; side < 6; ++side) {
+            addFace(t, side, getTextureUV(block->getTexture(side)), kFaceShade[side]);
+        }
+        t->draw();
+    } else {
+        heldMat = glm::translate(heldMat, glm::vec3(0.0f, -0.3f, 0.08f));
+        heldMat = glm::scale(heldMat, glm::vec3(1.5f, 1.5f, 1.5f));
+        heldMat = glm::rotate(heldMat, glm::radians(50.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        heldMat = glm::rotate(heldMat, glm::radians(335.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        heldMat = glm::translate(heldMat, glm::vec3(-(15.0f / 16.0f), -(1.0f / 16.0f), 0.0f));
+        m_entityShader->setMat4("model", heldMat);
+
+        Tessellator* t = Tessellator::instance;
+        const int tex = getItemIconTexture(stack.itemID);
+        const FaceUV uv = getTextureUV(tex);
+        m_renderEngine->bindTexture(m_renderEngine->getTexture(stack.itemID < 256 ? "/terrain.png" : "/gui/items.png"));
+        t->startDrawingQuads();
+        t->setColorOpaque(255, 255, 255);
+        renderFlatHeldItem(t, uv);
+        t->draw();
+    }
+    glEnable(GL_CULL_FACE);
 }
 
 void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode) {
@@ -747,7 +894,7 @@ void GameRenderer::renderHUD() {
         m_uiShader->setMat4("projection", projection);
         m_uiShader->setMat4("view", view);
         m_uiShader->setBool("hasTexture", true);
-        
+
         m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/icons.png"));
         for (int i = 0; i < 10; ++i) {
             float x = centerX - 91.0f + (float)i * 8.0f;
