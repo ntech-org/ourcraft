@@ -54,7 +54,8 @@ public:
 private:
     void setupFog(const glm::vec3& fogColor, float py, bool inWater, bool inLava);
     void renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening);
-    void renderBreakingOverlay();
+    void renderBreakingOverlay(const glm::mat4& projection, const glm::mat4& view);
+    void renderSelectionBox(const glm::mat4& projection, const glm::mat4& view);
     void renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode, const glm::vec3& fogColor);
     void renderFirstPersonArm(float partialTicks, const glm::mat4& projection);
 

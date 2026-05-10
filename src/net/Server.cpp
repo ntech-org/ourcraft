@@ -1,4 +1,5 @@
 #include "net/Server.hpp"
+#include "net/Packets.hpp"
 #include <stdexcept>
 #include <iostream>
 
@@ -34,10 +35,20 @@ void Server::poll() {
                 std::cout << "[Server] Client connected from " << host << ":" << event.peer->address.port << std::endl;
                 if (onClientConnected) onClientConnected(event.peer);
                 break;
-            case ENET_EVENT_TYPE_RECEIVE:
-                if (onPacketReceived) onPacketReceived(event.peer, event.packet->data, event.packet->dataLength);
+            case ENET_EVENT_TYPE_RECEIVE: {
+                // Check if it's a disconnect packet
+                const uint8_t* ptr = event.packet->data;
+                PacketType type = (PacketType)Packet::readByte(ptr);
+                if (type == PacketType::Disconnect) {
+                    PacketDisconnect p;
+                    p.deserialize(ptr, event.packet->dataLength - 1);
+                    std::cout << "[Server] Client " << host << ":" << event.peer->address.port << " disconnected: " << p.reason << std::endl;
+                } else if (onPacketReceived) {
+                    onPacketReceived(event.peer, event.packet->data, event.packet->dataLength);
+                }
                 enet_packet_destroy(event.packet);
                 break;
+            }
             case ENET_EVENT_TYPE_DISCONNECT:
                 if (event.data != 0) {
                     std::cout << "[Server] Client from " << host << ":" << event.peer->address.port << " timed out or lost connection." << std::endl;
@@ -66,4 +77,11 @@ void Server::broadcastPacket(const Packet& packet, bool reliable) {
     
     ENetPacket* enetPacket = enet_packet_create(buffer.data(), buffer.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
     enet_host_broadcast(m_server, 0, enetPacket);
+}
+
+void Server::kick(ENetPeer* peer, const std::string& reason) {
+    PacketDisconnect packet;
+    packet.reason = reason;
+    sendPacket(peer, packet, true);
+    enet_peer_disconnect_later(peer, 0);
 }

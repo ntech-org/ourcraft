@@ -1,10 +1,17 @@
+#include <glm/geometric.hpp>
 #include "Minecraft.hpp"
 #include "world/Block.hpp"
+#include "items/Item.hpp"
 #include "world/InfdevWorldGenerator.hpp"
 #include "renderer/Tessellator.hpp"
 #include "gui/GuiMainMenu.hpp"
 #include "gui/GuiIngameMenu.hpp"
 #include "gui/GuiInventory.hpp"
+#include "gui/GuiErrorScreen.hpp"
+#include "gui/GuiConnecting.hpp"
+#include "gui/GuiLoading.hpp"
+#include "items/ItemFood.hpp"
+#include "gui/GuiCrafting.hpp"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -32,6 +39,7 @@ Minecraft::~Minecraft() {
 
 void Minecraft::init() {
     Block::init();
+    Item::init();
 
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
@@ -40,6 +48,9 @@ void Minecraft::init() {
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->onOpenCraftingTable = [this]() {
+        displayGuiScreen(std::make_shared<GuiCrafting>());
+    };
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -83,6 +94,9 @@ void Minecraft::saveAndQuit() {
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->onOpenCraftingTable = [this]() {
+        displayGuiScreen(std::make_shared<GuiCrafting>());
+    };
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -96,15 +110,21 @@ void Minecraft::startSingleplayer() {
     // Note: World/Renderer/Player are already initialized by init() or saveAndQuit().
 
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
+    m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
+        if (m_gameState != GameState::MainMenu) {
+            displayGuiScreen(std::make_shared<GuiErrorScreen>("Disconnected", reason));
+        }
+    };
 
     if (!m_networkHandler->connect("127.0.0.1", 25565)) {
-        // Failed
+        displayGuiScreen(std::make_shared<GuiErrorScreen>("Connection Failed", "Failed to connect to internal server"));
+        return;
     }
 
     m_gameRenderer->getWorldRenderer().rebuildSectionList();
 
     m_gameState = GameState::InGame;
-    displayGuiScreen(nullptr);
+    displayGuiScreen(std::make_shared<GuiLoading>());
 }
 
 void Minecraft::startMultiplayer(const std::string& address, int port) {
@@ -119,22 +139,29 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->onOpenCraftingTable = [this]() {
+        displayGuiScreen(std::make_shared<GuiCrafting>());
+    };
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
 
     // Pass 'false' to NOT start an integrated server for manual multiplayer
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player, false);
+    m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
+        if (m_gameState != GameState::MainMenu) {
+            displayGuiScreen(std::make_shared<GuiErrorScreen>("Disconnected", reason));
+        }
+    };
 
     if (!m_networkHandler->connect(address, port)) {
-        std::cerr << "[Minecraft] Failed to connect to " << address << ":" << port << std::endl;
-        displayGuiScreen(std::make_shared<GuiMainMenu>());
+        displayGuiScreen(std::make_shared<GuiErrorScreen>("Connection Failed", "Failed to connect to " + address + ":" + std::to_string(port)));
         return;
     }
 
     m_gameRenderer->getWorldRenderer().rebuildSectionList();
     m_gameState = GameState::InGame;
-    displayGuiScreen(nullptr);
+    displayGuiScreen(std::make_shared<GuiLoading>());
 }
 
 void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
@@ -178,8 +205,7 @@ void Minecraft::run() {
 
             glfwSwapBuffers(m_window);
         } else {
-            // Window is minimized. Skip rendering to avoid blocking in glfwSwapBuffers,
-            // but keep ticking the network and game logic.
+            // Window is minimized. Skip rendering but we already ticked above.
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
@@ -251,8 +277,50 @@ void Minecraft::tick() {
 
             glm::dvec3 endPos = eyePos + lookDir * (double)reach;
             HitResult hit = m_world->rayTraceBlocks(eyePos, endPos, true);
+            
+            double dist = reach;
+            if (hit.type == HitType::BLOCK) {
+                dist = glm::distance(eyePos, hit.hitVec);
+            }
+
+            AxisAlignedBB reachBB = AxisAlignedBB(
+                std::min(eyePos.x, endPos.x), std::min(eyePos.y, endPos.y), std::min(eyePos.z, endPos.z),
+                std::max(eyePos.x, endPos.x), std::max(eyePos.y, endPos.y), std::max(eyePos.z, endPos.z)
+            ).expand(1.0, 1.0, 1.0);
+
+            std::vector<Entity*> entities = m_world->getEntitiesWithinAABB(reachBB);
+            for (Entity* entity : entities) {
+                if (entity == m_player.get()) continue;
+                
+                float border = 0.1f;
+                AxisAlignedBB entityBB = entity->boundingBox.expand(border, border, border);
+                auto intercept = entityBB.calculateIntercept(eyePos, endPos);
+                if (intercept) {
+                    double d = glm::distance(eyePos, intercept->hitVec);
+                    if (d < dist) {
+                        hit.type = HitType::ENTITY;
+                        hit.entity = entity;
+                        hit.hitVec = intercept->hitVec;
+                        dist = d;
+                    }
+                }
+            }
+            m_objectMouseOver = hit;
 
             const bool leftDown = m_inputHandler->isLeftMouseDown();
+            
+            if (leftDown && m_hitDelayTimer <= 0 && hit.type == HitType::ENTITY && hit.entity) {
+                m_player->swing();
+                if (m_networkHandler) {
+                    PacketUseEntity packet;
+                    packet.userEntityID = m_player->entityID;
+                    packet.targetEntityID = hit.entity->entityID;
+                    packet.leftClick = 1;
+                    m_networkHandler->sendPacket(packet);
+                }
+                m_hitDelayTimer = 10;
+            }
+
             if ((!leftDown || hit.type != HitType::BLOCK) && m_hitDelayTimer <= 0) {
                 resetBlockBreaking(true);
             } else if (m_hitDelayTimer <= 0) {
@@ -306,23 +374,42 @@ void Minecraft::tick() {
 
             if (m_inputHandler->isRightMouseDown() && m_rightClickDelayTimer <= 0) {
                 resetBlockBreaking(true);
-                if (hit.type == HitType::BLOCK) {
-                    int x = hit.x, y = hit.y, z = hit.z;
-                    int face = hit.sideHit;
-                    if (face == 0) y--; else if (face == 1) y++;
-                    else if (face == 2) z--; else if (face == 3) z++;
-                    else if (face == 4) x--; else if (face == 5) x++;
 
-                    AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
-                    if (!m_player->boundingBox.intersectsWith(blockBB)) {
-                        int itemID = m_player->inventory.getCurrentItemID();
-                        if (itemID > 0) {
-                            const bool shouldConsume = m_player->gameMode == GameMode::SURVIVAL;
-                            if (!shouldConsume || m_player->inventory.consumeCurrentItem(1)) {
-                                m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
-                                m_player->swing();
-                                m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
-                                m_rightClickDelayTimer = 4;
+                ItemStack& currentStack = m_player->inventory.getCurrentStack();
+                if (!currentStack.isEmpty() && currentStack.itemID >= 256) {
+                    Item* item = Item::itemsList[currentStack.itemID];
+                    if (item) {
+                        int oldCount = currentStack.count;
+                        currentStack = item->onItemRightClick(currentStack, *m_world, *m_player);
+                        if (currentStack.count != oldCount || currentStack.isEmpty()) {
+                            m_rightClickDelayTimer = 4;
+                            return;
+                        }
+                    }
+                }
+
+                if (hit.type == HitType::BLOCK) {
+                    uint8_t targetID = m_world->getBlockID(hit.x, hit.y, hit.z);
+                    if (targetID > 0 && Block::blocksList[targetID]->onBlockActivated(*m_world, hit.x, hit.y, hit.z, m_player.get())) {
+                        m_rightClickDelayTimer = 4;
+                    } else {
+                        int x = hit.x, y = hit.y, z = hit.z;
+                        int face = hit.sideHit;
+                        if (face == 0) y--; else if (face == 1) y++;
+                        else if (face == 2) z--; else if (face == 3) z++;
+                        else if (face == 4) x--; else if (face == 5) x++;
+
+                        AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
+                        if (!m_player->boundingBox.intersectsWith(blockBB)) {
+                            int itemID = m_player->inventory.getCurrentItemID();
+                            if (itemID > 0) {
+                                const bool shouldConsume = m_player->gameMode == GameMode::SURVIVAL;
+                                if (!shouldConsume || m_player->inventory.consumeCurrentItem(1)) {
+                                    m_world->setBlockWithNotify(x, y, z, (uint8_t)itemID);
+                                    m_player->swing();
+                                    m_networkHandler->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
+                                    m_rightClickDelayTimer = 4;
+                                }
                             }
                         }
                     }
@@ -379,6 +466,7 @@ bool Minecraft::finishBreakingCurrentBlock() {
     }
 
     m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
+    m_objectMouseOver.type = HitType::NONE;
     m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
     m_player->swing();
     resetBlockBreaking(false);

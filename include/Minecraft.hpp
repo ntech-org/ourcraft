@@ -44,12 +44,14 @@ public:
     int getWidth() const { return m_width; }
     int getHeight() const { return m_height; }
     GLFWwindow* getWindow() { return m_window; }
+    World* getWorld() { return m_world.get(); }
     EntityPlayer& getPlayer() { return *m_player; }
     NetworkHandler* getNetworkHandler() { return m_networkHandler.get(); }
     GameRenderer& getGameRenderer() { return *m_gameRenderer; }
     GameSettings& getSettings() { return m_settings; }
     Font& getFont() { return *m_font; }
     std::shared_ptr<GuiScreen> getCurrentScreen() { return m_currentScreen; }
+    const HitResult& getObjectMouseOver() const { return m_objectMouseOver; }
 
 private:
 
@@ -90,4 +92,5 @@ private:
 
     int m_hitDelayTimer = 0;
     int m_rightClickDelayTimer = 0;
+    HitResult m_objectMouseOver;
 };

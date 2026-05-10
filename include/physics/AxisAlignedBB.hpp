@@ -1,6 +1,13 @@
 #pragma once
 
 #include <vector>
+#include <glm/vec3.hpp>
+#include <optional>
+
+struct RayHit {
+    glm::dvec3 hitVec;
+    int side;
+};
 
 class AxisAlignedBB {
 public:
@@ -18,6 +25,9 @@ public:
 
     bool intersectsWith(const AxisAlignedBB& other) const;
     void offset(double x, double y, double z);
+
+    bool isVecInside(const glm::dvec3& vec) const;
+    std::optional<RayHit> calculateIntercept(const glm::dvec3& start, const glm::dvec3& end) const;
 
     double minX, minY, minZ;
     double maxX, maxY, maxZ;

@@ -13,6 +13,7 @@ public:
     void poll();
     void sendPacket(ENetPeer* peer, const Packet& packet, bool reliable = true);
     void broadcastPacket(const Packet& packet, bool reliable = true);
+    void kick(ENetPeer* peer, const std::string& reason);
 
     std::function<void(ENetPeer*)> onClientConnected;
     std::function<void(ENetPeer*)> onClientDisconnected;

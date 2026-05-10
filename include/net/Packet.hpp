@@ -25,7 +25,8 @@ enum class PacketType : uint8_t {
     WindowItems = 16,
     SetSlot = 17,
     ClickWindow = 18,
-    ConfirmTransaction = 19
+    ConfirmTransaction = 19,
+    UseEntity = 20
 };
 
 class Packet {

@@ -27,6 +27,8 @@ public:
 
     int32_t getPlayerID() const { return m_playerID; }
 
+    std::function<void(bool, const std::string&)> onDisconnected;
+
 private:
     void onPacketReceived(const uint8_t* data, size_t size);
 

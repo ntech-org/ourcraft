@@ -2,6 +2,7 @@
 
 #include "entities/EntityLiving.hpp"
 #include "entities/InventoryPlayer.hpp"
+#include <functional>
 
 enum class GameMode {
 
@@ -30,7 +31,9 @@ public:
     bool sneaking = false;
     bool sprinting = false;
 
-    void attackEntityFrom(Entity* source, int amount) override;
+    virtual void attackEntityFrom(Entity* source, int amount) override;
+    virtual void openCraftingTable() { if (onOpenCraftingTable) onOpenCraftingTable(); }
+    std::function<void()> onOpenCraftingTable;
 
     void setMinecraft(Minecraft* mc) { this->mc = mc; }
     Minecraft& getMinecraft() { return *mc; }

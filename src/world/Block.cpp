@@ -1,7 +1,9 @@
 #include "world/Block.hpp"
+#include "world/World.hpp"
 #include "world/BlockFluid.hpp"
 #include "world/IBlockAccess.hpp"
 #include "physics/AxisAlignedBB.hpp"
+#include "entities/EntityPlayer.hpp"
 
 Block* Block::blocksList[256] = { nullptr };
 bool Block::opaqueCubeLookup[256] = { false };
@@ -96,6 +98,23 @@ public:
     BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
 };
 
+class BlockWorkbench : public Block {
+public:
+    BlockWorkbench(int id) : Block(id, 43, Material::wood) {}
+    int getTexture(int side) const override {
+        if (side == 1) return 43; // Top
+        if (side == 0) return 4;  // Bottom (using planks tex index)
+        if (side == 2 || side == 3) return 59; 
+        return 60; 
+    }
+    bool onBlockActivated(World& world, int x, int y, int z, EntityPlayer* player) const override {
+        if (world.isRemote) {
+            player->openCraftingTable();
+        }
+        return true;
+    }
+};
+
 class BlockCross : public Block {
 public:
     BlockCross(int id, int tex) : Block(id, tex, Material::plants) {
@@ -156,7 +175,7 @@ void Block::init() {
     gear = new Block(55, 62, Material::iron);
     oreDiamond = new Block(56, 50, Material::rock);
     blockDiamond = new Block(57, 40, Material::iron);
-    workbench = new Block(58, 43, Material::wood);
+    workbench = new BlockWorkbench(58);
     crops = new BlockCross(59, 88);
     farmland = new Block(60, 87, Material::ground);
     furnaceIdle = new Block(61, 44, Material::rock);

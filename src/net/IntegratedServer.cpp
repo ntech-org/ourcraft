@@ -5,6 +5,7 @@
 #include "entities/EntityZombie.hpp"
 #include "entities/EntityPlayer.hpp"
 #include "world/Block.hpp"
+#include "items/Item.hpp"
 #include <chrono>
 #include <iostream>
 #include <algorithm>
@@ -42,8 +43,24 @@ const std::vector<ChunkOffset>& getChunkOffsetsForRadius(int radius) {
 
 IntegratedServer::IntegratedServer() {
     m_world = std::make_unique<World>();
-    m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(1772835215));
+    m_world->initSaveHandler("world");
     
+    LevelData levelData;
+    auto saveHandler = m_world->getSaveHandler();
+    if (saveHandler && saveHandler->loadLevelData(levelData)) {
+        m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(levelData.seed));
+        m_world->setWorldTime(levelData.time);
+    } else {
+        int64_t seed = 1772835215; // Default or random
+        m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(seed));
+        if (saveHandler) {
+            levelData.seed = seed;
+            levelData.spawnX = 0; levelData.spawnY = 128; levelData.spawnZ = 0;
+            levelData.time = 6000;
+            saveHandler->saveLevelData(levelData);
+        }
+    }
+
     m_world->onBlockChanged = [this](int x, int y, int z, uint8_t id, uint8_t meta) {
         PacketBlockChange packet;
         packet.x = x; packet.y = y; packet.z = z;
@@ -74,10 +91,6 @@ void IntegratedServer::start() {
 void IntegratedServer::stop() {
     if (!m_running) return;
     m_running = false;
-    
-    if (m_world) {
-        m_world->saveAllChunks();
-    }
 
     if (m_thread.joinable()) {
         m_thread.join();
@@ -106,6 +119,30 @@ void IntegratedServer::run() {
             tickCounter++;
             if (tickCounter % 6000 == 0) { // Every 5 minutes
                 m_world->saveAllChunks();
+                auto saveHandler = m_world->getSaveHandler();
+                if (saveHandler) {
+                    LevelData data;
+                    if (!saveHandler->loadLevelData(data)) {
+                        data.seed = 1772835215; 
+                        data.spawnX = 0; data.spawnY = 128; data.spawnZ = 0;
+                    }
+                    data.time = m_world->getWorldTime();
+                    saveHandler->saveLevelData(data);
+                    for (auto& [peer, session] : m_players) {
+                        for (const auto& entity : m_world->getEntities()) {
+                            if (entity->entityID == session.entityID) {
+                                PlayerSaveData pData;
+                                pData.name = session.username;
+                                pData.x = entity->posX; pData.y = entity->posY; pData.z = entity->posZ;
+                                pData.yaw = entity->rotationYaw; pData.pitch = entity->rotationPitch;
+                                if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) pData.health = living->health;
+                                for (int i = 0; i < 45; ++i) pData.inventory[i] = session.inventory.mainInventory[i];
+                                saveHandler->savePlayerData(pData);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             std::unordered_map<int32_t, Entity*> entitiesById;
@@ -133,7 +170,7 @@ void IntegratedServer::run() {
                     const int cx = px + off.dx;
                     const int cz = pz + off.dz;
                     const bool inView = std::abs(off.dx) <= viewRadius && std::abs(off.dz) <= viewRadius;
-                    
+
                     uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) | static_cast<uint32_t>(cz);
 
                     auto chunk = m_world->getChunk(cx, cz);
@@ -141,7 +178,7 @@ void IntegratedServer::run() {
                         m_world->requestChunk(cx, cz);
                         continue;
                     }
-                    
+
                     if (!inView) continue;
                     if (chunksSentThisTick >= chunkLimitPerTick) break;
 
@@ -214,7 +251,7 @@ void IntegratedServer::run() {
             for (const auto& entity : m_world->getEntities()) {
                 if (entity->posX != entity->prevPosX || entity->posY != entity->prevPosY || entity->posZ != entity->prevPosZ ||
                     entity->rotationYaw != entity->prevRotationYaw || entity->rotationPitch != entity->prevRotationPitch) {
-                    
+
                     PacketMoveEntity move;
                     move.id = entity->entityID;
                     move.x = entity->posX;
@@ -228,6 +265,35 @@ void IntegratedServer::run() {
 
             // 2. Update world (this resets prevPos to currentPos)
             m_world->update(0.05f);
+
+            // 2.5 Respawn check
+            for (auto& [peer, session] : m_players) {
+                for (const auto& entity : m_world->getEntities()) {
+                    if (entity->entityID == session.entityID) {
+                        auto* living = dynamic_cast<EntityLiving*>(entity.get());
+                        if (living && living->health <= 0) {
+                            LevelData levelData;
+                            auto saveHandler = m_world->getSaveHandler();
+                            if (saveHandler && saveHandler->loadLevelData(levelData)) {
+                                entity->setPosition(levelData.spawnX, levelData.spawnY, levelData.spawnZ);
+                            } else {
+                                entity->setPosition(0.0, 128.0, 0.0);
+                            }
+                            living->health = living->maxHealth;
+                            living->deathTime = 0;
+                            // Reset velocity
+                            entity->motionX = entity->motionY = entity->motionZ = 0;
+                            
+                            // Send position sync
+                            PacketPlayerPosLook respawnPos;
+                            respawnPos.x = entity->posX; respawnPos.y = entity->posY; respawnPos.z = entity->posZ;
+                            respawnPos.yaw = entity->rotationYaw; respawnPos.pitch = entity->rotationPitch;
+                            m_server->sendPacket(peer, respawnPos, true);
+                        }
+                        break;
+                    }
+                }
+            }
 
             // 3. Server-authoritative item pickup.
             struct PendingPickup {
@@ -263,8 +329,8 @@ void IntegratedServer::run() {
                     PacketWindowItems packet;
                     packet.windowId = 0;
                     for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
-                        packet.items.push_back({session.inventory.mainInventory[i].itemID, 
-                                              session.inventory.mainInventory[i].count, 
+                        packet.items.push_back({session.inventory.mainInventory[i].itemID,
+                                              session.inventory.mainInventory[i].count,
                                               session.inventory.mainInventory[i].metadata});
                     }
                     m_server->sendPacket(pickup.peer, packet, true);
@@ -295,12 +361,82 @@ void IntegratedServer::run() {
                     m_server->sendPacket(peer, spawn, true);
                 }
             }
-            
+
+            // 5. Mob Spawning
+            static int spawnTimer = 0;
+            if (++spawnTimer >= 20 * 20) { // Every 20 seconds
+                spawnTimer = 0;
+                for (auto& [peer, session] : m_players) {
+                    auto it = entitiesById.find(session.entityID);
+                    if (it == entitiesById.end()) continue;
+                    Entity* player = it->second;
+
+                    // Try spawning near player
+                    for (int i = 0; i < 3; ++i) {
+                        int rx = (std::rand() % 64) - 32;
+                        int rz = (std::rand() % 64) - 32;
+                        int x = (int)std::floor(player->posX) + rx;
+                        int z = (int)std::floor(player->posZ) + rz;
+                        
+                        // Find surface
+                        int y = 0;
+                        for (y = 127; y > 0; --y) {
+                            if (m_world->getBlockID(x, y, z) != 0) break;
+                        }
+                        y++;
+
+                        if (y > 0 && y < 128) {
+                            int light = m_world->getSavedLightValue(LightType::Block, x, y, z);
+                            int skyLight = m_world->getSavedLightValue(LightType::Sky, x, y, z);
+                            
+                            if (light < 7 && skyLight < 7) {
+                                auto zombie = std::make_unique<EntityZombie>(*m_world);
+                                zombie->setPosition(x + 0.5, y, z + 0.5);
+                                if (m_world->getCollidingBoundingBoxes(zombie->boundingBox).empty()) {
+                                    m_world->spawnEntity(std::move(zombie));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             lastTick = now;
         }
 
         m_server->poll();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // Final save on shutdown
+    if (m_world) {
+        m_world->saveAllChunks();
+        auto saveHandler = m_world->getSaveHandler();
+        if (saveHandler) {
+            LevelData data;
+            if (!saveHandler->loadLevelData(data)) {
+                data.seed = 1772835215; 
+                data.spawnX = 0; data.spawnY = 128; data.spawnZ = 0;
+            }
+            data.time = m_world->getWorldTime();
+            saveHandler->saveLevelData(data);
+            
+            for (auto& [peer, session] : m_players) {
+                for (const auto& entity : m_world->getEntities()) {
+                    if (entity->entityID == session.entityID) {
+                        PlayerSaveData pData;
+                        pData.name = session.username;
+                        pData.x = entity->posX; pData.y = entity->posY; pData.z = entity->posZ;
+                        pData.yaw = entity->rotationYaw; pData.pitch = entity->rotationPitch;
+                        if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) pData.health = living->health;
+                        for (int i = 0; i < 45; ++i) pData.inventory[i] = session.inventory.mainInventory[i];
+                        saveHandler->savePlayerData(pData);
+                        break;
+                    }
+                }
+            }
+            saveHandler->flush();
+        }
     }
 }
 
@@ -308,19 +444,45 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
     const uint8_t* ptr = data;
     PacketType type = (PacketType)Packet::readByte(ptr);
 
+    // std::cout << "Server: Received packet type " << (int)type << " from peer " << peer->address.host << ":" << peer->address.port << std::endl;
+
     if (type == PacketType::Login) {
         PacketLogin packet;
         packet.deserialize(ptr, size - 1);
         std::cout << "Server: Player " << packet.username << " logged in." << std::endl;
-        
+
         auto player = std::make_unique<EntityPlayer>(*m_world);
-        player->setPosition(8.0, 100.0, 8.0);
+        
+        PlayerSaveData pData;
+        auto saveHandler = m_world->getSaveHandler();
+        if (saveHandler && saveHandler->loadPlayerData(packet.username, pData)) {
+            std::cout << "Server: Loaded player data for " << packet.username << " at (" << pData.x << ", " << pData.y << ", " << pData.z << ")" << std::endl;
+            player->setPosition(pData.x, pData.y, pData.z);
+            player->rotationYaw = pData.yaw;
+            player->rotationPitch = pData.pitch;
+            player->health = pData.health;
+            for (int i = 0; i < 45; ++i) player->inventory.mainInventory[i] = pData.inventory[i];
+        } else {
+            std::cout << "Server: No save data found for " << packet.username << ", using world spawn." << std::endl;
+            LevelData levelData;
+            if (saveHandler && saveHandler->loadLevelData(levelData)) {
+                player->setPosition(levelData.spawnX, levelData.spawnY, levelData.spawnZ);
+            } else {
+                player->setPosition(0.0, 128.0, 0.0);
+            }
+        }
+
         EntityPlayer* pPtr = player.get();
         m_world->spawnEntity(std::move(player));
-        
-        int32_t eid = pPtr->entityID; 
+
+        int32_t eid = pPtr->entityID;
         m_players[peer] = {eid, packet.username, {}, {}};
         PlayerSession& session = m_players[peer];
+
+        // Sync loaded inventory to session
+        for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
+            session.inventory.mainInventory[i] = pPtr->inventory.mainInventory[i];
+        }
 
         PacketLoginResponse resp;
         resp.entityID = eid;
@@ -328,12 +490,19 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
 
         PacketWindowItems invPacket;
         invPacket.windowId = 0;
-        for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
-            invPacket.items.push_back({session.inventory.mainInventory[i].itemID, 
-                                     session.inventory.mainInventory[i].count, 
+        for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
+            invPacket.items.push_back({session.inventory.mainInventory[i].itemID,
+                                     session.inventory.mainInventory[i].count,
                                      session.inventory.mainInventory[i].metadata});
         }
-        m_server->sendPacket(peer, invPacket, true);
+        m_server->sendPacket(peer, invPacket);
+
+        // Sync loaded position to client
+        PacketPlayerPosLook posPacket;
+        posPacket.x = pPtr->posX; posPacket.y = pPtr->posY; posPacket.z = pPtr->posZ;
+        posPacket.yaw = pPtr->rotationYaw; posPacket.pitch = pPtr->rotationPitch;
+        posPacket.onGround = pPtr->onGround;
+        m_server->sendPacket(peer, posPacket);
 
         for (const auto& entity : m_world->getEntities()) {
             PacketSpawnEntity spawn;
@@ -358,7 +527,7 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             for (auto& entity : m_world->getEntities()) {
                 if (entity->entityID == eid) {
                     if (type == PacketType::PlayerPosition || type == PacketType::PlayerPosLook) {
-                        PacketPlayerPosition p; 
+                        PacketPlayerPosition p;
                         p.deserialize(ptr, size - 1);
                         entity->setPosition(p.x, p.y, p.z);
                         if (type == PacketType::PlayerPosLook) {
@@ -401,6 +570,11 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         else if (packet.face == 2) z--; else if (packet.face == 3) z++;
         else if (packet.face == 4) x--; else if (packet.face == 5) x++;
         m_world->setBlockAndMetadataWithNotify(x, y, z, packet.blockID, packet.metadata);
+
+        if (m_players.count(peer)) {
+            PlayerSession& session = m_players[peer];
+            session.inventory.consumeCurrentItem(1);
+        }
     } else if (type == PacketType::ChunkRequest) {
         PacketChunkRequest packet;
         packet.deserialize(ptr, size - 1);
@@ -417,6 +591,38 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             resp.actionId = packet.actionId;
             resp.accepted = true;
             m_server->sendPacket(peer, resp, true);
+        }
+    } else if (type == PacketType::UseEntity) {
+        PacketUseEntity packet;
+        packet.deserialize(ptr, size - 1);
+        if (packet.leftClick && m_players.count(peer)) {
+            Entity* target = nullptr;
+            for (auto& entity : m_world->getEntities()) {
+                if (entity->entityID == packet.targetEntityID) {
+                    target = entity.get();
+                    break;
+                }
+            }
+
+            if (target) {
+                int damage = 1;
+                auto& session = m_players[peer];
+                int itemID = session.inventory.getCurrentItemID();
+                
+                // Simple Infdev-style damage
+                if (itemID == 268) damage = 4; // Wood Sword
+                else if (itemID == 272) damage = 5; // Stone Sword
+                else if (itemID == 267) damage = 6; // Iron Sword
+                else if (itemID == 283) damage = 5; // Gold Sword
+                else if (itemID == 276) damage = 7; // Diamond Sword
+                
+                // Tools do slightly more than hands (optional)
+                else if (itemID >= 270 && itemID <= 279) damage = 2; 
+
+                if (auto* living = dynamic_cast<EntityLiving*>(target)) {
+                    living->attackEntityFrom(nullptr, damage);
+                }
+            }
         }
     }
 }

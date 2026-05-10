@@ -1,6 +1,7 @@
 #include "gui/GuiMainMenu.hpp"
 #include "gui/GuiOptions.hpp"
 #include "gui/GuiMultiplayer.hpp"
+#include "gui/GuiConnecting.hpp"
 #include "Minecraft.hpp"
 
 void GuiMainMenu::initGui() {
@@ -25,7 +26,7 @@ void GuiMainMenu::drawScreen(int mouseX, int mouseY, float partialTicks) {
 
 void GuiMainMenu::actionPerformed(GuiButton* button) {
     if (button->id == 1) {
-        mc->startSingleplayer();
+        mc->displayGuiScreen(std::make_shared<GuiConnecting>(shared_from_this(), "127.0.0.1", 25565, true));
     }
     if (button->id == 2) {
         mc->displayGuiScreen(std::make_shared<GuiMultiplayer>(shared_from_this()));

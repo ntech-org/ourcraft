@@ -16,7 +16,17 @@ struct ItemStack {
 class InventoryPlayer {
 public:
     static constexpr int HOTBAR_SIZE = 9;
+    static constexpr int MAIN_SIZE = 27;
     static constexpr int INVENTORY_SIZE = 36;
+    
+    static constexpr int ARMOR_START = 36;
+    static constexpr int CRAFT_START = 40;
+    static constexpr int RESULT_SLOT = 44;
+
+    static constexpr int WORKBENCH_START = 45;
+    static constexpr int WORKBENCH_RESULT = 54;
+    static constexpr int TOTAL_SIZE = 55;
+
     static constexpr int MAX_STACK_SIZE = 64;
 
     InventoryPlayer();
@@ -32,7 +42,10 @@ public:
     void setSlot(int slot);
     void handleClick(int slot, bool rightClick);
 
-    ItemStack mainInventory[INVENTORY_SIZE];
+    void updateCrafting();
+    void handleCraftingResult(int resultSlot);
+
+    ItemStack mainInventory[TOTAL_SIZE];
     ItemStack cursorStack;
     int currentSlot = 0;
 };

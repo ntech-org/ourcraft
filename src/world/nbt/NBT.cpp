@@ -103,14 +103,91 @@ std::shared_ptr<Tag> readCompressed(const std::string& filename) {
     }
     gzclose(file);
 
+    if (buffer.empty()) return nullptr;
+
     std::string data(buffer.begin(), buffer.end());
     std::istringstream iss(data, std::ios::binary);
-    return readTag(iss);
+    
+    try {
+        return readTag(iss);
+    } catch (const std::exception& e) {
+        std::cerr << "NBT Error: Failed to parse " << filename << ": " << e.what() << std::endl;
+        return nullptr;
+    }
 }
 
-// Minimal writing implementation omitted for brevity in this step, but needed for conversion
+template<typename T>
+void writeBinary(std::ostream& out, T val) {
+    if constexpr (sizeof(T) == 2) { uint16_t v = swap16(*(uint16_t*)&val); out.write(reinterpret_cast<const char*>(&v), 2); }
+    else if constexpr (sizeof(T) == 4) { uint32_t v = swap32(*(uint32_t*)&val); out.write(reinterpret_cast<const char*>(&v), 4); }
+    else if constexpr (sizeof(T) == 8) { uint64_t v = swap64(*(uint64_t*)&val); out.write(reinterpret_cast<const char*>(&v), 8); }
+    else out.write(reinterpret_cast<const char*>(&val), sizeof(T));
+}
+
+void writeString(std::ostream& out, const std::string& s) {
+    writeBinary<uint16_t>(out, static_cast<uint16_t>(s.length()));
+    out.write(s.data(), s.length());
+}
+
+void writeTagInternal(std::ostream& out, const Tag& tag, bool writeName = true) {
+    if (writeName) {
+        writeBinary<uint8_t>(out, static_cast<uint8_t>(tag.type));
+        writeString(out, tag.name);
+    }
+
+    switch (tag.type) {
+        case TagType::Byte: writeBinary<int8_t>(out, std::get<int8_t>(tag.value)); break;
+        case TagType::Short: writeBinary<int16_t>(out, std::get<int16_t>(tag.value)); break;
+        case TagType::Int: writeBinary<int32_t>(out, std::get<int32_t>(tag.value)); break;
+        case TagType::Long: writeBinary<int64_t>(out, std::get<int64_t>(tag.value)); break;
+        case TagType::Float: writeBinary<float>(out, std::get<float>(tag.value)); break;
+        case TagType::Double: writeBinary<double>(out, std::get<double>(tag.value)); break;
+        case TagType::ByteArray: {
+            const auto& data = std::get<std::vector<int8_t>>(tag.value);
+            writeBinary<int32_t>(out, static_cast<int32_t>(data.size()));
+            out.write(reinterpret_cast<const char*>(data.data()), data.size());
+            break;
+        }
+        case TagType::String: writeString(out, std::get<std::string>(tag.value)); break;
+        case TagType::List: {
+            const auto& list = std::get<List>(tag.value);
+            writeBinary<uint8_t>(out, static_cast<uint8_t>(list.type));
+            writeBinary<int32_t>(out, static_cast<int32_t>(list.elements.size()));
+            for (const auto& element : list.elements) writeTagInternal(out, *element, false);
+            break;
+        }
+        case TagType::Compound: {
+            const auto& compound = std::get<Compound>(tag.value);
+            for (const auto& [name, subTag] : compound) {
+                writeTagInternal(out, *subTag, true);
+            }
+            writeBinary<uint8_t>(out, 0); // Tag_End
+            break;
+        }
+        case TagType::IntArray: {
+            const auto& data = std::get<std::vector<int32_t>>(tag.value);
+            writeBinary<int32_t>(out, static_cast<int32_t>(data.size()));
+            for (auto v : data) writeBinary<int32_t>(out, v);
+            break;
+        }
+        default: break;
+    }
+}
+
 void writeTag(std::ostream& out, const Tag& tag) {
-    // TODO: Implement if needed for saving back to NBT
+    writeTagInternal(out, tag, true);
+}
+
+void writeCompressed(const std::string& filename, const Tag& tag) {
+    std::ostringstream oss(std::ios::binary);
+    writeTag(oss, tag);
+    std::string data = oss.str();
+
+    gzFile file = gzopen(filename.c_str(), "wb");
+    if (file) {
+        gzwrite(file, data.data(), static_cast<unsigned int>(data.size()));
+        gzclose(file);
+    }
 }
 
 } // namespace nbt

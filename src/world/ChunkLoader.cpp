@@ -1,8 +1,9 @@
 #include "world/ChunkLoader.hpp"
 #include "world/World.hpp"
 
-ChunkLoader::ChunkLoader(WorldGenerator& generator, World* world) : m_generator(generator), m_world(world), m_running(true) {
-    m_saveHandler = std::make_unique<SaveHandler>("world");
+ChunkLoader::ChunkLoader(WorldGenerator& generator, World* world, SaveHandler* saveHandler) 
+    : m_generator(generator), m_world(world), m_saveHandler(saveHandler), m_running(true) 
+{
     unsigned int numThreads = std::thread::hardware_concurrency();
     if (numThreads == 0) numThreads = 8; // Better fallback
 

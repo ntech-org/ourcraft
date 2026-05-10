@@ -4,6 +4,7 @@
 #include "world/IBlockAccess.hpp"
 #include "world/WorldGenerator.hpp"
 #include "world/ChunkLoader.hpp"
+#include "world/storage/SaveHandler.hpp"
 #include "physics/AxisAlignedBB.hpp"
 #include <glm/vec3.hpp>
 #include <cstdint>
@@ -37,7 +38,8 @@ struct NextTickListEntry {
 
 enum class HitType {
     NONE,
-    BLOCK
+    BLOCK,
+    ENTITY
 };
 
 struct ChunkHasher {
@@ -54,6 +56,7 @@ struct HitResult {
     int x, y, z;
     int sideHit;
     glm::dvec3 hitVec;
+    class Entity* entity = nullptr;
 };
 
 class World : public IBlockAccess {
@@ -62,6 +65,7 @@ public:
     ~World();
 
     void setGenerator(std::unique_ptr<WorldGenerator> generator);
+    void initSaveHandler(const std::string& worldDir);
 
     void addChunk(std::shared_ptr<Chunk> chunk);
     void removeChunk(int chunkX, int chunkZ);
@@ -118,6 +122,8 @@ public:
 
     HitResult rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiquids = false);
 
+    std::vector<Entity*> getEntitiesWithinAABB(const AxisAlignedBB& bb);
+
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;
     glm::vec3 getSkyColor(float partialTick = 0.0f) const;
@@ -138,6 +144,8 @@ public:
     void spawnEntity(std::unique_ptr<Entity> entity);
     void removeEntity(int32_t id);
     const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
+
+    SaveHandler* getSaveHandler() const { return m_saveHandler.get(); }
 
     bool isRemote = false;
     bool m_editingBlocks = false;
@@ -169,6 +177,7 @@ private:
     std::uint32_t m_fogColor = 12638463u;
     std::uint32_t m_cloudColor = 16777215u;
     std::unique_ptr<WorldGenerator> m_generator;
+    std::unique_ptr<SaveHandler> m_saveHandler;
     std::unique_ptr<ChunkLoader> m_loader;
     mutable std::shared_mutex m_chunkMutex;
     mutable std::mutex m_pendingMutex;

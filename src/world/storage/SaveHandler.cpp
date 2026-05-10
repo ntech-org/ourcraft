@@ -64,7 +64,7 @@ bool SaveHandler::loadChunk(Chunk& chunk) {
 }
 
 void SaveHandler::saveChunk(const Chunk& chunk) {
-    if (!m_db || chunk.getState() != ChunkState::Complete) return;
+    if (!m_db || chunk.getState() < ChunkState::Lighted) return;
 
     int cx = chunk.getX();
     int cz = chunk.getZ();
@@ -111,4 +111,191 @@ bool SaveHandler::loadLegacyChunk(Chunk& chunk) {
     
     saveChunk(chunk); // Save to RocksDB immediately
     return true;
+}
+
+bool SaveHandler::loadLevelData(LevelData& data) {
+    if (!m_db) return false;
+
+    std::string value;
+    rocksdb::Status status = m_db->Get(rocksdb::ReadOptions(), "__level_metadata__", &value);
+    if (!status.ok()) return false;
+
+    std::istringstream iss(value, std::ios::binary);
+    auto tag = nbt::readTag(iss);
+    if (!tag || tag->type != nbt::TagType::Compound) return false;
+
+    auto& root = std::get<nbt::Compound>(tag->value);
+    if (root.find("Data") == root.end() || root["Data"]->type != nbt::TagType::Compound) return false;
+    auto& level = std::get<nbt::Compound>(root["Data"]->value);
+
+    auto getLong = [&](const std::string& name, int64_t& val) {
+        if (level.count(name) && level[name]->type == nbt::TagType::Long) val = std::get<int64_t>(level[name]->value);
+    };
+    auto getInt = [&](const std::string& name, int32_t& val) {
+        if (level.count(name) && level[name]->type == nbt::TagType::Int) val = std::get<int32_t>(level[name]->value);
+    };
+
+    getLong("RandomSeed", data.seed);
+    getInt("SpawnX", data.spawnX);
+    getInt("SpawnY", data.spawnY);
+    getInt("SpawnZ", data.spawnZ);
+    getLong("Time", data.time);
+
+    return true;
+}
+
+void SaveHandler::saveLevelData(const LevelData& data) {
+    if (!m_db) return;
+
+    auto level = std::make_shared<nbt::Tag>(nbt::TagType::Compound, "Data");
+    level->value = nbt::Compound();
+    auto& levelMap = std::get<nbt::Compound>(level->value);
+
+    levelMap["RandomSeed"] = std::make_shared<nbt::Tag>(nbt::TagType::Long, "RandomSeed");
+    levelMap["RandomSeed"]->value = data.seed;
+    levelMap["SpawnX"] = std::make_shared<nbt::Tag>(nbt::TagType::Int, "SpawnX");
+    levelMap["SpawnX"]->value = data.spawnX;
+    levelMap["SpawnY"] = std::make_shared<nbt::Tag>(nbt::TagType::Int, "SpawnY");
+    levelMap["SpawnY"]->value = data.spawnY;
+    levelMap["SpawnZ"] = std::make_shared<nbt::Tag>(nbt::TagType::Int, "SpawnZ");
+    levelMap["SpawnZ"]->value = data.spawnZ;
+    levelMap["Time"] = std::make_shared<nbt::Tag>(nbt::TagType::Long, "Time");
+    levelMap["Time"]->value = data.time;
+
+    auto root = std::make_shared<nbt::Tag>(nbt::TagType::Compound, "");
+    root->value = nbt::Compound();
+    std::get<nbt::Compound>(root->value)["Data"] = level;
+
+    std::ostringstream oss(std::ios::binary);
+    nbt::writeTag(oss, *root);
+    std::string blob = oss.str();
+
+    rocksdb::Status status = m_db->Put(rocksdb::WriteOptions(), "__level_metadata__", blob);
+    if (!status.ok()) {
+        std::cerr << "SaveHandler: Failed to save level metadata: " << status.ToString() << std::endl;
+    }
+}
+
+bool SaveHandler::loadPlayerData(const std::string& name, PlayerSaveData& data) {
+    std::string path = m_worldDir + "/players/" + name + ".dat";
+    if (!fs::exists(path)) return false;
+
+    auto tag = nbt::readCompressed(path);
+    if (!tag || tag->type != nbt::TagType::Compound) return false;
+
+    auto& root = std::get<nbt::Compound>(tag->value);
+    
+    if (root.count("Pos") && root["Pos"]->type == nbt::TagType::List) {
+        auto& pos = std::get<nbt::List>(root["Pos"]->value);
+        if (pos.type == nbt::TagType::Double && pos.elements.size() == 3) {
+            data.x = std::get<double>(pos.elements[0]->value);
+            data.y = std::get<double>(pos.elements[1]->value);
+            data.z = std::get<double>(pos.elements[2]->value);
+        }
+    }
+    if (root.count("Rotation") && root["Rotation"]->type == nbt::TagType::List) {
+        auto& rot = std::get<nbt::List>(root["Rotation"]->value);
+        if (rot.type == nbt::TagType::Float && rot.elements.size() == 2) {
+            data.yaw = std::get<float>(rot.elements[0]->value);
+            data.pitch = std::get<float>(rot.elements[1]->value);
+        }
+    }
+    if (root.count("Health") && root["Health"]->type == nbt::TagType::Int) {
+        data.health = std::get<int32_t>(root["Health"]->value);
+    }
+    
+    if (root.count("Inventory") && root["Inventory"]->type == nbt::TagType::List) {
+        auto& invList = std::get<nbt::List>(root["Inventory"]->value);
+        for (const auto& itemTag : invList.elements) {
+            if (itemTag->type != nbt::TagType::Compound) continue;
+            auto& itemMap = std::get<nbt::Compound>(itemTag->value);
+            
+            auto has = [&](const std::string& k, nbt::TagType t) {
+                return itemMap.count(k) && itemMap[k]->type == t;
+            };
+
+            if (has("Slot", nbt::TagType::Byte) && has("id", nbt::TagType::Short) && 
+                has("Count", nbt::TagType::Byte) && has("Damage", nbt::TagType::Short)) {
+                int slot = std::get<int8_t>(itemMap["Slot"]->value);
+                if (slot >= 0 && slot < 45) {
+                    data.inventory[slot].itemID = std::get<int16_t>(itemMap["id"]->value);
+                    data.inventory[slot].count = std::get<int8_t>(itemMap["Count"]->value);
+                    data.inventory[slot].metadata = std::get<int16_t>(itemMap["Damage"]->value);
+                }
+            }
+        }
+    }
+
+    data.name = name;
+    return true;
+}
+
+void SaveHandler::savePlayerData(const PlayerSaveData& data) {
+    std::string dir = m_worldDir + "/players";
+    if (!fs::exists(dir)) fs::create_directories(dir);
+
+    auto root = std::make_shared<nbt::Tag>(nbt::TagType::Compound, "");
+    root->value = nbt::Compound();
+    auto& map = std::get<nbt::Compound>(root->value);
+
+    auto pos = std::make_shared<nbt::Tag>(nbt::TagType::List, "Pos");
+    nbt::List posList; posList.type = nbt::TagType::Double;
+    for (double v : {data.x, data.y, data.z}) {
+        auto t = std::make_shared<nbt::Tag>(nbt::TagType::Double, "");
+        t->value = v;
+        posList.elements.push_back(t);
+    }
+    pos->value = posList;
+    map["Pos"] = pos;
+
+    auto rot = std::make_shared<nbt::Tag>(nbt::TagType::List, "Rotation");
+    nbt::List rotList; rotList.type = nbt::TagType::Float;
+    for (float v : {data.yaw, data.pitch}) {
+        auto t = std::make_shared<nbt::Tag>(nbt::TagType::Float, "");
+        t->value = v;
+        rotList.elements.push_back(t);
+    }
+    rot->value = rotList;
+    map["Rotation"] = rot;
+
+    map["Health"] = std::make_shared<nbt::Tag>(nbt::TagType::Int, "Health");
+    map["Health"]->value = (int32_t)data.health;
+
+    auto invTag = std::make_shared<nbt::Tag>(nbt::TagType::List, "Inventory");
+    nbt::List invList; invList.type = nbt::TagType::Compound;
+    for (int i = 0; i < 45; ++i) {
+        if (!data.inventory[i].isEmpty()) {
+            auto itemMapTag = std::make_shared<nbt::Tag>(nbt::TagType::Compound, "");
+            itemMapTag->value = nbt::Compound();
+            auto& itemMap = std::get<nbt::Compound>(itemMapTag->value);
+            
+            auto slotTag = std::make_shared<nbt::Tag>(nbt::TagType::Byte, "Slot");
+            slotTag->value = (int8_t)i;
+            itemMap["Slot"] = slotTag;
+
+            auto idTag = std::make_shared<nbt::Tag>(nbt::TagType::Short, "id");
+            idTag->value = (int16_t)data.inventory[i].itemID;
+            itemMap["id"] = idTag;
+
+            auto countTag = std::make_shared<nbt::Tag>(nbt::TagType::Byte, "Count");
+            countTag->value = (int8_t)data.inventory[i].count;
+            itemMap["Count"] = countTag;
+
+            auto damageTag = std::make_shared<nbt::Tag>(nbt::TagType::Short, "Damage");
+            damageTag->value = (int16_t)data.inventory[i].metadata;
+            itemMap["Damage"] = damageTag;
+
+            invList.elements.push_back(itemMapTag);
+        }
+    }
+    invTag->value = invList;
+    map["Inventory"] = invTag;
+
+    nbt::writeCompressed(dir + "/" + data.name + ".dat", *root);
+}
+
+void SaveHandler::flush() {
+    if (m_db) {
+        m_db->Flush(rocksdb::FlushOptions());
+    }
 }

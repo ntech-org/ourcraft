@@ -14,10 +14,14 @@ World::~World() {
     }
 }
 
+void World::initSaveHandler(const std::string& worldDir) {
+    m_saveHandler = std::make_unique<SaveHandler>(worldDir);
+}
+
 void World::setGenerator(std::unique_ptr<WorldGenerator> generator) {
     m_generator = std::move(generator);
     if (!isRemote) {
-        m_loader = std::make_unique<ChunkLoader>(*m_generator, this);
+        m_loader = std::make_unique<ChunkLoader>(*m_generator, this, m_saveHandler.get());
     }
 }
 
@@ -43,7 +47,7 @@ bool World::setBlockID(int x, int y, int z, uint8_t id) {
     int si = Chunk::getSectionIndex(y);
     chunk->setBlockID(lx, y, lz, id);
 
-    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+    if (onBlockChanged) {
         onBlockChanged(x, y, z, id, chunk->getBlockMetadata(lx, y, lz));
     }
 
@@ -81,7 +85,7 @@ void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8
     chunk->setBlockID(lx, y, lz, id);
     chunk->setBlockMetadata(lx, y, lz, meta);
 
-    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+    if (onBlockChanged) {
         onBlockChanged(x, y, z, id, meta);
     }
 
@@ -122,7 +126,7 @@ bool World::setBlockIDAndMetadata(int x, int y, int z, uint8_t id, uint8_t meta)
     chunk->setBlockID(lx, y, lz, id);
     chunk->setBlockMetadata(lx, y, lz, meta);
 
-    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+    if (onBlockChanged) {
         onBlockChanged(x, y, z, id, meta);
     }
 
@@ -162,7 +166,7 @@ void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
 
     chunk->setBlockMetadata(x & 15, y, z & 15, meta);
     uint8_t id = getBlockID(x, y, z);
-    if (onBlockChanged && chunk->getState() == ChunkState::Complete) {
+    if (onBlockChanged) {
         onBlockChanged(x, y, z, id, meta);
     }
     notifyBlockChange(x, y, z, id);
@@ -621,4 +625,14 @@ void World::predictLighting(Chunk& chunk) {
         }
     }
     chunk.setLightWipeComplete(true);
+}
+
+std::vector<Entity*> World::getEntitiesWithinAABB(const AxisAlignedBB& bb) {
+    std::vector<Entity*> result;
+    for (const auto& entity : m_entities) {
+        if (entity->boundingBox.intersectsWith(bb)) {
+            result.push_back(entity.get());
+        }
+    }
+    return result;
 }

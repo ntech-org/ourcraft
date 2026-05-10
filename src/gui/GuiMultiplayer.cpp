@@ -1,5 +1,6 @@
 #include "gui/GuiMultiplayer.hpp"
 #include "gui/GuiMainMenu.hpp"
+#include "gui/GuiConnecting.hpp"
 #include "Minecraft.hpp"
 #include <iostream>
 
@@ -54,7 +55,7 @@ void GuiMultiplayer::actionPerformed(GuiButton* button) {
                 port = 25565;
             }
         }
-        mc->startMultiplayer(ip, port);
+        mc->displayGuiScreen(std::make_shared<GuiConnecting>(shared_from_this(), ip, port));
     }
     if (button->id == 0) {
         mc->displayGuiScreen(m_parent);

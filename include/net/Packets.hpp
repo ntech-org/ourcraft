@@ -23,6 +23,22 @@ public:
     }
 };
 
+class PacketDisconnect : public Packet {
+public:
+    std::string reason;
+
+    PacketType getType() const override { return PacketType::Disconnect; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeString(buffer, reason);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        reason = readString(data);
+    }
+};
+
 class PacketLoginResponse : public Packet {
 public:
     int32_t entityID;
@@ -591,5 +607,27 @@ public:
         windowId = readByte(data);
         actionId = (int16_t)readInt(data);
         accepted = readByte(data) != 0;
+    }
+};
+
+class PacketUseEntity : public Packet {
+public:
+    int32_t userEntityID;
+    int32_t targetEntityID;
+    uint8_t leftClick;
+
+    PacketType getType() const override { return PacketType::UseEntity; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeInt(buffer, userEntityID);
+        writeInt(buffer, targetEntityID);
+        writeByte(buffer, leftClick);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        userEntityID = readInt(data);
+        targetEntityID = readInt(data);
+        leftClick = readByte(data);
     }
 };

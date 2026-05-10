@@ -1,5 +1,6 @@
 #include "physics/AxisAlignedBB.hpp"
 #include <algorithm>
+#include <glm/geometric.hpp>
 
 AxisAlignedBB::AxisAlignedBB(double minX, double minY, double minZ, double maxX, double maxY, double maxZ)
     : minX(minX), minY(minY), minZ(minZ), maxX(maxX), maxY(maxY), maxZ(maxZ) {}
@@ -93,4 +94,57 @@ void AxisAlignedBB::offset(double x, double y, double z) {
     maxX += x;
     maxY += y;
     maxZ += z;
+}
+
+bool AxisAlignedBB::isVecInside(const glm::dvec3& vec) const {
+    return vec.x > minX && vec.x < maxX && vec.y > minY && vec.y < maxY && vec.z > minZ && vec.z < maxZ;
+}
+
+std::optional<RayHit> AxisAlignedBB::calculateIntercept(const glm::dvec3& start, const glm::dvec3& end) const {
+    auto isVecInYZ = [&](const glm::dvec3& v) { return v.y >= minY && v.y <= maxY && v.z >= minZ && v.z <= maxZ; };
+    auto isVecInXZ = [&](const glm::dvec3& v) { return v.x >= minX && v.x <= maxX && v.z >= minZ && v.z <= maxZ; };
+    auto isVecInXY = [&](const glm::dvec3& v) { return v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY; };
+
+    auto getIntersection = [&](double startV, double endV, double targetV, const glm::dvec3& s, const glm::dvec3& e) -> std::optional<glm::dvec3> {
+        if (std::abs(endV - startV) < 1e-7) return std::nullopt;
+        double t = (targetV - startV) / (endV - startV);
+        if (t < 0.0 || t > 1.0) return std::nullopt;
+        return s + (e - s) * t;
+    };
+
+    std::optional<glm::dvec3> vminX = getIntersection(start.x, end.x, minX, start, end);
+    std::optional<glm::dvec3> vmaxX = getIntersection(start.x, end.x, maxX, start, end);
+    std::optional<glm::dvec3> vminY = getIntersection(start.y, end.y, minY, start, end);
+    std::optional<glm::dvec3> vmaxY = getIntersection(start.y, end.y, maxY, start, end);
+    std::optional<glm::dvec3> vminZ = getIntersection(start.z, end.z, minZ, start, end);
+    std::optional<glm::dvec3> vmaxZ = getIntersection(start.z, end.z, maxZ, start, end);
+
+    if (vminX && !isVecInYZ(*vminX)) vminX = std::nullopt;
+    if (vmaxX && !isVecInYZ(*vmaxX)) vmaxX = std::nullopt;
+    if (vminY && !isVecInXZ(*vminY)) vminY = std::nullopt;
+    if (vmaxY && !isVecInXZ(*vmaxY)) vmaxY = std::nullopt;
+    if (vminZ && !isVecInXY(*vminZ)) vminZ = std::nullopt;
+    if (vmaxZ && !isVecInXY(*vmaxZ)) vmaxZ = std::nullopt;
+
+    std::optional<glm::dvec3> bestV = std::nullopt;
+    int side = -1;
+
+    auto updateBest = [&](const std::optional<glm::dvec3>& v, int s) {
+        if (v) {
+            if (!bestV || glm::distance(start, *v) < glm::distance(start, *bestV)) {
+                bestV = v;
+                side = s;
+            }
+        }
+    };
+
+    updateBest(vminX, 4);
+    updateBest(vmaxX, 5);
+    updateBest(vminY, 0);
+    updateBest(vmaxY, 1);
+    updateBest(vminZ, 2);
+    updateBest(vmaxZ, 3);
+
+    if (bestV) return RayHit{*bestV, side};
+    return std::nullopt;
 }

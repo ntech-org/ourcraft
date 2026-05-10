@@ -1,7 +1,9 @@
 #include "entities/InventoryPlayer.hpp"
+#include "inventory/CraftingManager.hpp"
+#include <algorithm>
 
 InventoryPlayer::InventoryPlayer() {
-    for (int i = 0; i < INVENTORY_SIZE; ++i) {
+    for (int i = 0; i < TOTAL_SIZE; ++i) {
         mainInventory[i] = {0, 0, 0};
     }
     cursorStack = {0, 0, 0};
@@ -99,8 +101,32 @@ void InventoryPlayer::setSlot(int slot) {
     if (slot >= 0 && slot < HOTBAR_SIZE) currentSlot = slot;
 }
 
+void InventoryPlayer::handleCraftingResult(int resultSlot) {
+    if (resultSlot == RESULT_SLOT) {
+        CraftingManager::getInstance().consumeRecipe(&mainInventory[CRAFT_START], 2, 2);
+    } else if (resultSlot == WORKBENCH_RESULT) {
+        CraftingManager::getInstance().consumeRecipe(&mainInventory[WORKBENCH_START], 3, 3);
+    }
+    updateCrafting();
+}
+
 void InventoryPlayer::handleClick(int slot, bool rightClick) {
-    if (slot < -1 || slot >= INVENTORY_SIZE) return;
+    if (slot < -1 || slot >= TOTAL_SIZE) return;
+
+    if (slot == RESULT_SLOT || slot == WORKBENCH_RESULT) {
+        if (!mainInventory[slot].isEmpty()) {
+            if (cursorStack.isEmpty()) {
+                cursorStack = mainInventory[slot];
+                handleCraftingResult(slot);
+            } else if (cursorStack.itemID == mainInventory[slot].itemID &&
+                       cursorStack.metadata == mainInventory[slot].metadata &&
+                       cursorStack.count + mainInventory[slot].count <= MAX_STACK_SIZE) {
+                cursorStack.count += mainInventory[slot].count;
+                handleCraftingResult(slot);
+            }
+        }
+        return;
+    }
 
     if (slot >= 0) {
         ItemStack& target = mainInventory[slot];
@@ -149,6 +175,11 @@ void InventoryPlayer::handleClick(int slot, bool rightClick) {
                 std::swap(target, cursorStack);
             }
         }
+        
+        if ((slot >= CRAFT_START && slot < CRAFT_START + 4) || 
+            (slot >= WORKBENCH_START && slot < WORKBENCH_START + 9)) {
+            updateCrafting();
+        }
     } else if (slot == -1) {
         if (!cursorStack.isEmpty()) {
             if (rightClick) {
@@ -160,3 +191,9 @@ void InventoryPlayer::handleClick(int slot, bool rightClick) {
         }
     }
 }
+
+void InventoryPlayer::updateCrafting() {
+    mainInventory[RESULT_SLOT] = CraftingManager::getInstance().findMatchingRecipe(&mainInventory[CRAFT_START], 2, 2);
+    mainInventory[WORKBENCH_RESULT] = CraftingManager::getInstance().findMatchingRecipe(&mainInventory[WORKBENCH_START], 3, 3);
+}
+

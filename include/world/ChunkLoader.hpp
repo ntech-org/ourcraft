@@ -34,7 +34,7 @@ struct ChunkTask {
 
 class ChunkLoader {
 public:
-    ChunkLoader(WorldGenerator& generator, class World* world = nullptr);
+    ChunkLoader(WorldGenerator& generator, class World* world = nullptr, SaveHandler* saveHandler = nullptr);
     ~ChunkLoader();
 
     void requestChunk(int x, int z);
@@ -48,12 +48,14 @@ public:
     
     bool tryPopResult(std::shared_ptr<Chunk>& outChunk);
 
+    SaveHandler* getSaveHandler() { return m_saveHandler; }
+
 private:
     void workerLoop();
 
     WorldGenerator& m_generator;
     class World* m_world;
-    std::unique_ptr<SaveHandler> m_saveHandler;
+    SaveHandler* m_saveHandler;
     std::priority_queue<ChunkTask> m_requestQueue;
     std::queue<std::shared_ptr<Chunk>> m_resultQueue;
     

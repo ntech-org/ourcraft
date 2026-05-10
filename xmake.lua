@@ -38,6 +38,8 @@ target("ourcraft-server")
     add_files("src/entities/**.cpp")
     add_files("src/physics/**.cpp")
     add_files("src/util/**.cpp")
+    add_files("src/inventory/**.cpp")
+    add_files("src/items/**.cpp")
     add_files("src/server_main.cpp")
     
     -- remove_files("src/world/ChunkLoader.cpp") -- Restored as it doesn't depend on GL

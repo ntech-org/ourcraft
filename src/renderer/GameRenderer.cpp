@@ -5,6 +5,7 @@
 #include "world/Material.hpp"
 #include "renderer/TextureFX.hpp"
 #include "gui/GuiScreen.hpp"
+#include "items/Item.hpp"
 
 #include "entities/EntityItem.hpp"
 #include "entities/EntityLiving.hpp"
@@ -245,10 +246,65 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_frustum.update(projection * view);
     m_worldRenderer->updateDirtyMeshes(64);
     m_worldRenderer->renderOpaque(m_frustum, *m_basicShader, m_camera.position);
-    renderBreakingOverlay();
+    renderSelectionBox(projection, view);
+    renderBreakingOverlay(projection, view);
 }
 
-void GameRenderer::renderBreakingOverlay() {
+void GameRenderer::renderSelectionBox(const glm::mat4& projection, const glm::mat4& view) {
+    const HitResult& hit = m_player.getMinecraft().getObjectMouseOver();
+    if (hit.type != HitType::BLOCK) return;
+
+    int x = hit.x;
+    int y = hit.y;
+    int z = hit.z;
+
+    const glm::vec3 relativePos = glm::vec3(glm::dvec3(x, y, z) - m_camera.position);
+    float x0 = relativePos.x - 0.002f;
+    float y0 = relativePos.y - 0.002f;
+    float z0 = relativePos.z - 0.002f;
+    float x1 = x0 + 1.004f;
+    float y1 = y0 + 1.004f;
+    float z1 = z0 + 1.004f;
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    glLineWidth(2.0f);
+
+    m_uiShader->use();
+    m_uiShader->setMat4("projection", projection);
+    m_uiShader->setMat4("view", view);
+    m_uiShader->setBool("hasTexture", false);
+
+    Tessellator* t = Tessellator::instance;
+    t->startDrawing(GL_LINES);
+    t->setColorRGBA(0, 0, 0, 102); // 0.4 alpha black
+
+    // Bottom
+    t->addVertex(x0, y0, z0); t->addVertex(x1, y0, z0);
+    t->addVertex(x1, y0, z0); t->addVertex(x1, y0, z1);
+    t->addVertex(x1, y0, z1); t->addVertex(x0, y0, z1);
+    t->addVertex(x0, y0, z1); t->addVertex(x0, y0, z0);
+
+    // Top
+    t->addVertex(x0, y1, z0); t->addVertex(x1, y1, z0);
+    t->addVertex(x1, y1, z0); t->addVertex(x1, y1, z1);
+    t->addVertex(x1, y1, z1); t->addVertex(x0, y1, z1);
+    t->addVertex(x0, y1, z1); t->addVertex(x0, y1, z0);
+
+    // Verticals
+    t->addVertex(x0, y0, z0); t->addVertex(x0, y1, z0);
+    t->addVertex(x1, y0, z0); t->addVertex(x1, y1, z0);
+    t->addVertex(x1, y0, z1); t->addVertex(x1, y1, z1);
+    t->addVertex(x0, y0, z1); t->addVertex(x0, y1, z1);
+
+    t->draw();
+
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+}
+
+void GameRenderer::renderBreakingOverlay(const glm::mat4& projection, const glm::mat4& view) {
     if (!m_breakOverlayActive || m_breakOverlayProgress <= 0.0f) return;
     if (m_world.getBlockID(m_breakOverlayX, m_breakOverlayY, m_breakOverlayZ) == 0) return;
 
@@ -270,17 +326,21 @@ void GameRenderer::renderBreakingOverlay() {
     const float eps = 0.001f;
 
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_DST_COLOR, GL_SRC_COLOR);
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(-1.0f, -1.0f);
     glDisable(GL_CULL_FACE);
 
     m_renderEngine->bindTexture(m_terrainTex);
     Tessellator* t = Tessellator::instance;
-    // Set identity model matrix for breaking overlay since we use absolute-relative coords
-    m_basicShader->setMat4("model", glm::mat4(1.0f));
+    
+    m_uiShader->use();
+    m_uiShader->setMat4("projection", projection);
+    m_uiShader->setMat4("view", view);
+    m_uiShader->setBool("hasTexture", true);
+
     t->startDrawingQuads();
-    t->setColorRGBA(255, 255, 255, 180);
+    t->setColorRGBA(255, 255, 255, 255); // Full white for multiplicative blend
 
     // Bottom
     t->addVertexWithUV(x0 - eps, y0 - eps, z1 + eps, u0, v1);
@@ -375,8 +435,17 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
                 m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/items.png"));
             }
 
-            const float u0 = (float)(((isBlockItem ? Block::blocksList[item->itemID]->blockIndexInTexture : item->itemID) & 15) * 16) / 256.0f;
-            const float v0 = (float)(((isBlockItem ? Block::blocksList[item->itemID]->blockIndexInTexture : item->itemID) >> 4) * 16) / 256.0f;
+            int tex = 0;
+            if (isBlockItem) {
+                tex = Block::blocksList[item->itemID]->blockIndexInTexture;
+            } else if (item->itemID >= 0 && item->itemID < 1024 && Item::itemsList[item->itemID]) {
+                tex = Item::itemsList[item->itemID]->iconIndex;
+            } else {
+                tex = item->itemID & 255;
+            }
+
+            const float u0 = (float)((tex & 15) * 16) / 256.0f;
+            const float v0 = (float)((tex >> 4) * 16) / 256.0f;
             const float u1 = u0 + 16.0f / 256.0f;
             const float v1 = v0 + 16.0f / 256.0f;
 
@@ -632,6 +701,17 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
 }
 
 void GameRenderer::renderHUD() {
+    glm::mat4 projection = glm::ortho(0.0f, m_scaledWidth, m_scaledHeight, 0.0f, -1.0f, 1.0f);
+    glm::mat4 view = glm::mat4(1.0f);
+
+    m_uiShader->use();
+    m_uiShader->setMat4("projection", projection);
+    m_uiShader->setMat4("view", view);
+
+    m_textShader->use();
+    m_textShader->setMat4("projection", projection);
+    m_textShader->setMat4("view", view);
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/gui.png"));
@@ -691,7 +771,12 @@ void GameRenderer::renderHUD() {
 
     auto drawItemStack2D = [&](int itemID, float x, float y) {
         m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/items.png"));
-        const int tex = itemID & 255;
+        int tex = 0;
+        if (itemID >= 0 && itemID < 1024 && Item::itemsList[itemID]) {
+            tex = Item::itemsList[itemID]->iconIndex;
+        } else {
+            tex = itemID & 255;
+        }
         drawTexturedModalRect(x, y, (tex & 15) * 16, (tex >> 4) * 16, 16, 16);
     };
 
@@ -721,6 +806,11 @@ void GameRenderer::renderHUD() {
     }
 
     if (m_player.gameMode == GameMode::SURVIVAL) {
+        m_uiShader->use();
+        m_uiShader->setMat4("projection", projection);
+        m_uiShader->setMat4("view", view);
+        m_uiShader->setBool("hasTexture", true);
+        
         m_renderEngine->bindTexture(m_renderEngine->getTexture("/gui/icons.png"));
         for (int i = 0; i < 10; ++i) {
             float x = centerX - 91.0f + (float)i * 8.0f;

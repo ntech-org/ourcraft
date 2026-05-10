@@ -6,14 +6,14 @@
 
 class GuiInventory : public GuiScreen {
 public:
+    static constexpr float GUI_WIDTH = 176.0f;
+    static constexpr float GUI_HEIGHT = 166.0f;
+
     void drawScreen(int mouseX, int mouseY, float partialTicks) override;
     void keyTyped(int key, int scancode, int action, int mods) override;
     void mouseClicked(int mouseX, int mouseY, int button) override;
 
-private:
-    static constexpr float GUI_WIDTH = 176.0f;
-    static constexpr float GUI_HEIGHT = 166.0f;
-
+protected:
     int getSlotFromMouse(float left, float top, int mouseX, int mouseY) const;
     void getSlotPosition(float left, float top, int slot, float& outX, float& outY) const;
     void handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightClick);
@@ -27,5 +27,5 @@ private:
 
     int16_t m_actionCount = 0;
     bool m_draggingLeft = false;
-    std::array<bool, InventoryPlayer::INVENTORY_SIZE> m_dragVisited {};
+    std::array<bool, InventoryPlayer::TOTAL_SIZE> m_dragVisited {};
 };

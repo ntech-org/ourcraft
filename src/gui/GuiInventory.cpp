@@ -2,6 +2,7 @@
 #include "Minecraft.hpp"
 #include "renderer/Tessellator.hpp"
 #include "world/Block.hpp"
+#include "items/Item.hpp"
 #include "net/Packets.hpp"
 
 #include <GLFW/glfw3.h>
@@ -9,39 +10,56 @@
 #include <cstdio>
 
 int GuiInventory::getSlotFromMouse(float left, float top, int mouseX, int mouseY) const {
-    auto inGrid = [&](float sx, float sy, int rows, int startSlot) -> int {
+    auto inGrid = [&](float sx, float sy, int rows, int cols, int startSlot) -> int {
         const float relX = (float)mouseX - sx;
         const float relY = (float)mouseY - sy;
         if (relX < 0.0f || relY < 0.0f) return -1;
         const int col = (int)(relX / 18.0f);
         const int row = (int)(relY / 18.0f);
-        if (col < 0 || col >= 9 || row < 0 || row >= rows) return -1;
-        return startSlot + row * 9 + col;
+        if (col < 0 || col >= cols || row < 0 || row >= rows) return -1;
+        return startSlot + row * cols + col;
     };
 
-    const int mainSlot = inGrid(left + 8.0f, top + 84.0f, 3, 9);
+    const int mainSlot = inGrid(left + 8.0f, top + 84.0f, 3, 9, 9);
     if (mainSlot >= 9 && mainSlot < InventoryPlayer::INVENTORY_SIZE) return mainSlot;
 
-    const int hotbarSlot = inGrid(left + 8.0f, top + 142.0f, 1, 0);
+    const int hotbarSlot = inGrid(left + 8.0f, top + 142.0f, 1, 9, 0);
     if (hotbarSlot >= 0 && hotbarSlot < 9) return hotbarSlot;
+
+    const int armorSlot = inGrid(left + 8.0f, top + 8.0f, 4, 1, InventoryPlayer::ARMOR_START);
+    if (armorSlot >= InventoryPlayer::ARMOR_START && armorSlot < InventoryPlayer::CRAFT_START) return armorSlot;
+
+    const int craftSlot = inGrid(left + 88.0f, top + 18.0f, 2, 2, InventoryPlayer::CRAFT_START);
+    if (craftSlot >= InventoryPlayer::CRAFT_START && craftSlot < InventoryPlayer::RESULT_SLOT) return craftSlot;
+
+    const int resultSlot = inGrid(left + 144.0f, top + 36.0f, 1, 1, InventoryPlayer::RESULT_SLOT);
+    if (resultSlot == InventoryPlayer::RESULT_SLOT) return resultSlot;
+
     return -1;
 }
 
 void GuiInventory::getSlotPosition(float left, float top, int slot, float& outX, float& outY) const {
-    const int col = slot % 9;
-    if (slot < 9) {
-        outX = left + 8.0f + (float)col * 18.0f;
+    if (slot < 9) { // Hotbar
+        outX = left + 8.0f + (float)(slot % 9) * 18.0f;
         outY = top + 142.0f;
-    } else {
-        const int row = (slot - 9) / 9;
-        outX = left + 8.0f + (float)col * 18.0f;
-        outY = top + 84.0f + (float)row * 18.0f;
+    } else if (slot < 36) { // Main Inventory
+        outX = left + 8.0f + (float)((slot - 9) % 9) * 18.0f;
+        outY = top + 84.0f + (float)((slot - 9) / 9) * 18.0f;
+    } else if (slot < 40) { // Armor
+        outX = left + 8.0f;
+        outY = top + 8.0f + (float)(slot - 36) * 18.0f;
+    } else if (slot < 44) { // Crafting Input
+        outX = left + 88.0f + (float)((slot - 40) % 2) * 18.0f;
+        outY = top + 18.0f + (float)((slot - 40) / 2) * 18.0f;
+    } else if (slot == 44) { // Crafting Result
+        outX = left + 144.0f;
+        outY = top + 36.0f;
     }
 }
 
 void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightClick) {
-    if (slot < -1 || slot >= InventoryPlayer::INVENTORY_SIZE) return;
-
+    if (slot < -1 || slot >= InventoryPlayer::TOTAL_SIZE) return;
+    
     inv.handleClick(slot, rightClick);
 
     if (mc->getNetworkHandler()) {
@@ -63,7 +81,8 @@ void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightC
 }
 
 void GuiInventory::handleDragDistribution(InventoryPlayer& inv, int slot) {
-    if (!m_draggingLeft || slot < 0 || slot >= InventoryPlayer::INVENTORY_SIZE || inv.cursorStack.isEmpty()) return;
+    if (!m_draggingLeft || slot < 0 || slot >= InventoryPlayer::TOTAL_SIZE || inv.cursorStack.isEmpty()) return;
+    if (slot == InventoryPlayer::RESULT_SLOT) return; // Cannot drag into result slot
     if (m_dragVisited[slot]) return;
     m_dragVisited[slot] = true;
 
@@ -72,11 +91,13 @@ void GuiInventory::handleDragDistribution(InventoryPlayer& inv, int slot) {
         target = inv.cursorStack;
         target.count = 1;
         inv.cursorStack.count -= 1;
+        if (slot >= InventoryPlayer::CRAFT_START && slot < InventoryPlayer::RESULT_SLOT) inv.updateCrafting();
     } else if (target.itemID == inv.cursorStack.itemID &&
                target.metadata == inv.cursorStack.metadata &&
                target.count < InventoryPlayer::MAX_STACK_SIZE) {
         target.count += 1;
         inv.cursorStack.count -= 1;
+        if (slot >= InventoryPlayer::CRAFT_START && slot < InventoryPlayer::RESULT_SLOT) inv.updateCrafting();
     }
 
     if (inv.cursorStack.count <= 0) {
@@ -144,7 +165,14 @@ void GuiInventory::drawBlockStack2D(int blockID, float x, float y) {
 void GuiInventory::drawItemStack2D(int itemID, float x, float y) {
     RenderEngine& renderEngine = mc->getGameRenderer().getRenderEngine();
     renderEngine.bindTexture(renderEngine.getTexture("/gui/items.png"));
-    const int tex = itemID & 255;
+    
+    int tex = 0;
+    if (itemID >= 0 && itemID < 1024 && Item::itemsList[itemID]) {
+        tex = Item::itemsList[itemID]->iconIndex;
+    } else {
+        tex = itemID & 255; // Fallback
+    }
+
     drawTexturedModalRect(mc->getGameRenderer().getUIShader(), x, y, (tex & 15) * 16, (tex >> 4) * 16, 16, 16);
 }
 
@@ -181,7 +209,7 @@ void GuiInventory::drawStackAt(const ItemStack& stack, float x, float y, bool hi
 void GuiInventory::drawInventorySlots(float left, float top, int mouseX, int mouseY) {
     InventoryPlayer& inv = mc->getPlayer().inventory;
     const int hoveredSlot = getSlotFromMouse(left, top, mouseX, mouseY);
-    for (int slot = 0; slot < InventoryPlayer::INVENTORY_SIZE; ++slot) {
+    for (int slot = 0; slot < InventoryPlayer::TOTAL_SIZE; ++slot) {
         float sx, sy;
         getSlotPosition(left, top, slot, sx, sy);
         const bool selectedHotbar = slot == inv.currentSlot;

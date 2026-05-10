@@ -23,6 +23,7 @@ class World;
 class AxisAlignedBB;
 class JavaRandom;
 class Entity;
+class EntityPlayer;
 
 class Block {
 public:
@@ -106,6 +107,7 @@ public:
     virtual void updateTick(World& world, int x, int y, int z, JavaRandom& random) const {}
     virtual void onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {}
     virtual void onBlockAdded(World& world, int x, int y, int z) const {}
+    virtual bool onBlockActivated(World& world, int x, int y, int z, EntityPlayer* player) const { return false; }
     virtual int tickRate() const { return 10; }
     virtual bool shouldSideBeRendered(const class IBlockAccess& world, int x, int y, int z, int side) const;
     virtual void velocityToAddToEntity(World& world, int x, int y, int z, Entity* entity, glm::vec3& velocity) const {}
