@@ -19,17 +19,21 @@ Tessellator::Tessellator(size_t bufferSize) : bufferSize(bufferSize) {
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-    // Position: 3 floats, offset 0
+    // Position: 3 floats, offset 0, stride 36 (9 uint32s)
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 36, (void*)0);
 
     // UV: 2 floats, offset 12
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, (void*)12);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 36, (void*)12);
 
     // Color: 4 bytes (RGBA), offset 20
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, 32, (void*)20);
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, 36, (void*)20);
+
+    // Normal: 3 floats, offset 24
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 36, (void*)24);
 
     glBindVertexArray(0);
 }
@@ -43,6 +47,8 @@ void Tessellator::reset() {
     vertexCount = 0;
     rawBufferIndex = 0;
     addedVertices = 0;
+    hasNormal = false;
+    normalX = 0.0f; normalY = 1.0f; normalZ = 0.0f;
 }
 
 void Tessellator::startDrawingQuads() {
@@ -120,6 +126,13 @@ void Tessellator::setColorOpaque_I(int c) {
     setColorOpaque(r, g, b);
 }
 
+void Tessellator::setNormal(float nx, float ny, float nz) {
+    hasNormal = true;
+    normalX = nx;
+    normalY = ny;
+    normalZ = nz;
+}
+
 void Tessellator::setTranslation(double x, double y, double z) {
     xOffset = x;
     yOffset = y;
@@ -147,18 +160,18 @@ void Tessellator::addVertex(double x, double y, double z) {
         // Current buffer has: [V0, V1, V2]
         // We want: [V0, V1, V2, V0, V2, V3]
         
-        // Copy V0 (at rawBufferIndex - 24)
-        for (int j = 0; j < 8; ++j) {
-            rawBuffer[rawBufferIndex + j] = rawBuffer[rawBufferIndex - 24 + j];
+        // Copy V0 (at rawBufferIndex - 27)
+        for (int j = 0; j < 9; ++j) {
+            rawBuffer[rawBufferIndex + j] = rawBuffer[rawBufferIndex - 27 + j];
         }
-        rawBufferIndex += 8;
+        rawBufferIndex += 9;
         vertexCount++;
 
-        // Copy V2 (at rawBufferIndex - 16)
-        for (int j = 0; j < 8; ++j) {
-            rawBuffer[rawBufferIndex + j] = rawBuffer[rawBufferIndex - 16 + j];
+        // Copy V2 (at rawBufferIndex - 18)
+        for (int j = 0; j < 9; ++j) {
+            rawBuffer[rawBufferIndex + j] = rawBuffer[rawBufferIndex - 18 + j];
         }
-        rawBufferIndex += 8;
+        rawBufferIndex += 9;
         vertexCount++;
     }
 
@@ -173,11 +186,21 @@ void Tessellator::addVertex(double x, double y, double z) {
     fi.f = (float)(y + yOffset); rawBuffer[rawBufferIndex + 1] = fi.i;
     fi.f = (float)(z + zOffset); rawBuffer[rawBufferIndex + 2] = fi.i;
 
-    rawBufferIndex += 8;
+    if (hasNormal) {
+        fi.f = normalX; rawBuffer[rawBufferIndex + 6] = fi.i;
+        fi.f = normalY; rawBuffer[rawBufferIndex + 7] = fi.i;
+        fi.f = normalZ; rawBuffer[rawBufferIndex + 8] = fi.i;
+    } else {
+        fi.f = 0.0f; rawBuffer[rawBufferIndex + 6] = fi.i;
+        fi.f = 1.0f; rawBuffer[rawBufferIndex + 7] = fi.i;
+        fi.f = 0.0f; rawBuffer[rawBufferIndex + 8] = fi.i;
+    }
+
+    rawBufferIndex += 9;
     vertexCount++;
     addedVertices++;
 
-    if (rawBufferIndex >= bufferSize - 64) {
+    if (rawBufferIndex >= bufferSize - 72) {
         draw();
         isDrawing = true;
     }

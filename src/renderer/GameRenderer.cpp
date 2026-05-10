@@ -11,6 +11,7 @@
 #include "entities/EntityLiving.hpp"
 #include "InputHandler.hpp"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -63,36 +64,42 @@ void addFace(Tessellator* t, int side, const FaceUV& uv, float shade) {
 
     switch (side) {
         case 0: // bottom
+            t->setNormal(0.0f, -1.0f, 0.0f);
             t->addVertexWithUV(x0, y0, z1, uv.u0, uv.v1);
             t->addVertexWithUV(x0, y0, z0, uv.u0, uv.v0);
             t->addVertexWithUV(x1, y0, z0, uv.u1, uv.v0);
             t->addVertexWithUV(x1, y0, z1, uv.u1, uv.v1);
             break;
         case 1: // top
+            t->setNormal(0.0f, 1.0f, 0.0f);
             t->addVertexWithUV(x1, y1, z1, uv.u1, uv.v1);
             t->addVertexWithUV(x1, y1, z0, uv.u1, uv.v0);
             t->addVertexWithUV(x0, y1, z0, uv.u0, uv.v0);
             t->addVertexWithUV(x0, y1, z1, uv.u0, uv.v1);
             break;
-        case 2: // north
+        case 2: // front (toward player)
+            t->setNormal(0.0f, 0.0f, 1.0f);
             t->addVertexWithUV(x0, y1, z0, uv.u0, uv.v0);
             t->addVertexWithUV(x1, y1, z0, uv.u1, uv.v0);
             t->addVertexWithUV(x1, y0, z0, uv.u1, uv.v1);
             t->addVertexWithUV(x0, y0, z0, uv.u0, uv.v1);
             break;
-        case 3: // south
+        case 3: // back (away from player)
+            t->setNormal(0.0f, 0.0f, -1.0f);
             t->addVertexWithUV(x0, y1, z1, uv.u0, uv.v0);
             t->addVertexWithUV(x0, y0, z1, uv.u0, uv.v1);
             t->addVertexWithUV(x1, y0, z1, uv.u1, uv.v1);
             t->addVertexWithUV(x1, y1, z1, uv.u1, uv.v0);
             break;
-        case 4: // west
+        case 4: // left
+            t->setNormal(-1.0f, 0.0f, 0.0f);
             t->addVertexWithUV(x0, y1, z1, uv.u1, uv.v0);
             t->addVertexWithUV(x0, y1, z0, uv.u0, uv.v0);
             t->addVertexWithUV(x0, y0, z0, uv.u0, uv.v1);
             t->addVertexWithUV(x0, y0, z1, uv.u1, uv.v1);
             break;
-        case 5: // east
+        case 5: // right
+            t->setNormal(1.0f, 0.0f, 0.0f);
             t->addVertexWithUV(x1, y0, z1, uv.u0, uv.v1);
             t->addVertexWithUV(x1, y0, z0, uv.u1, uv.v1);
             t->addVertexWithUV(x1, y1, z0, uv.u1, uv.v0);
@@ -107,19 +114,22 @@ void renderFlatHeldItem(Tessellator* t, const FaceUV& uv) {
     const float d = 1.0f / 16.0f;
     const float eps = 0.001953125f;
 
-    // Front
+    // Front (facing +Z)
+    t->setNormal(0.0f, 0.0f, 1.0f);
     t->addVertexWithUV(0.0f, 0.0f, 0.0f, uv.u1, uv.v1);
     t->addVertexWithUV(w, 0.0f, 0.0f, uv.u0, uv.v1);
     t->addVertexWithUV(w, h, 0.0f, uv.u0, uv.v0);
     t->addVertexWithUV(0.0f, h, 0.0f, uv.u1, uv.v0);
 
-    // Back
+    // Back (facing -Z)
+    t->setNormal(0.0f, 0.0f, -1.0f);
     t->addVertexWithUV(0.0f, h, -d, uv.u1, uv.v0);
     t->addVertexWithUV(w, h, -d, uv.u0, uv.v0);
     t->addVertexWithUV(w, 0.0f, -d, uv.u0, uv.v1);
     t->addVertexWithUV(0.0f, 0.0f, -d, uv.u1, uv.v1);
 
-    // Left strips
+    // Left strips (facing -X)
+    t->setNormal(-1.0f, 0.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = (float)i / 16.0f;
         float sideU = uv.u1 + (uv.u0 - uv.u1) * step - eps;
@@ -131,7 +141,8 @@ void renderFlatHeldItem(Tessellator* t, const FaceUV& uv) {
         t->addVertexWithUV(x, h, -d, sideU, uv.v0);
     }
 
-    // Right strips
+    // Right strips (facing +X)
+    t->setNormal(1.0f, 0.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = (float)i / 16.0f;
         float sideU = uv.u1 + (uv.u0 - uv.u1) * step - eps;
@@ -143,7 +154,8 @@ void renderFlatHeldItem(Tessellator* t, const FaceUV& uv) {
         t->addVertexWithUV(x, 0.0f, -d, sideU, uv.v1);
     }
 
-    // Top strips
+    // Top strips (facing +Y)
+    t->setNormal(0.0f, 1.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = (float)i / 16.0f;
         float sideV = uv.v1 + (uv.v0 - uv.v1) * step - eps;
@@ -155,7 +167,8 @@ void renderFlatHeldItem(Tessellator* t, const FaceUV& uv) {
         t->addVertexWithUV(0.0f, y, -d, uv.u1, sideV);
     }
 
-    // Bottom strips
+    // Bottom strips (facing -Y)
+    t->setNormal(0.0f, -1.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = (float)i / 16.0f;
         float sideV = uv.v1 + (uv.v0 - uv.v1) * step - eps;
@@ -525,6 +538,8 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
     }
     m_entityShader->setVec3("fogColor", fogColor);
     m_entityShader->setVec3("cameraPos", glm::vec3(0.0f));
+    m_entityShader->setFloat("daylightFactor", m_world.getDaylightStrength());
+    m_entityShader->setVec3("sunDirection", m_world.getSunDirection());
 
 
     auto getEntityBrightness = [&](double ex, double ey, double ez) {
@@ -647,6 +662,9 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     m_entityShader->setMat4("projection", projection);
     m_entityShader->setMat4("view", glm::mat4(1.0f));
     m_entityShader->setVec3("cameraPos", glm::vec3(0.0f));
+    m_entityShader->setFloat("daylightFactor", m_world.getDaylightStrength());
+    glm::vec3 sunDir = m_world.getSunDirection();
+    m_entityShader->setVec3("sunDirection", glm::mat3(m_camera.getViewMatrix()) * sunDir);
 
     auto getEntityBrightness = [&](double ex, double ey, double ez) {
         auto light1 = m_world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.5), (int)std::floor(ez));
@@ -715,7 +733,7 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
         heldMat = glm::translate(heldMat, glm::vec3(-var8 * 0.4f, std::sin(std::sqrt(var6) * glm::pi<float>() * 2.0f) * 0.2f, -var7 * 0.2f));
     }
 
-    heldMat = glm::translate(heldMat, glm::vec3(0.7f * var5, -0.65f * var5 - (1.0f - var5) * 0.6f + 0.04f, -0.9f * var5));
+    heldMat = glm::translate(heldMat, glm::vec3(0.7f * var5, -0.65f * var5, -0.9f * var5));
     heldMat = glm::rotate(heldMat, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     heldMat = glm::rotate(heldMat, glm::radians(-6.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     if (swingProgress > 0.0f) {
@@ -732,6 +750,7 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
     if (isBlockItem) {
         m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
         m_entityShader->setMat4("model", heldMat);
+        m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
 
         Tessellator* t = Tessellator::instance;
         Block* block = Block::blocksList[stack.itemID];
@@ -748,6 +767,7 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
         heldMat = glm::rotate(heldMat, glm::radians(335.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         heldMat = glm::translate(heldMat, glm::vec3(-(15.0f / 16.0f), -(1.0f / 16.0f), 0.0f));
         m_entityShader->setMat4("model", heldMat);
+        m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
 
         Tessellator* t = Tessellator::instance;
         const int tex = getItemIconTexture(stack.itemID);

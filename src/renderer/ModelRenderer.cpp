@@ -1,6 +1,7 @@
 #include "renderer/ModelRenderer.hpp"
 #include "renderer/Shader.hpp"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 ModelRenderer::ModelRenderer(int textureOffsetX, int textureOffsetY)
@@ -32,31 +33,31 @@ void ModelRenderer::addBox(float x, float y, float z, int w, int h, int d, float
     float tw = 64.0f; // Standard texture size
     float th = 32.0f;
 
-    auto addQuad = [&](const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3, const glm::vec3& p4, float u1, float v1, float u2, float v2) {
-        m_vertices.push_back({p1, {u2 / tw, v1 / th}});
-        m_vertices.push_back({p2, {u1 / tw, v1 / th}});
-        m_vertices.push_back({p3, {u1 / tw, v2 / th}});
-        m_vertices.push_back({p1, {u2 / tw, v1 / th}});
-        m_vertices.push_back({p3, {u1 / tw, v2 / th}});
-        m_vertices.push_back({p4, {u2 / tw, v2 / th}});
+    auto addQuad = [&](const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3, const glm::vec3& p4, const glm::vec3& normal, float u1, float v1, float u2, float v2) {
+        m_vertices.push_back({p1, normal, {u2 / tw, v1 / th}});
+        m_vertices.push_back({p2, normal, {u1 / tw, v1 / th}});
+        m_vertices.push_back({p3, normal, {u1 / tw, v2 / th}});
+        m_vertices.push_back({p1, normal, {u2 / tw, v1 / th}});
+        m_vertices.push_back({p3, normal, {u1 / tw, v2 / th}});
+        m_vertices.push_back({p4, normal, {u2 / tw, v2 / th}});
     };
 
     float f_w = (float)w;
     float f_h = (float)h;
     float f_d = (float)d;
 
-    // Front (facing -Z, front of player)
-    addQuad({x1, y1, z1}, {x2, y1, z1}, {x2, y2, z1}, {x1, y2, z1}, texU + f_d, texV + f_d, texU + f_d + f_w, texV + f_d + f_h);
-    // Back (facing +Z, back of player)
-    addQuad({x2, y1, z2}, {x1, y1, z2}, {x1, y2, z2}, {x2, y2, z2}, texU + f_d + f_w + f_d, texV + f_d, texU + f_d + f_w + f_d + f_w, texV + f_d + f_h);
-    // Top
-    addQuad({x2, y1, z1}, {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, texU + f_d, texV, texU + f_d + f_w, texV + f_d);
-    // Bottom
-    addQuad({x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1}, texU + f_d + f_w, texV, texU + f_d + f_w + f_w, texV + f_d);
-    // Right
-    addQuad({x1, y1, z1}, {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, texU, texV + f_d, texU + f_d, texV + f_d + f_h);
-    // Left
-    addQuad({x2, y1, z2}, {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, texU + f_d + f_w + f_d, texV + f_d, texU + f_d + f_w + f_d + f_w, texV + f_d + f_h);
+    // Front (facing -Z)
+    addQuad({x1, y1, z1}, {x2, y1, z1}, {x2, y2, z1}, {x1, y2, z1}, {0.0f, 0.0f, -1.0f}, texU + f_d, texV + f_d, texU + f_d + f_w, texV + f_d + f_h);
+    // Back (facing +Z)
+    addQuad({x2, y1, z2}, {x1, y1, z2}, {x1, y2, z2}, {x2, y2, z2}, {0.0f, 0.0f, 1.0f}, texU + f_d + f_w + f_d, texV + f_d, texU + f_d + f_w + f_d + f_w, texV + f_d + f_h);
+    // Top (facing +Y)
+    addQuad({x2, y1, z1}, {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {0.0f, 1.0f, 0.0f}, texU + f_d, texV, texU + f_d + f_w, texV + f_d);
+    // Bottom (facing -Y)
+    addQuad({x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1}, {0.0f, -1.0f, 0.0f}, texU + f_d + f_w, texV, texU + f_d + f_w + f_w, texV + f_d);
+    // Right (facing -X)
+    addQuad({x1, y1, z1}, {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {-1.0f, 0.0f, 0.0f}, texU, texV + f_d, texU + f_d, texV + f_d + f_h);
+    // Left (facing +X)
+    addQuad({x2, y1, z2}, {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {1.0f, 0.0f, 0.0f}, texU + f_d + f_w + f_d, texV + f_d, texU + f_d + f_w + f_d + f_w, texV + f_d + f_h);
 }
 
 void ModelRenderer::setRotationPoint(float x, float y, float z) {
@@ -75,6 +76,8 @@ void ModelRenderer::compile() {
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), (void*)offsetof(ModelVertex, position));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), (void*)offsetof(ModelVertex, normal));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), (void*)offsetof(ModelVertex, texCoord));
 
@@ -96,6 +99,7 @@ void ModelRenderer::render(Shader& shader, const glm::mat4& baseModel, float sca
     model = glm::scale(model, glm::vec3(scale, scale, scale));
 
     shader.setMat4("model", model);
+    shader.setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(model)));
     glVertexAttrib4f(2, 1.0f, 1.0f, 1.0f, 1.0f);
 
     glBindVertexArray(m_vao);

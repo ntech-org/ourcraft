@@ -8,6 +8,7 @@ struct Vertex {
     float x, y, z;
     float u, v;
     uint32_t color;
+    float nx, ny, nz;
 };
 
 class Tessellator {
@@ -30,6 +31,7 @@ public:
     void setColorRGBA(int r, int g, int b, int a = 255);
     void setColorOpaque(int r, int g, int b);
     void setColorOpaque_I(int color);
+    void setNormal(float nx, float ny, float nz);
     
     void setTranslation(double x, double y, double z);
     void disableColor();
@@ -48,6 +50,8 @@ private:
     uint32_t color = 0xFFFFFFFF;
     bool hasColor = false;
     bool hasTexture = false;
+    bool hasNormal = false;
+    float normalX = 0.0f, normalY = 1.0f, normalZ = 0.0f;
     bool isColorDisabled = false;
     bool isDrawing = false;
     
