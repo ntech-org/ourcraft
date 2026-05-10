@@ -428,6 +428,7 @@ void Minecraft::tick() {
         }
 
         m_player->onUpdate();
+        m_gameRenderer->updateItemEquippedProgress();
         m_gameRenderer->getRenderEngine().updateTextureFX();
         if (m_networkHandler) {
             m_networkHandler->sendPlayerPosition(*m_player);

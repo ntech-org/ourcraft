@@ -26,6 +26,7 @@ public:
     void render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps, std::shared_ptr<GuiScreen> currentScreen = nullptr);
     void resize(int width, int height);
     void setBlockBreakingOverlay(bool active, int x, int y, int z, float progress);
+    void updateItemEquippedProgress();
 
     struct ProfilerResult {
         double frameTime = 0;
@@ -58,6 +59,7 @@ private:
     void renderSelectionBox(const glm::mat4& projection, const glm::mat4& view);
     void renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode, const glm::vec3& fogColor);
     void renderFirstPersonArm(float partialTicks, const glm::mat4& projection);
+    void renderThirdPersonHeldItem(class EntityPlayer* player, float partialTicks, const glm::mat4& modelMat);
 
     void renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode);
     void renderHUD();
@@ -102,4 +104,8 @@ private:
     int m_breakOverlayY = 0;
     int m_breakOverlayZ = 0;
     float m_breakOverlayProgress = 0.0f;
+
+    float m_equippedProgress = 0.0f;
+    float m_prevEquippedProgress = 0.0f;
+    int m_itemToRenderID = -1;
 };

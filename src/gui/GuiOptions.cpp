@@ -54,7 +54,7 @@ void GuiOptions::actionPerformed(GuiButton* button) {
 
         // Trigger resize to update scaled resolution
         int w, h;
-        SDL_GetWindowSize(mc->getWindow(), &w, &h);
+        SDL_GetWindowSizeInPixels(mc->getWindow(), &w, &h);
         mc->getGameRenderer().resize(w, h);
         this->setWorldAndResolution(mc, mc->getGameRenderer().getScaledWidth(), mc->getGameRenderer().getScaledHeight());
     }

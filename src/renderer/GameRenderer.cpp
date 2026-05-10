@@ -190,6 +190,10 @@ GameRenderer::GameRenderer(SDL_Window* window, World& world, EntityPlayer& playe
 
     m_renderEngine = std::make_unique<RenderEngine>();
 
+    m_equippedProgress = 1.0f;
+    m_prevEquippedProgress = 1.0f;
+    m_itemToRenderID = m_player.inventory.getCurrentItemID();
+
     m_worldRenderer = std::make_unique<WorldRenderer>(m_world);
     m_skyRenderer = std::make_unique<SkyRenderer>(*m_renderEngine);
 
@@ -367,6 +371,23 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     m_profiler.historyIndex = (m_profiler.historyIndex + 1) % 128;
 }
 
+void GameRenderer::updateItemEquippedProgress() {
+    m_prevEquippedProgress = m_equippedProgress;
+    
+    int currentID = m_player.inventory.getCurrentItemID();
+    float speed = 0.4f;
+    float target = (currentID == m_itemToRenderID) ? 1.0f : 0.0f;
+    float delta = target - m_equippedProgress;
+    
+    if (delta < -speed) delta = -speed;
+    if (delta > speed) delta = speed;
+    
+    m_equippedProgress += delta;
+    
+    if (m_equippedProgress < 0.1f) {
+        m_itemToRenderID = currentID;
+    }
+}
 void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening) {
     m_basicShader->use();
     m_basicShader->setMat4("projection", projection);
@@ -640,8 +661,9 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
             if (living->isSwinging) swing = ((float)living->swingProgressInt + pTicks) / 8.0f;
         }
 
-        if (dynamic_cast<EntityPlayer*>(entity)) {
+        if (auto player = dynamic_cast<EntityPlayer*>(entity)) {
             m_playerModel->render(*m_entityShader, modelMat, limbSwing, limbSwingAmount, (float)((double)SDL_GetTicksNS() / 1e9), netHeadYaw, -headPitch, 0.0625f, swing);
+            renderThirdPersonHeldItem(player, pTicks, modelMat);
         } else {
             m_zombieModel->render(*m_entityShader, modelMat, limbSwing, limbSwingAmount, (float)((double)SDL_GetTicksNS() / 1e9), netHeadYaw, -headPitch, 0.0625f, swing);
         }
@@ -656,6 +678,68 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
     }
 }
 
+void GameRenderer::renderThirdPersonHeldItem(EntityPlayer* player, float partialTicks, const glm::mat4& modelMat) {
+    const ItemStack& stack = player->inventory.getCurrentStack();
+    if (stack.isEmpty()) return;
+
+    glm::mat4 heldMat = modelMat;
+    
+    // bipedRightArm rotation point is (-5, 2, 0) in model space
+    heldMat = glm::translate(heldMat, glm::vec3(-5.0f / 16.0f, 2.0f / 16.0f, 0.0f));
+    
+    heldMat = glm::rotate(heldMat, m_playerModel->bipedRightArm->rotateAngleZ, glm::vec3(0.0f, 0.0f, 1.0f));
+    heldMat = glm::rotate(heldMat, m_playerModel->bipedRightArm->rotateAngleY, glm::vec3(0.0f, 1.0f, 0.0f));
+    heldMat = glm::rotate(heldMat, m_playerModel->bipedRightArm->rotateAngleX, glm::vec3(1.0f, 0.0f, 0.0f));
+    
+    heldMat = glm::translate(heldMat, glm::vec3(0.0f, 0.45f, 0.0f)); 
+    
+    const bool isBlock = isInventoryBlockModel(stack.itemID);
+    if (isBlock) {
+        heldMat = glm::translate(heldMat, glm::vec3(0.0f, 0.1875f, -0.3125f));
+        heldMat = glm::rotate(heldMat, glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        heldMat = glm::rotate(heldMat, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        float s = 0.375f;
+        heldMat = glm::scale(heldMat, glm::vec3(s, -s, s));
+        
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
+        m_entityShader->setMat4("model", heldMat);
+        m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
+        
+        Tessellator* t = Tessellator::instance;
+        Block* block = Block::blocksList[stack.itemID];
+        static constexpr float kFaceShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
+        t->startDrawingQuads();
+        for (int side = 0; side < 6; ++side) {
+            int tex = block->getTexture(side);
+            float u0 = (float)((tex & 15) << 4) / 256.0f;
+            float v0 = (float)((tex & 240)) / 256.0f;
+            FaceUV uv = {u0, v0, u0 + 16.0f / 256.0f, v0 + 16.0f / 256.0f};
+            addFace(t, side, uv, kFaceShade[side]);
+        }
+        t->draw();
+    } else {
+        heldMat = glm::translate(heldMat, glm::vec3(0.0f, 0.1875f, 0.0f));
+        float s = 0.4f;
+        heldMat = glm::scale(heldMat, glm::vec3(s, s, s));
+        heldMat = glm::rotate(heldMat, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        heldMat = glm::rotate(heldMat, glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        
+        int tex = getItemIconTexture(stack.itemID);
+        float u0 = (float)((tex & 15) << 4) / 256.0f;
+        float v0 = (float)((tex & 240)) / 256.0f;
+        FaceUV uv = {u0, v0, u0 + 16.0f / 256.0f, v0 + 16.0f / 256.0f};
+
+        m_renderEngine->bindTexture(m_renderEngine->getTexture(stack.itemID < 256 ? "/terrain.png" : "/gui/items.png"));
+        m_entityShader->setMat4("model", heldMat);
+        m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
+
+        Tessellator* t = Tessellator::instance;
+        t->startDrawingQuads();
+        t->setColorOpaque(255, 255, 255);
+        renderFlatHeldItem(t, uv);
+        t->draw();
+    }
+}
 void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& projection) {
     glClear(GL_DEPTH_BUFFER_BIT);
     m_entityShader->use();
@@ -676,110 +760,107 @@ void GameRenderer::renderFirstPersonArm(float partialTicks, const glm::mat4& pro
         float blockVar2 = 1.0f - std::clamp((float)block, 0.0f, 15.0f) / 15.0f;
         float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
         return std::max(skyBr * m_world.getDaylightStrength(), blockBr);
-
     };
 
     m_entityShader->setVec3("colorTint", glm::vec3(getEntityBrightness(m_player.posX, m_player.posY, m_player.posZ)));
-
-    m_renderEngine->bindTexture(m_renderEngine->getTexture("/char.png"));
-
-    glm::mat4 armBase = glm::mat4(1.0f);
 
     float bobDist = m_player.prevDistanceWalkedModified + (m_player.distanceWalkedModified - m_player.prevDistanceWalkedModified) * partialTicks;
     float bobStr = m_player.prevCameraYaw + (m_player.cameraYaw - m_player.prevCameraYaw) * partialTicks;
     float bobPitch = m_player.prevCameraPitch + (m_player.cameraPitch - m_player.prevCameraPitch) * partialTicks;
 
-    armBase = glm::translate(armBase, glm::vec3(std::sin(bobDist * glm::pi<float>()) * bobStr * 0.5f, -std::abs(std::cos(bobDist * glm::pi<float>()) * bobStr), 0.0f));
-    armBase = glm::rotate(armBase, glm::radians(std::sin(bobDist * glm::pi<float>()) * bobStr * 3.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    armBase = glm::rotate(armBase, glm::radians(std::abs(std::cos(bobDist * glm::pi<float>() + 0.2f) * bobStr) * 5.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    armBase = glm::rotate(armBase, glm::radians(bobPitch), glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::mat4 baseBobMat = glm::mat4(1.0f);
+    baseBobMat = glm::translate(baseBobMat, glm::vec3(std::sin(bobDist * glm::pi<float>()) * bobStr * 0.5f, -std::abs(std::cos(bobDist * glm::pi<float>()) * bobStr), 0.0f));
+    baseBobMat = glm::rotate(baseBobMat, glm::radians(std::sin(bobDist * glm::pi<float>()) * bobStr * 3.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    baseBobMat = glm::rotate(baseBobMat, glm::radians(std::abs(std::cos(bobDist * glm::pi<float>() + 0.2f) * bobStr) * 5.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    baseBobMat = glm::rotate(baseBobMat, glm::radians(bobPitch), glm::vec3(1.0f, 0.0f, 0.0f));
 
+    float eqProgress = m_prevEquippedProgress + (m_equippedProgress - m_prevEquippedProgress) * partialTicks;
     float swingProgress = m_player.isSwinging ? ((float)m_player.swingProgressInt + partialTicks) / 8.0f : 0.0f;
-    if (swingProgress > 0.0f) {
-        float f1 = std::sin(std::sqrt(swingProgress) * glm::pi<float>());
-        armBase = glm::translate(armBase, glm::vec3(-f1 * 0.3f, std::sin(std::sqrt(swingProgress) * glm::pi<float>() * 2.0f) * 0.4f, -std::sin(swingProgress * glm::pi<float>()) * 0.4f));
-    }
 
-    armBase = glm::translate(armBase, glm::vec3(0.64f, -0.6f, -0.72f));
-    armBase = glm::rotate(armBase, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    if (swingProgress > 0.0f) {
-        armBase = glm::rotate(armBase, glm::radians(std::sin(std::sqrt(swingProgress) * glm::pi<float>()) * 70.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        armBase = glm::rotate(armBase, glm::radians(-std::sin(swingProgress * swingProgress * glm::pi<float>()) * 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    }
-
-    armBase = glm::translate(armBase, glm::vec3(-1.0f, 3.6f, 3.5f));
-    armBase = glm::rotate(armBase, glm::radians(120.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    armBase = glm::rotate(armBase, glm::radians(200.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    armBase = glm::rotate(armBase, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    armBase = glm::translate(armBase, glm::vec3(5.6f, 0.0f, 0.0f));
-
-    const ItemStack& stack = m_player.inventory.getCurrentStack();
-    if (stack.isEmpty()) {
-        m_playerModel->renderFirstPersonArm(*m_entityShader, armBase, 0.0625f);
-        return;
-    }
-
-    glDisable(GL_CULL_FACE);
-    glm::mat4 heldMat = glm::mat4(1.0f);
-    heldMat = glm::translate(heldMat, glm::vec3(std::sin(bobDist * glm::pi<float>()) * bobStr * 0.5f, -std::abs(std::cos(bobDist * glm::pi<float>()) * bobStr), 0.0f));
-    heldMat = glm::rotate(heldMat, glm::radians(std::sin(bobDist * glm::pi<float>()) * bobStr * 3.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    heldMat = glm::rotate(heldMat, glm::radians(std::abs(std::cos(bobDist * glm::pi<float>() + 0.2f) * bobStr) * 5.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    heldMat = glm::rotate(heldMat, glm::radians(bobPitch), glm::vec3(1.0f, 0.0f, 0.0f));
-    float var5 = 0.8f;
-    if (swingProgress > 0.0f) {
-        float var6 = ((float)m_player.swingProgressInt + partialTicks) / 8.0f;
-        float var7 = std::sin(var6 * glm::pi<float>());
-        float var8 = std::sin(std::sqrt(var6) * glm::pi<float>());
-        heldMat = glm::translate(heldMat, glm::vec3(-var8 * 0.4f, std::sin(std::sqrt(var6) * glm::pi<float>() * 2.0f) * 0.2f, -var7 * 0.2f));
-    }
-
-    heldMat = glm::translate(heldMat, glm::vec3(0.7f * var5, -0.65f * var5, -0.9f * var5));
-    heldMat = glm::rotate(heldMat, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    heldMat = glm::rotate(heldMat, glm::radians(-6.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    if (swingProgress > 0.0f) {
-        float var6 = ((float)m_player.swingProgressInt + partialTicks) / 8.0f;
-        float var7 = std::sin(var6 * var6 * glm::pi<float>());
-        float var8 = std::sin(std::sqrt(var6) * glm::pi<float>());
-        heldMat = glm::rotate(heldMat, glm::radians(-var7 * 20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        heldMat = glm::rotate(heldMat, glm::radians(-var8 * 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        heldMat = glm::rotate(heldMat, glm::radians(-var8 * 80.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    }
-
-    heldMat = glm::scale(heldMat, glm::vec3(0.4f, 0.4f, 0.4f));
-    const bool isBlockItem = isInventoryBlockModel(stack.itemID);
-    if (isBlockItem) {
-        m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
-        m_entityShader->setMat4("model", heldMat);
-        m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
-
-        Tessellator* t = Tessellator::instance;
-        Block* block = Block::blocksList[stack.itemID];
-        static constexpr float kFaceShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
-        t->startDrawingQuads();
-        for (int side = 0; side < 6; ++side) {
-            addFace(t, side, getTextureUV(block->getTexture(side)), kFaceShade[side]);
+    if (m_itemToRenderID <= 0) {
+        m_renderEngine->bindTexture(m_renderEngine->getTexture("/char.png"));
+        glm::mat4 armMat = baseBobMat;
+        float var5 = 0.8f;
+        if (swingProgress > 0.0f) {
+            float f1 = std::sin(swingProgress * glm::pi<float>());
+            float f2 = std::sin(std::sqrt(swingProgress) * glm::pi<float>());
+            armMat = glm::translate(armMat, glm::vec3(-f2 * 0.3f, std::sin(std::sqrt(swingProgress) * glm::pi<float>() * 2.0f) * 0.4f, -f1 * 0.4f));
         }
-        t->draw();
-    } else {
-        heldMat = glm::translate(heldMat, glm::vec3(0.0f, -0.3f, 0.08f));
-        heldMat = glm::scale(heldMat, glm::vec3(1.5f, 1.5f, 1.5f));
-        heldMat = glm::rotate(heldMat, glm::radians(50.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        heldMat = glm::rotate(heldMat, glm::radians(335.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        heldMat = glm::translate(heldMat, glm::vec3(-(15.0f / 16.0f), -(1.0f / 16.0f), 0.0f));
-        m_entityShader->setMat4("model", heldMat);
-        m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
 
-        Tessellator* t = Tessellator::instance;
-        const int tex = getItemIconTexture(stack.itemID);
-        const FaceUV uv = getTextureUV(tex);
-        m_renderEngine->bindTexture(m_renderEngine->getTexture(stack.itemID < 256 ? "/terrain.png" : "/gui/items.png"));
-        t->startDrawingQuads();
-        t->setColorOpaque(255, 255, 255);
-        renderFlatHeldItem(t, uv);
-        t->draw();
+        armMat = glm::translate(armMat, glm::vec3(0.8f * var5, -0.75f * var5 - (1.0f - eqProgress) * 0.6f, -0.9f * var5));
+        armMat = glm::rotate(armMat, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        if (swingProgress > 0.0f) {
+            float f2 = std::sin(std::sqrt(swingProgress) * glm::pi<float>());
+            float f3 = std::sin(swingProgress * swingProgress * glm::pi<float>());
+            armMat = glm::rotate(armMat, glm::radians(f2 * 70.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            armMat = glm::rotate(armMat, glm::radians(-f3 * 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        }
+
+        armMat = glm::translate(armMat, glm::vec3(-1.0f, 3.6f, 3.5f));
+        armMat = glm::rotate(armMat, glm::radians(120.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        armMat = glm::rotate(armMat, glm::radians(200.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        armMat = glm::rotate(armMat, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        armMat = glm::translate(armMat, glm::vec3(5.6f, 0.0f, 0.0f));
+
+        m_playerModel->renderFirstPersonArm(*m_entityShader, armMat, 0.0625f);
+    } else {
+        // 2. Render Held Item/Block
+        glDisable(GL_CULL_FACE);
+        glm::mat4 heldMat = baseBobMat;
+        float var5 = 0.8f;
+        if (swingProgress > 0.0f) {
+            float var7 = std::sin(swingProgress * glm::pi<float>());
+            float var8 = std::sin(std::sqrt(swingProgress) * glm::pi<float>());
+            heldMat = glm::translate(heldMat, glm::vec3(-var8 * 0.4f, std::sin(std::sqrt(swingProgress) * glm::pi<float>() * 2.0f) * 0.2f, -var7 * 0.2f));
+        }
+
+        heldMat = glm::translate(heldMat, glm::vec3(0.7f * var5, -0.65f * var5 - (1.0f - eqProgress) * 0.6f, -0.9f * var5));
+        heldMat = glm::rotate(heldMat, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        if (swingProgress > 0.0f) {
+            float var7 = std::sin(swingProgress * swingProgress * glm::pi<float>());
+            float var8 = std::sin(std::sqrt(swingProgress) * glm::pi<float>());
+            heldMat = glm::rotate(heldMat, glm::radians(-var7 * 20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            heldMat = glm::rotate(heldMat, glm::radians(-var8 * 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+            heldMat = glm::rotate(heldMat, glm::radians(-var8 * 80.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+
+        heldMat = glm::scale(heldMat, glm::vec3(0.4f, 0.4f, 0.4f));
+        const bool isBlockItem = isInventoryBlockModel(m_itemToRenderID);
+        if (isBlockItem) {
+            m_renderEngine->bindTexture(m_renderEngine->getTexture("/terrain.png"));
+            m_entityShader->setMat4("model", heldMat);
+            m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
+
+            Tessellator* t = Tessellator::instance;
+            Block* block = Block::blocksList[m_itemToRenderID];
+            static constexpr float kFaceShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
+            t->startDrawingQuads();
+            for (int side = 0; side < 6; ++side) {
+                addFace(t, side, getTextureUV(block->getTexture(side)), kFaceShade[side]);
+            }
+            t->draw();
+        } else {
+            heldMat = glm::translate(heldMat, glm::vec3(0.0f, -0.3f, 0.08f));
+            heldMat = glm::scale(heldMat, glm::vec3(1.5f, 1.5f, 1.5f));
+            heldMat = glm::rotate(heldMat, glm::radians(50.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            heldMat = glm::rotate(heldMat, glm::radians(335.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+            heldMat = glm::translate(heldMat, glm::vec3(-(15.0f / 16.0f), -(1.0f / 16.0f), 0.0f));
+            m_entityShader->setMat4("model", heldMat);
+            m_entityShader->setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
+
+            Tessellator* t = Tessellator::instance;
+            const int tex = getItemIconTexture(m_itemToRenderID);
+            const FaceUV uv = getTextureUV(tex);
+            m_renderEngine->bindTexture(m_renderEngine->getTexture(m_itemToRenderID < 256 ? "/terrain.png" : "/gui/items.png"));
+            t->startDrawingQuads();
+            t->setColorOpaque(255, 255, 255);
+            renderFlatHeldItem(t, uv);
+            t->draw();
+        }
+        glEnable(GL_CULL_FACE);
     }
-    glEnable(GL_CULL_FACE);
 }
+
 
 void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode) {
     glDisable(GL_DEPTH_TEST);
