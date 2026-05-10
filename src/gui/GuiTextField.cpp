@@ -1,5 +1,5 @@
 #include "gui/GuiTextField.hpp"
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #include "Minecraft.hpp"
 
 GuiTextField::GuiTextField(int id, int x, int y, int width, int height)
@@ -22,27 +22,34 @@ std::string GuiTextField::getText() const {
 
 void GuiTextField::setFocused(bool focused) {
     m_isFocused = focused;
+    if (m_isFocused) {
+        SDL_StartTextInput(SDL_GetKeyboardFocus());
+    } else {
+        SDL_StopTextInput(SDL_GetKeyboardFocus());
+    }
 }
 
 bool GuiTextField::isFocused() const {
     return m_isFocused;
 }
 
-void GuiTextField::keyTyped(int key, int scancode, int action, int mods) {
-    if (!m_isFocused || action == GLFW_RELEASE) return;
+void GuiTextField::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
+    if (!m_isFocused || !down) return;
 
-    if (key == GLFW_KEY_BACKSPACE) {
+    if (key == SDLK_BACKSPACE) {
         if (!m_text.empty()) {
             m_text.pop_back();
         }
     } else if (m_text.length() < (size_t)maxStringLength) {
-        // Simple character handling for ASCII/IP addresses
-        // In a real implementation we'd use glfwSetCharCallback
-        bool shift = (mods & GLFW_MOD_SHIFT);
-        char c = 0;
+        // In SDL3, we should use SDL_EVENT_TEXT_INPUT for actual characters,
+        // but for basic IP addresses/ASCII we can still map keycodes.
+        // Let's implement a very basic mapping for now to keep it similar to the original.
         
-        if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
-            c = '0' + (key - GLFW_KEY_0);
+        char c = 0;
+        const bool shift = SDL_GetModState() & SDL_KMOD_SHIFT;
+
+        if (key >= SDLK_0 && key <= SDLK_9) {
+            c = '0' + (key - SDLK_0);
             if (shift) {
                 if (c == '0') c = ')';
                 else if (c == '1') c = '!';
@@ -55,13 +62,13 @@ void GuiTextField::keyTyped(int key, int scancode, int action, int mods) {
                 else if (c == '8') c = '*';
                 else if (c == '9') c = '(';
             }
-        } else if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
-            c = (shift ? 'A' : 'a') + (key - GLFW_KEY_A);
-        } else if (key == GLFW_KEY_PERIOD) {
+        } else if (key >= SDLK_A && key <= SDLK_Z) {
+            c = (shift ? 'A' : 'a') + (key - SDLK_A);
+        } else if (key == SDLK_PERIOD) {
             c = shift ? '>' : '.';
-        } else if (key == GLFW_KEY_MINUS) {
+        } else if (key == SDLK_MINUS) {
             c = shift ? '_' : '-';
-        } else if (key == GLFW_KEY_SEMICOLON) {
+        } else if (key == SDLK_SEMICOLON) {
             c = shift ? ':' : ';';
         }
 
@@ -79,7 +86,6 @@ void GuiTextField::mouseClicked(int mouseX, int mouseY, int button) {
 void GuiTextField::drawTextField(Minecraft* mc, Font& font, Shader& shader) {
     if (!visible) return;
 
-    // Draw border and background (using uiShader)
     shader.use();
     drawRect(shader, (float)x - 1, (float)y - 1, (float)x + (float)width + 1, (float)y + (float)height + 1, 0xFFA0A0A0);
     drawRect(shader, (float)x, (float)y, (float)x + (float)width, (float)y + (float)height, 0xFF000000);

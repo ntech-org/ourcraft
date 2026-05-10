@@ -17,15 +17,41 @@ void GuiScreen::drawCenteredString(Font& font, Shader& shader, const std::string
     Gui::drawCenteredString(font, mc->getGameRenderer().getTextShader(), text, x, y, color);
 }
 
+void GuiScreen::handleEvent(const SDL_Event& event) {
+    if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+        keyTyped(event.key.key, event.key.scancode, event.type == SDL_EVENT_KEY_DOWN);
+    } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+        // Handle text input if needed (e.g. for text fields)
+    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        float mx = (float)event.button.x;
+        float my = (float)event.button.y;
+        
+        int ww, wh, fw, fh;
+        SDL_GetWindowSize(mc->getWindow(), &ww, &wh);
+        SDL_GetWindowSizeInPixels(mc->getWindow(), &fw, &fh);
 
-void GuiScreen::keyTyped(int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        mc->displayGuiScreen(nullptr);
+        mx *= (float)fw / (float)ww;
+        my *= (float)fh / (float)wh;
+
+        mx /= (float)mc->getGameRenderer().getGuiScale();
+        my /= (float)mc->getGameRenderer().getGuiScale();
+
+        mouseClicked((int)mx, (int)my, event.button.button);
+    }
+}
+
+void GuiScreen::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
+    if (key == SDLK_ESCAPE && down) {
+        if (parentScreen) {
+            mc->displayGuiScreen(parentScreen);
+        } else if (mc->getGameState() != GameState::MainMenu) {
+            mc->displayGuiScreen(nullptr);
+        }
     }
 }
 
 void GuiScreen::mouseClicked(int mouseX, int mouseY, int button) {
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    if (button == SDL_BUTTON_LEFT) {
         for (size_t i = 0; i < controlList.size(); ++i) {
             if (controlList[i]->mousePressed(mouseX, mouseY)) {
                 actionPerformed(controlList[i].get());
@@ -52,7 +78,7 @@ void GuiScreen::drawDefaultBackground() {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     int sw, sh;
-    glfwGetFramebufferSize(mc->getWindow(), &sw, &sh);
+    SDL_GetWindowSizeInPixels(mc->getWindow(), &sw, &sh);
     mc->getFont().setDisplayContext(sw, sh, (float)mc->getGameRenderer().getGuiScale());
 
     glm::mat4 projection = glm::ortho(0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f);
@@ -86,9 +112,11 @@ void GuiScreen::drawDefaultBackground() {
 }
 
 bool GuiScreen::isCtrlKeyDown() {
-    return false; // Implement later if needed using mc->window
+    const bool* state = SDL_GetKeyboardState(nullptr);
+    return state[SDL_SCANCODE_LCTRL] || state[SDL_SCANCODE_RCTRL];
 }
 
 bool GuiScreen::isShiftKeyDown() {
-    return false; // Implement later if needed using mc->window
+    const bool* state = SDL_GetKeyboardState(nullptr);
+    return state[SDL_SCANCODE_LSHIFT] || state[SDL_SCANCODE_RSHIFT];
 }

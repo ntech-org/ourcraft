@@ -1,18 +1,21 @@
 #pragma once
+
 #include "gui/GuiScreen.hpp"
 #include "gui/GuiTextField.hpp"
+#include <memory>
 
 class GuiMultiplayer : public GuiScreen {
 public:
     GuiMultiplayer(std::shared_ptr<GuiScreen> parent);
-    virtual ~GuiMultiplayer() = default;
 
     void initGui() override;
     void updateScreen() override;
     void drawScreen(int mouseX, int mouseY, float partialTicks) override;
-    void actionPerformed(GuiButton* button) override;
-    void keyTyped(int key, int scancode, int action, int mods) override;
+    void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) override;
     void mouseClicked(int mouseX, int mouseY, int button) override;
+
+protected:
+    void actionPerformed(GuiButton* button) override;
 
 private:
     std::shared_ptr<GuiScreen> m_parent;

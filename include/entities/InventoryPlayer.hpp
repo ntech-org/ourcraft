@@ -11,6 +11,21 @@ struct ItemStack {
     bool isEmpty() const {
         return itemID == 0 || count <= 0;
     }
+
+    bool isItemEqual(const ItemStack& other) const {
+        return itemID == other.itemID && metadata == other.metadata;
+    }
+
+    ItemStack splitStack(int amount) {
+        ItemStack split = {itemID, amount, metadata};
+        count -= amount;
+        if (count <= 0) {
+            itemID = 0;
+            count = 0;
+            metadata = 0;
+        }
+        return split;
+    }
 };
 
 class InventoryPlayer {

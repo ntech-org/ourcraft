@@ -1,12 +1,14 @@
 #include "entities/EntityItem.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 
 EntityItem::EntityItem(World& world, int itemIDIn, int countIn, uint8_t metadataIn)
     : Entity(world), itemID(itemIDIn), count(countIn), metadata(metadataIn) {
     setSize(0.25f, 0.25f);
     yOffset = 0.125f;
+    hoverStart = (float)std::rand() / (float)RAND_MAX * 6.28318530718f;
 }
 
 void EntityItem::onUpdate() {
@@ -16,6 +18,10 @@ void EntityItem::onUpdate() {
         --pickupDelay;
     }
     ++age;
+
+    if (!handlePhysics) {
+        return;
+    }
 
     motionY -= 0.04;
     moveEntity(motionX, motionY, motionZ);
@@ -27,6 +33,6 @@ void EntityItem::onUpdate() {
     if (onGround) {
         motionX *= 0.7;
         motionZ *= 0.7;
-        motionY *= -0.5;
+        motionY = 0.0;
     }
 }

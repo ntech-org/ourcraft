@@ -1,18 +1,16 @@
 #pragma once
 
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #include "entities/EntityPlayer.hpp"
 #include "util/GameSettings.hpp"
 
 class InputHandler {
 public:
-    InputHandler(GLFWwindow* window, EntityPlayer& player, GameSettings& settings);
+    InputHandler(SDL_Window* window, EntityPlayer& player, GameSettings& settings);
 
     void update();
-    void handleKey(int key, int scancode, int action, int mods);
-    void handleMouse(double xpos, double ypos);
-    void handleMouseButton(int button, int action, int mods);
-    void handleScroll(double xoffset, double yoffset);
+    void handleEvent(const SDL_Event& event);
+    void releaseAllButtons() { m_leftMousePressed = false; m_rightMousePressed = false; m_leftClick = false; m_rightClick = false; }
 
     bool isDebugVisible() const { return m_showDebug; }
 
@@ -29,13 +27,9 @@ public:
     bool isEscPressed() { bool r = m_escPressed; m_escPressed = false; return r; }
 
 private:
-    GLFWwindow* m_window;
+    SDL_Window* m_window;
     EntityPlayer& m_player;
     GameSettings& m_settings;
-
-    bool m_firstMouse = true;
-    float m_lastX = 0.0f;
-    float m_lastY = 0.0f;
 
     bool m_showDebug = false;
     bool m_showChunkBoundaries = false;
@@ -43,23 +37,13 @@ private:
     bool m_reloadChunks = false;
     int m_cameraMode = 0; // 0 = 1st person, 1 = 3rd person back, 2 = 3rd person front
     
-    bool m_f3Pressed = false;
-    bool m_f5Pressed = false;
-    bool m_f4Pressed = false;
-    bool m_tPressed = false;
-    bool m_yPressed = false;
-    bool m_gPressed = false;
-    bool m_pPressed = false;
-    bool m_aPressed = false;
     bool m_leftMousePressed = false;
     bool m_rightMousePressed = false;
     bool m_leftClick = false;
     bool m_rightClick = false;
     bool m_escPressed = false;
-    bool m_escWasPressed = false; // To handle press/release
-    bool m_ePressed = false;
     bool m_inventoryPressed = false;
 
-    bool m_spacePressed = false;
     int m_spaceTapTicks = 0;
+    bool m_spaceHeld = false;
 };

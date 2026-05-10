@@ -1,7 +1,7 @@
 #pragma once
 
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #include <memory>
 #include <glm/glm.hpp>
 
@@ -20,7 +20,7 @@ class GuiScreen;
 
 class GameRenderer {
 public:
-    GameRenderer(GLFWwindow* window, World& world, EntityPlayer& player);
+    GameRenderer(SDL_Window* window, World& world, EntityPlayer& player);
     ~GameRenderer();
 
     void render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps, std::shared_ptr<GuiScreen> currentScreen = nullptr);
@@ -66,7 +66,7 @@ private:
     void drawTexturedModalRect(float x, float y, int u, int v, int width, int height);
 
 
-    GLFWwindow* m_window;
+    SDL_Window* m_window;
 
     World& m_world;
     EntityPlayer& m_player;

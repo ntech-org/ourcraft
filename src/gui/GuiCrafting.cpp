@@ -2,7 +2,7 @@
 #include "Minecraft.hpp"
 #include "inventory/CraftingManager.hpp"
 #include "renderer/RenderEngine.hpp"
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 GuiCrafting::GuiCrafting() {
 }
@@ -69,19 +69,23 @@ void GuiCrafting::mouseClicked(int mouseX, int mouseY, int button) {
 
     int craftSlot = getCraftingSlotFromMouse(left, top, mouseX, mouseY);
     if (craftSlot >= 0) {
-        handleClickOnSlot(mc->getPlayer().inventory, craftSlot, button == GLFW_MOUSE_BUTTON_RIGHT);
+        handleClickOnSlot(mc->getPlayer().inventory, craftSlot, button == SDL_BUTTON_RIGHT);
     } else {
         int invSlot = getSlotFromMouse(left, top, mouseX, mouseY);
         if (invSlot >= 0) {
-            handleClickOnSlot(mc->getPlayer().inventory, invSlot, button == GLFW_MOUSE_BUTTON_RIGHT);
+            handleClickOnSlot(mc->getPlayer().inventory, invSlot, button == SDL_BUTTON_RIGHT);
         }
     }
 }
 
-void GuiCrafting::keyTyped(int key, int scancode, int action, int mods) {
-    if (action != GLFW_PRESS) return;
-    if (key == GLFW_KEY_E || key == GLFW_KEY_ESCAPE) {
-        mc->displayGuiScreen(nullptr);
+void GuiCrafting::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
+    if (!down) return;
+    if (key == SDLK_E || key == SDLK_ESCAPE) {
+        if (parentScreen) {
+            mc->displayGuiScreen(parentScreen);
+        } else if (mc->getGameState() != GameState::MainMenu) {
+            mc->displayGuiScreen(nullptr);
+        }
         return;
     }
 }

@@ -33,7 +33,7 @@ void GuiOptions::drawScreen(int mouseX, int mouseY, float partialTicks) {
     Shader& uiShader = mc->getGameRenderer().getUIShader();
     Shader& textShader = mc->getGameRenderer().getTextShader();
     Font& font = mc->getFont();
-    
+
     glDisable(GL_DEPTH_TEST);
     drawCenteredString(font, textShader, "Options", (float)width / 2, 20, 0xFFFFFFFF);
     GuiScreen::drawScreen(mouseX, mouseY, partialTicks);
@@ -51,10 +51,10 @@ void GuiOptions::actionPerformed(GuiButton* button) {
         if (mc->getSettings().guiScale == 0) scaleText += "Auto";
         else scaleText += std::to_string(mc->getSettings().guiScale);
         button->text = scaleText;
-        
+
         // Trigger resize to update scaled resolution
         int w, h;
-        glfwGetFramebufferSize(glfwGetCurrentContext(), &w, &h);
+        SDL_GetWindowSize(mc->getWindow(), &w, &h);
         mc->getGameRenderer().resize(w, h);
         this->setWorldAndResolution(mc, mc->getGameRenderer().getScaledWidth(), mc->getGameRenderer().getScaledHeight());
     }

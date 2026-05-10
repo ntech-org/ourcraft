@@ -556,7 +556,7 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
                 auto item = std::make_unique<EntityItem>(*m_world, oldID, 1, oldMeta);
                 item->setPosition(packet.x + 0.5, packet.y + 0.35, packet.z + 0.5);
                 item->motionX = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.1;
-                item->motionY = 0.18 + ((double)(std::rand() % 1000) / 1000.0) * 0.05;
+                item->motionY = 0.0;
                 item->motionZ = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.1;
                 item->pickupDelay = 6;
                 m_world->spawnEntity(std::move(item));

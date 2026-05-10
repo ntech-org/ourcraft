@@ -1,6 +1,6 @@
 #include "gui/GuiSlider.hpp"
 #include "Minecraft.hpp"
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 GuiSlider::GuiSlider(int id, int x, int y, float value, const std::string& prefix, std::function<void(float)> callback)
     : GuiButton(id, x, y, 200, 20, ""), sliderValue(value), prefix(prefix), onValueChange(callback) {
@@ -18,9 +18,10 @@ void GuiSlider::updateText() {
 void GuiSlider::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX, int mouseY) {
     if (!visible) return;
 
-    GLFWwindow* window = mc->getWindow();
     if (dragging) {
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE) {
+        float mx, my;
+        const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&mx, &my);
+        if (!(buttons & SDL_BUTTON_LMASK)) {
             dragging = false;
         } else {
             sliderValue = (float)(mouseX - (x + 4)) / (float)(width - 8);
@@ -61,4 +62,3 @@ bool GuiSlider::mousePressed(int mouseX, int mouseY) {
     }
     return false;
 }
-

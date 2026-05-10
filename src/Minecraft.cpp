@@ -11,6 +11,7 @@
 #include "gui/GuiConnecting.hpp"
 #include "gui/GuiLoading.hpp"
 #include "items/ItemFood.hpp"
+#include "entities/EntityItem.hpp"
 #include "gui/GuiCrafting.hpp"
 #include <iostream>
 #include <fstream>
@@ -20,7 +21,7 @@
 #include <thread>
 #include <stdexcept>
 
-Minecraft::Minecraft(GLFWwindow* window, int width, int height)
+Minecraft::Minecraft(SDL_Window* window, int width, int height)
     : m_window(window), m_width(width), m_height(height), m_timer(20.0f)
 {
     if (FT_Init_FreeType(&m_ft)) {
@@ -87,7 +88,6 @@ void Minecraft::saveAndQuit() {
     if (m_networkHandler) m_networkHandler->stopServer();
     m_networkHandler.reset();
 
-    // Re-initialize client to clean state
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
     m_player = std::make_unique<EntityPlayer>(*m_world);
@@ -106,9 +106,6 @@ void Minecraft::saveAndQuit() {
 }
 
 void Minecraft::startSingleplayer() {
-    // In case we were already in a world, the above ensures we are clean.
-    // Note: World/Renderer/Player are already initialized by init() or saveAndQuit().
-
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
     m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
         if (m_gameState != GameState::MainMenu) {
@@ -122,17 +119,14 @@ void Minecraft::startSingleplayer() {
     }
 
     m_gameRenderer->getWorldRenderer().rebuildSectionList();
-
     m_gameState = GameState::InGame;
     displayGuiScreen(std::make_shared<GuiLoading>());
 }
 
 void Minecraft::startMultiplayer(const std::string& address, int port) {
-    // Stop integrated server if running, just in case
     if (m_networkHandler) m_networkHandler->stopServer();
     m_networkHandler.reset();
 
-    // Re-initialize client to clean state
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
     m_player = std::make_unique<EntityPlayer>(*m_world);
@@ -146,7 +140,6 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
 
-    // Pass 'false' to NOT start an integrated server for manual multiplayer
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player, false);
     m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
         if (m_gameState != GameState::MainMenu) {
@@ -169,60 +162,68 @@ void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
     m_currentScreen = screen;
     if (m_currentScreen) {
         resetBlockBreaking(true);
-        glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        if (m_inputHandler) m_inputHandler->releaseAllButtons();
+        SDL_SetWindowRelativeMouseMode(m_window, false);
         m_currentScreen->setWorldAndResolution(this, m_gameRenderer->getScaledWidth(), m_gameRenderer->getScaledHeight());
     } else {
-        glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (m_inputHandler) m_inputHandler->releaseAllButtons();
+        SDL_SetWindowRelativeMouseMode(m_window, true);
     }
 }
 
 void Minecraft::run() {
-    m_lastFrameTime = glfwGetTime();
-    while (m_running && !glfwWindowShouldClose(m_window)) {
-        double now = glfwGetTime();
+    m_lastFrameTime = (double)SDL_GetTicksNS() / 1e9;
+    while (m_running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                m_running = false;
+            }
+            handleEvent(event);
+        }
+
+        std::shared_ptr<GuiScreen> currentScreen = m_currentScreen;
+
+        double now = (double)SDL_GetTicksNS() / 1e9;
         double frameDelta = now - m_lastFrameTime;
         m_lastFrameTime = now;
         m_fps = frameDelta > 0.0 ? (float)(1.0 / frameDelta) : 0.0f;
 
         m_timer.updateTimer();
-        double updateStart = glfwGetTime();
+        double updateStart = (double)SDL_GetTicksNS() / 1e9;
         for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
-        m_gameRenderer->getProfiler().updateTime = (glfwGetTime() - updateStart) * 1000.0;
+        m_gameRenderer->getProfiler().updateTime = ((double)SDL_GetTicksNS() / 1e9 - updateStart) * 1000.0;
 
-        if (!glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) {
-            float renderPartialTicks = m_timer.renderPartialTicks;
-            if (m_gameState == GameState::Paused) {
-                renderPartialTicks = 1.0f;
-            }
-
-            m_gameRenderer->render(renderPartialTicks,
-                                   m_inputHandler->getCameraMode(),
-                                   m_inputHandler->isDebugVisible(),
-                                   m_inputHandler->isChunkBoundariesVisible(),
-                                   m_inputHandler->isProfilerVisible(),
-                                   m_fps,
-                                   m_currentScreen);
-
-            glfwSwapBuffers(m_window);
-        } else {
-            // Window is minimized. Skip rendering but we already ticked above.
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        float renderPartialTicks = m_timer.renderPartialTicks;
+        if (m_gameState == GameState::Paused) {
+            renderPartialTicks = 1.0f;
         }
 
-        glfwPollEvents();
+        m_gameRenderer->render(renderPartialTicks,
+                               m_inputHandler->getCameraMode(),
+                               m_inputHandler->isDebugVisible(),
+                               m_inputHandler->isChunkBoundariesVisible(),
+                               m_inputHandler->isProfilerVisible(),
+                               m_fps,
+                               currentScreen);
+
+        SDL_GL_SwapWindow(m_window);
     }
 }
 
 void Minecraft::tick() {
     if (m_gameState == GameState::MainMenu) {
-        if (m_currentScreen) m_currentScreen->updateScreen();
+        if (m_currentScreen) {
+            m_currentScreen->updateScreen();
+        }
+        // Never allow ticking world logic while in MainMenu
         return;
     }
 
-    // Always update network regardless of pause state to keep connection alive
     if (m_networkHandler) {
         m_networkHandler->update();
     }
+
 
     bool shouldPause = false;
     if (m_currentScreen && m_currentScreen->doesGuiPauseGame()) {
@@ -236,7 +237,7 @@ void Minecraft::tick() {
     if (shouldPause) {
         setGameState(GameState::Paused);
         if (m_networkHandler) m_networkHandler->setPaused(true);
-        m_timer.elapsedPartialTicks = 0.0f; // Prevent catch-up/oscillation accumulation
+        m_timer.elapsedPartialTicks = 0.0f;
     } else {
         setGameState(GameState::InGame);
         if (m_networkHandler) m_networkHandler->setPaused(false);
@@ -245,7 +246,6 @@ void Minecraft::tick() {
     if (getGameState() == GameState::Paused) {
         if (m_currentScreen) m_currentScreen->updateScreen();
     } else {
-        // Game is running (either no GUI, or a non-pausing GUI, or we are in multiplayer)
         m_world->update(0.05f);
 
         if (m_currentScreen) {
@@ -264,7 +264,6 @@ void Minecraft::tick() {
                 return;
             }
 
-            // Raycast for block picking
             float reach = 5.0f;
             glm::dvec3 eyePos = glm::dvec3(m_player->posX, m_player->posY + 1.62f, m_player->posZ);
             float yaw = glm::radians(m_player->rotationYaw);
@@ -290,7 +289,7 @@ void Minecraft::tick() {
 
             std::vector<Entity*> entities = m_world->getEntitiesWithinAABB(reachBB);
             for (Entity* entity : entities) {
-                if (entity == m_player.get()) continue;
+                if (entity == m_player.get() || dynamic_cast<EntityItem*>(entity)) continue;
                 
                 float border = 0.1f;
                 AxisAlignedBB entityBB = entity->boundingBox.expand(border, border, border);
@@ -308,22 +307,28 @@ void Minecraft::tick() {
             m_objectMouseOver = hit;
 
             const bool leftDown = m_inputHandler->isLeftMouseDown();
-            
-            if (leftDown && m_hitDelayTimer <= 0 && hit.type == HitType::ENTITY && hit.entity) {
-                m_player->swing();
-                if (m_networkHandler) {
-                    PacketUseEntity packet;
-                    packet.userEntityID = m_player->entityID;
-                    packet.targetEntityID = hit.entity->entityID;
-                    packet.leftClick = 1;
-                    m_networkHandler->sendPacket(packet);
+            const bool leftClick = m_inputHandler->isLeftClick();
+
+            if (leftDown && m_hitDelayTimer <= 0) {
+                if (hit.type == HitType::ENTITY && hit.entity) {
+                    m_player->swing();
+                    if (m_networkHandler) {
+                        PacketUseEntity packet;
+                        packet.userEntityID = m_player->entityID;
+                        packet.targetEntityID = hit.entity->entityID;
+                        packet.leftClick = 1;
+                        m_networkHandler->sendPacket(packet);
+                    }
+                    m_hitDelayTimer = 10;
+                } else if (hit.type == HitType::NONE && leftClick) {
+                    m_player->swing();
+                    m_hitDelayTimer = 10;
                 }
-                m_hitDelayTimer = 10;
             }
 
             if ((!leftDown || hit.type != HitType::BLOCK) && m_hitDelayTimer <= 0) {
                 resetBlockBreaking(true);
-            } else if (m_hitDelayTimer <= 0) {
+            } else if (leftDown && hit.type == HitType::BLOCK && m_hitDelayTimer <= 0) {
                 const bool sameTarget = m_isBreakingBlock &&
                                         m_breakX == hit.x &&
                                         m_breakY == hit.y &&
@@ -366,6 +371,7 @@ void Minecraft::tick() {
                     }
                 }
             }
+
             if (m_isBreakingBlock) {
                 m_gameRenderer->setBlockBreakingOverlay(true, m_breakX, m_breakY, m_breakZ, m_breakProgress);
             } else {
@@ -448,9 +454,8 @@ float Minecraft::getBreakDeltaForBlock(uint8_t blockID) const {
     if (hardness <= 0.0f) {
         return 1.0f;
     }
-
-    // Infdev-feel survival mining speed: slower than creative, no tools yet.
-    constexpr float baseSpeed = 1.0f / 30.0f;
+    // Faster base speed for better game feel, closer to original Infdev
+    constexpr float baseSpeed = 1.0f / 15.0f; 
     return baseSpeed / hardness;
 }
 
@@ -480,42 +485,18 @@ void Minecraft::resize(int width, int height) {
     if (m_currentScreen) {
         m_currentScreen->setWorldAndResolution(this, m_gameRenderer->getScaledWidth(), m_gameRenderer->getScaledHeight());
     }
+    glViewport(0, 0, width, height);
 }
 
-void Minecraft::mouseCallback(double xpos, double ypos) {
-    if (m_currentScreen) return;
-    m_inputHandler->handleMouse(xpos, ypos);
-}
-
-void Minecraft::scrollCallback(double xoffset, double yoffset) {
-    if (m_currentScreen) return;
-    m_inputHandler->handleScroll(xoffset, yoffset);
-}
-
-void Minecraft::mouseButtonCallback(int button, int action, int mods) {
-    if (m_currentScreen && action == GLFW_PRESS) {
-        auto screen = m_currentScreen; // Hold reference to prevent crash if screen is changed
-
-        double mx, my;
-        glfwGetCursorPos(m_window, &mx, &my);
-
-        // Convert screen units to framebuffer pixels
-        int ww, wh, fw, fh;
-        glfwGetWindowSize(m_window, &ww, &wh);
-        glfwGetFramebufferSize(m_window, &fw, &fh);
-
-        mx *= (double)fw / (double)ww;
-        my *= (double)fh / (double)wh;
-
-        mx /= (double)m_gameRenderer->getGuiScale();
-        my /= (double)m_gameRenderer->getGuiScale();
-
-        screen->mouseClicked((int)mx, (int)my, button);
+void Minecraft::handleEvent(const SDL_Event& event) {
+    if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+        resize(event.window.data1, event.window.data2);
     }
-}
 
-void Minecraft::keyCallback(int key, int scancode, int action, int mods) {
-    if (m_currentScreen) {
-        m_currentScreen->keyTyped(key, scancode, action, mods);
+    std::shared_ptr<GuiScreen> currentScreen = m_currentScreen;
+    if (currentScreen) {
+        currentScreen->handleEvent(event);
+    } else {
+        m_inputHandler->handleEvent(event);
     }
 }

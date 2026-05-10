@@ -96,6 +96,7 @@ void ModelRenderer::render(Shader& shader, const glm::mat4& baseModel, float sca
     model = glm::scale(model, glm::vec3(scale, scale, scale));
 
     shader.setMat4("model", model);
+    glVertexAttrib4f(2, 1.0f, 1.0f, 1.0f, 1.0f);
 
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)m_vertices.size());

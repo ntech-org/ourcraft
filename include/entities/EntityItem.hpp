@@ -13,4 +13,5 @@ public:
     uint8_t metadata = 0;
     int age = 0;
     int pickupDelay = 10;
+    float hoverStart = 0.0f;
 };

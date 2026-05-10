@@ -1,6 +1,7 @@
 #pragma once
 #include "gui/Gui.hpp"
 #include "renderer/ModernFont.hpp"
+#include <SDL3/SDL.h>
 #include <string>
 
 class Minecraft;
@@ -18,7 +19,7 @@ public:
     void setFocused(bool focused);
     bool isFocused() const;
 
-    void keyTyped(int key, int scancode, int action, int mods);
+    void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down);
     void mouseClicked(int mouseX, int mouseY, int button);
     void drawTextField(Minecraft* mc, Font& font, Shader& shader);
 

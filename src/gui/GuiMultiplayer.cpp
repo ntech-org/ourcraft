@@ -27,7 +27,6 @@ void GuiMultiplayer::drawScreen(int mouseX, int mouseY, float partialTicks) {
     Shader& uiShader = mc->getGameRenderer().getUIShader();
     Shader& textShader = mc->getGameRenderer().getTextShader();
     Font& font = mc->getFont();
-    float scale = (float)mc->getGameRenderer().getGuiScale();
 
     glDisable(GL_DEPTH_TEST);
     drawCenteredString(font, textShader, "Multiplayer", (float)width / 2, 40, 0xFFFFFFFF);
@@ -62,14 +61,14 @@ void GuiMultiplayer::actionPerformed(GuiButton* button) {
     }
 }
 
-void GuiMultiplayer::keyTyped(int key, int scancode, int action, int mods) {
+void GuiMultiplayer::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
     if (m_serverAddressField && m_serverAddressField->isFocused()) {
-        m_serverAddressField->keyTyped(key, scancode, action, mods);
-        if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) {
+        m_serverAddressField->keyTyped(key, scancode, down);
+        if (key == SDLK_RETURN && down) {
             actionPerformed(controlList[0].get()); // Click Connect
         }
     }
-    GuiScreen::keyTyped(key, scancode, action, mods);
+    GuiScreen::keyTyped(key, scancode, down);
 }
 
 void GuiMultiplayer::mouseClicked(int mouseX, int mouseY, int button) {

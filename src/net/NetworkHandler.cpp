@@ -147,6 +147,7 @@ void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
         } else if (packet.type == 2) {
             auto item = std::make_unique<EntityItem>(m_world, packet.dataA, packet.dataB, packet.dataC);
             item->pickupDelay = 0;
+            item->handlePhysics = false;
             entity = std::move(item);
         } else {
             entity = std::make_unique<EntityPlayer>(m_world);

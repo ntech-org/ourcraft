@@ -10,7 +10,7 @@ public:
     void initGui() override;
     void drawScreen(int mouseX, int mouseY, float partialTicks) override;
     void mouseClicked(int mouseX, int mouseY, int button) override;
-    void keyTyped(int key, int scancode, int action, int mods) override;
+    void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) override;
     void onGuiClosed() override;
 
 private:

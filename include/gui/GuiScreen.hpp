@@ -1,6 +1,7 @@
 #pragma once
 #include "gui/Gui.hpp"
 #include "gui/GuiButton.hpp"
+#include <SDL3/SDL.h>
 #include <vector>
 #include <memory>
 
@@ -17,7 +18,8 @@ public:
     
     virtual bool doesGuiPauseGame() const { return true; }
     
-    virtual void keyTyped(int key, int scancode, int action, int mods);
+    virtual void handleEvent(const SDL_Event& event);
+    virtual void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down);
     virtual void mouseClicked(int mouseX, int mouseY, int button);
     
     void setWorldAndResolution(Minecraft* mc, float width, float height);

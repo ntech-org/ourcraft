@@ -1,7 +1,7 @@
 #pragma once
 
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #include <memory>
 #include "world/World.hpp"
 #include "util/Timer.hpp"
@@ -24,15 +24,12 @@ class GuiScreen;
 
 class Minecraft {
 public:
-    Minecraft(GLFWwindow* window, int width, int height);
+    Minecraft(SDL_Window* window, int width, int height);
     ~Minecraft();
 
     void run();
     void resize(int width, int height);
-    void mouseCallback(double xpos, double ypos);
-    void scrollCallback(double xoffset, double yoffset);
-    void mouseButtonCallback(int button, int action, int mods);
-    void keyCallback(int key, int scancode, int action, int mods);
+    void handleEvent(const SDL_Event& event);
 
     void displayGuiScreen(std::shared_ptr<GuiScreen> screen);
     void saveAndQuit();
@@ -43,7 +40,7 @@ public:
 
     int getWidth() const { return m_width; }
     int getHeight() const { return m_height; }
-    GLFWwindow* getWindow() { return m_window; }
+    SDL_Window* getWindow() { return m_window; }
     World* getWorld() { return m_world.get(); }
     EntityPlayer& getPlayer() { return *m_player; }
     NetworkHandler* getNetworkHandler() { return m_networkHandler.get(); }
@@ -61,7 +58,7 @@ private:
     float getBreakDeltaForBlock(uint8_t blockID) const;
     bool finishBreakingCurrentBlock();
 
-    GLFWwindow* m_window;
+    SDL_Window* m_window;
     int m_width;
     int m_height;
 

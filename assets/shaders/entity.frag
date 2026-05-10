@@ -3,6 +3,7 @@ out vec4 FragColor;
 
 in vec2 TexCoord;
 in vec3 WorldPos;
+in vec4 VertexColor;
 
 uniform sampler2D texture1;
 uniform vec3 colorTint;
@@ -18,7 +19,7 @@ void main() {
     if(texColor.a < 0.1)
         discard;
     
-    vec3 color = texColor.rgb * colorTint;
+    vec3 color = texColor.rgb * colorTint * VertexColor.rgb;
     
     float fogFactor = 1.0;
     float dist = length(WorldPos);
@@ -31,5 +32,4 @@ void main() {
 
     FragColor = vec4(mix(fogColor, color, fogFactor), texColor.a);
 }
-
 
