@@ -164,6 +164,12 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
+    m_player->username = m_settings.username;
+    m_player->uuid = m_settings.uuid;
+    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
+        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
+            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
+    };
     m_player->setPosition(0.0, 128.0, 0.0);
     m_player->onOpenCraftingTable = [this]() {
         displayGuiScreen(std::make_shared<GuiCrafting>());
@@ -346,60 +352,8 @@ void Minecraft::tick() {
 
         m_player->onUpdate();
 
-        // Hurt sound when player takes damage
-        if (m_soundSystem && m_player->hurtTime > 0 && m_lastHealth > m_player->health && m_lastHealth > 0) {
-            auto* snd = m_soundPool.getRandom("damage.hit", *m_soundSystem);
-            if (snd) m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume, 1.0f);
-        }
         m_lastHealth = m_player->health;
-
-        // Splash when entering water (check at mid-body, not eye level)
-        if (m_soundSystem) {
-            int feetBlock = m_world->getBlockID((int)std::floor(m_player->posX), (int)std::floor(m_player->posY + 0.5), (int)std::floor(m_player->posZ));
-            bool inWater = (feetBlock >= 8 && feetBlock <= 11);
-            if (inWater && !m_wasInWater) {
-                auto* snd = m_soundPool.getRandom("liquid.splash", *m_soundSystem);
-                if (snd) m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume, 1.0f);
-            }
-            m_wasInWater = inWater;
-        }
-
-        // Fall damage sound
-        if (m_soundSystem && m_player->fallDistance > 2.0f && m_player->onGround) {
-            if (m_lastFallDistance < 2.0f) {
-                auto* snd = m_soundPool.getRandom(m_player->fallDistance > 5.0f ? "damage.fallbig" : "damage.hit", *m_soundSystem);
-                if (snd) m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume, 1.0f);
-            }
-        }
         m_lastFallDistance = m_player->fallDistance;
-
-        // Footstep sounds — every ~0.85 blocks, matching Infdev/modern Minecraft
-        if (m_soundSystem && m_player->onGround) {
-            float walked = std::abs(m_player->distanceWalkedModified - m_player->prevDistanceWalkedModified);
-            if (walked > 0.005f) {
-                m_footstepAccum += walked;
-                if (m_footstepAccum >= 0.85f) {
-                    m_footstepAccum = 0.0f;
-                    // Liquid step sounds when in water (check at mid-body)
-                    int waterCheck = m_world->getBlockID((int)std::floor(m_player->posX), (int)std::floor(m_player->posY + 0.5), (int)std::floor(m_player->posZ));
-                    bool inWater = (waterCheck >= 8 && waterCheck <= 11);
-                    if (inWater) {
-                        if (auto* snd = m_soundPool.getRandom("liquid.water", *m_soundSystem))
-                            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * 0.4f, 1.0f);
-                    } else {
-                        int bx = (int)std::floor(m_player->posX);
-                        int by = (int)std::floor(m_player->posY - 0.2f);
-                        int bz = (int)std::floor(m_player->posZ);
-                        uint8_t bid = m_world->getBlockID(bx, by, bz);
-                        if (bid == 0) bid = m_world->getBlockID(bx, by - 1, bz);
-                        if (const Block* b = Block::blocksList[bid]) {
-                            if (auto* snd = m_soundPool.getRandom(b->stepSound->getStepSound(), *m_soundSystem))
-                                m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * 0.5f, 1.0f);
-                        }
-                    }
-                }
-            }
-        }
 
         m_gameRenderer->updateItemEquippedProgress();
         m_gameRenderer->getRenderEngine().updateTextureFX();

@@ -7,6 +7,7 @@
 class PacketLogin : public Packet {
 public:
     std::string username;
+    std::string uuid;
     int32_t protocolVersion;
 
     PacketType getType() const override { return PacketType::Login; }
@@ -14,11 +15,13 @@ public:
     void serialize(std::vector<uint8_t>& buffer) const override {
         writeByte(buffer, (uint8_t)getType());
         writeString(buffer, username);
+        writeString(buffer, uuid);
         writeInt(buffer, protocolVersion);
     }
 
     void deserialize(const uint8_t* data, size_t size) override {
         username = readString(data);
+        uuid = readString(data);
         protocolVersion = readInt(data);
     }
 };
@@ -42,16 +45,22 @@ public:
 class PacketLoginResponse : public Packet {
 public:
     int32_t entityID;
+    std::string username;
+    std::string uuid;
 
     PacketType getType() const override { return PacketType::LoginResponse; }
     
     void serialize(std::vector<uint8_t>& buffer) const override {
         writeByte(buffer, (uint8_t)getType());
         writeInt(buffer, entityID);
+        writeString(buffer, username);
+        writeString(buffer, uuid);
     }
 
     void deserialize(const uint8_t* data, size_t size) override {
         entityID = readInt(data);
+        username = readString(data);
+        uuid = readString(data);
     }
 };
 
@@ -141,6 +150,8 @@ public:
     int32_t dataA = 0;
     int32_t dataB = 0;
     uint8_t dataC = 0;
+    std::string username = "";
+    std::string uuid = "";
 
     PacketType getType() const override { return PacketType::SpawnEntity; }
 
@@ -156,6 +167,8 @@ public:
         writeInt(buffer, dataA);
         writeInt(buffer, dataB);
         writeByte(buffer, dataC);
+        writeString(buffer, username);
+        writeString(buffer, uuid);
     }
 
     void deserialize(const uint8_t* data, size_t size) override {
@@ -169,6 +182,8 @@ public:
         dataA = readInt(data);
         dataB = readInt(data);
         dataC = readByte(data);
+        username = readString(data);
+        uuid = readString(data);
     }
 };
 
@@ -450,6 +465,35 @@ public:
     void deserialize(const uint8_t* data, size_t size) override {
         itemEntityID = readInt(data);
         collectorEntityID = readInt(data);
+    }
+};
+
+class PacketPlaySound : public Packet {
+public:
+    std::string name;
+    double x, y, z;
+    float volume;
+    float pitch;
+
+    PacketType getType() const override { return PacketType::PlaySound; }
+
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)getType());
+        writeString(buffer, name);
+        writeDouble(buffer, x);
+        writeDouble(buffer, y);
+        writeDouble(buffer, z);
+        writeFloat(buffer, volume);
+        writeFloat(buffer, pitch);
+    }
+
+    void deserialize(const uint8_t* data, size_t size) override {
+        name = readString(data);
+        x = readDouble(data);
+        y = readDouble(data);
+        z = readDouble(data);
+        volume = readFloat(data);
+        pitch = readFloat(data);
     }
 };
 

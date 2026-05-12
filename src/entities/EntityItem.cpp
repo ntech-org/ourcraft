@@ -16,6 +16,8 @@ EntityItem::EntityItem(World& world, int itemIDIn, int countIn, uint8_t metadata
 }
 
 void EntityItem::startPickupAnimation(double targetX, double targetY, double targetZ) {
+    if (pickingUp) return;
+    pickingUp = true;
     pickupStartX = posX;
     pickupStartY = posY;
     pickupStartZ = posZ;

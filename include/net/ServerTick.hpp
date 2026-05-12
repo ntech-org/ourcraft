@@ -182,6 +182,9 @@ inline void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, I
                 spawn.dataA = item->itemID;
                 spawn.dataB = item->count;
                 spawn.dataC = item->metadata;
+            } else if (auto* p = dynamic_cast<EntityPlayer*>(entity.get())) {
+                spawn.username = p->username;
+                spawn.uuid = p->uuid;
             }
             server.sendPacket(peer, spawn, true);
         }

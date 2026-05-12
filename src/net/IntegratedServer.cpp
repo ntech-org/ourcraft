@@ -46,6 +46,15 @@ IntegratedServer::IntegratedServer() {
     m_world->spawnEntity(std::move(zombie));
 }
 
+void IntegratedServer::broadcastSound(const std::string& name, double x, double y, double z, float volume, float pitch, ENetPeer* excludePeer) {
+    if (!m_server) return;
+    PacketPlaySound packet;
+    packet.name = name;
+    packet.x = x; packet.y = y; packet.z = z;
+    packet.volume = volume; packet.pitch = pitch;
+    m_server->broadcastPacket(packet, false, excludePeer);
+}
+
 IntegratedServer::~IntegratedServer() {
     stop();
 }
@@ -151,9 +160,11 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
     if (type == PacketType::Login) {
         PacketLogin packet;
         packet.deserialize(ptr, size - 1);
-        std::cout << "Server: Player " << packet.username << " logged in." << std::endl;
+        std::cout << "Server: Player " << packet.username << " (" << packet.uuid << ") logged in." << std::endl;
 
         auto player = std::make_unique<EntityPlayer>(*m_world);
+        player->username = packet.username;
+        player->uuid = packet.uuid;
 
         PlayerSaveData pData;
         auto saveHandler = m_world->getSaveHandler();
@@ -175,10 +186,13 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         }
 
         EntityPlayer* pPtr = player.get();
+        player->onPlaySound = [this, peer, pPtr](const std::string& name, float vol, float pitch) {
+            broadcastSound(name, pPtr->posX, pPtr->posY, pPtr->posZ, vol, pitch, peer);
+        };
         m_world->spawnEntity(std::move(player));
 
         int32_t eid = pPtr->entityID;
-        m_players[peer] = {eid, packet.username, {}, {}};
+        m_players[peer] = {eid, packet.username, packet.uuid, {}, {}, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}};
         PlayerSession& session = m_players[peer];
 
         for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
@@ -217,18 +231,23 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
                 spawn.dataA = item->itemID;
                 spawn.dataB = item->count;
                 spawn.dataC = item->metadata;
+            } else if (auto* p = dynamic_cast<EntityPlayer*>(entity.get())) {
+                spawn.username = p->username;
+                spawn.uuid = p->uuid;
             }
             m_server->sendPacket(peer, spawn);
             m_players[peer].sentEntities.insert(entity->entityID);
         }
     } else if (type == PacketType::PlayerPosition || type == PacketType::PlayerRotation || type == PacketType::PlayerPosLook) {
         if (m_players.count(peer)) {
-            int32_t eid = m_players[peer].entityID;
+            PlayerSession& session = m_players[peer];
+            int32_t eid = session.entityID;
             for (auto& entity : m_world->getEntities()) {
                 if (entity->entityID == eid) {
                     if (type == PacketType::PlayerPosition || type == PacketType::PlayerPosLook) {
                         PacketPlayerPosition p;
                         p.deserialize(ptr, size - 1);
+                        
                         entity->setPosition(p.x, p.y, p.z);
                         if (type == PacketType::PlayerPosLook) {
                             entity->rotationYaw = p.yaw;
@@ -252,6 +271,11 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             const uint8_t oldID = m_world->getBlockID(packet.x, packet.y, packet.z);
             const uint8_t oldMeta = m_world->getBlockMetadata(packet.x, packet.y, packet.z);
             m_world->setBlockWithNotify(packet.x, packet.y, packet.z, 0);
+            
+            if (const Block* b = Block::blocksList[oldID]) {
+                broadcastSound(b->stepSound->getBreakSound(), packet.x + 0.5, packet.y + 0.5, packet.z + 0.5, 1.0f, 1.0f, peer);
+            }
+
             if (oldID > 0 && Block::getHardness(oldID) >= 0.0f) {
                 auto item = std::make_unique<EntityItem>(*m_world, oldID, 1, oldMeta);
                 double spread = 0.7;
@@ -273,6 +297,10 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         else if (packet.face == 4) x--; else if (packet.face == 5) x++;
         m_world->setBlockAndMetadataWithNotify(x, y, z, packet.blockID, packet.metadata);
 
+        if (const Block* b = Block::blocksList[packet.blockID]) {
+            broadcastSound(b->stepSound->getBreakSound(), x + 0.5, y + 0.5, z + 0.5, 1.0f, 0.8f, peer);
+        }
+
         if (m_players.count(peer)) {
             PlayerSession& session = m_players[peer];
             session.inventory.consumeCurrentItem(1);
@@ -288,11 +316,26 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         if (m_players.count(peer)) {
             PlayerSession& session = m_players[peer];
             session.inventory.handleClick(packet.slot, packet.button != 0);
+            
             PacketConfirmTransaction resp;
             resp.windowId = packet.windowId;
             resp.actionId = packet.actionId;
             resp.accepted = true;
             m_server->sendPacket(peer, resp, true);
+
+            // Sync back affected slots (like result slots or if server logic differs)
+            // For now, let's sync the clicked slot and the result slots to be safe.
+            std::vector<int> slotsToSync = { packet.slot, InventoryPlayer::RESULT_SLOT, InventoryPlayer::WORKBENCH_RESULT };
+            for (int s : slotsToSync) {
+                if (s < 0 || s >= InventoryPlayer::TOTAL_SIZE) continue;
+                PacketSetSlot setSlot;
+                setSlot.windowId = packet.windowId;
+                setSlot.slot = s;
+                setSlot.itemID = session.inventory.mainInventory[s].itemID;
+                setSlot.count = session.inventory.mainInventory[s].count;
+                setSlot.metadata = session.inventory.mainInventory[s].metadata;
+                m_server->sendPacket(peer, setSlot, true);
+            }
         }
     } else if (type == PacketType::UseEntity) {
         PacketUseEntity packet;
@@ -320,6 +363,7 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
 
                 if (auto* living = dynamic_cast<EntityLiving*>(target)) {
                     living->attackEntityFrom(nullptr, damage);
+                    broadcastSound("damage.hit", target->posX, target->posY + target->height * 0.5, target->posZ, 1.0f, 1.0f, peer);
                 }
             }
         }

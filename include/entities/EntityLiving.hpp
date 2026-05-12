@@ -1,6 +1,8 @@
 #pragma once
 
 #include "entities/Entity.hpp"
+#include <string>
+#include <functional>
 
 class EntityLiving : public Entity {
 public:
@@ -46,6 +48,10 @@ public:
     virtual void moveRelative(float strafe, float forward, float friction);
 
     void fall(float distance) override;
+
+    std::function<void(const std::string&, float, float)> onPlaySound;
+    float footstepAccum = 0.0f;
+    bool wasInWater = false;
 
 protected:
     virtual void updateEntityActionState();

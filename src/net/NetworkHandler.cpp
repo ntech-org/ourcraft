@@ -26,7 +26,8 @@ NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startSer
     };
     m_client->onConnected = [this]() {
         PacketLogin loginPacket;
-        loginPacket.username = "Player";
+        loginPacket.username = m_player.username;
+        loginPacket.uuid = m_player.uuid;
         loginPacket.protocolVersion = 1;
         m_client->sendPacket(loginPacket);
     };

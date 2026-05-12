@@ -25,11 +25,17 @@ public:
     Server* getServer() const { return m_server.get(); }
     World* getWorld() const { return m_world.get(); }
 
+    void broadcastSound(const std::string& name, double x, double y, double z, float volume, float pitch, ENetPeer* excludePeer = nullptr);
+
     struct PlayerSession {
         int32_t entityID;
         std::string username;
+        std::string uuid;
         InventoryPlayer inventory;
         ItemStack cursorStack;
+        double lastX = 0, lastY = 0, lastZ = 0;
+        float footstepAccum = 0;
+        bool wasInWater = false;
         std::unordered_map<uint64_t, ChunkState> sentChunks;
         std::unordered_set<int32_t> sentEntities;
     };

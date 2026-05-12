@@ -1,5 +1,7 @@
 #include "entities/EntityPlayer.hpp"
+#include "entities/EntityItem.hpp"
 #include "world/Material.hpp"
+#include "world/World.hpp"
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -58,6 +60,18 @@ void EntityPlayer::onUpdate() {
 
     cameraYaw += (speed - cameraYaw) * 0.4f;
     cameraPitch += (pitchTarget - cameraPitch) * 0.8f;
+
+    if (worldObj.isRemote && isLocalPlayer) {
+        for (auto& entity : worldObj.getEntities()) {
+            if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
+                if (item->pickupDelay <= 0 && !item->pickingUp) {
+                    if (boundingBox.expand(1.0, 0.5, 1.0).intersectsWith(item->boundingBox)) {
+                        item->startPickupAnimation(posX, posY + height * 0.3, posZ);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void EntityPlayer::updateEntityActionState() {

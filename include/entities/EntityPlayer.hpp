@@ -3,6 +3,7 @@
 #include "entities/EntityLiving.hpp"
 #include "entities/InventoryPlayer.hpp"
 #include <functional>
+#include <string>
 
 enum class GameMode {
 
@@ -26,6 +27,9 @@ public:
 
     GameMode gameMode = GameMode::CREATIVE;
     InventoryPlayer inventory;
+
+    std::string username = "Player";
+    std::string uuid = "";
 
     bool isFlying = false;
     bool sneaking = false;

@@ -37,6 +37,8 @@ private:
     std::atomic<bool> m_connected{false};
     std::atomic<bool> m_connecting{false};
 
+    std::chrono::steady_clock::time_point m_connectStartTime;
+
     struct QueuedPacket {
         std::vector<uint8_t> data;
         bool reliable;

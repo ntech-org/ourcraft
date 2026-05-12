@@ -1,6 +1,7 @@
 #include "net/Client.hpp"
 #include "net/Packets.hpp"
 #include <iostream>
+#include <chrono>
 
 Client::Client() {
     m_client = enet_host_create(NULL, 1, 2, 0, 0);
@@ -31,6 +32,7 @@ bool Client::connect(const std::string& address, uint16_t port) {
     std::cout << "[Client] Connecting to " << address << ":" << port << "..." << std::endl;
 
     m_connecting = true;
+    m_connectStartTime = std::chrono::steady_clock::now();
     m_peer = enet_host_connect(m_client, &addr, 2, 0);
     if (m_peer == NULL) {
         std::cerr << "[Client] Failed to create ENet peer for connection." << std::endl;
@@ -99,6 +101,19 @@ void Client::networkLoop() {
 
         // 2. Poll ENet
         ENetEvent event;
+        if (m_connecting) {
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - m_connectStartTime).count() > 5000) {
+                std::cout << "[Client] Connection attempt timed out." << std::endl;
+                m_connecting = false;
+                if (m_peer) {
+                    enet_peer_reset(m_peer);
+                    m_peer = nullptr;
+                }
+                m_disconnectEvents.push({true, "Connection timed out"});
+            }
+        }
+
         while (enet_host_service(m_client, &event, 0) > 0) {
             activity = true;
             switch (event.type) {

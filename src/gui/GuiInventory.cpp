@@ -166,5 +166,21 @@ void GuiInventory::mouseClicked(int mouseX, int mouseY, int button) {
 
 void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightClick) {
     inv.handleClick(slot, rightClick);
+    
+    if (mc->getNetworkHandler()) {
+        PacketClickWindow packet;
+        packet.windowId = 0; // Inventory
+        packet.slot = slot;
+        packet.button = rightClick ? 1 : 0;
+        packet.actionId = 0; // For now
+        packet.shift = false; // For now
+        
+        ItemStack stack = (slot >= 0 && slot < InventoryPlayer::TOTAL_SIZE) ? inv.mainInventory[slot] : ItemStack{0, 0, 0};
+        packet.itemID = stack.itemID;
+        packet.count = stack.count;
+        packet.metadata = stack.metadata;
+        
+        mc->getNetworkHandler()->sendPacket(packet);
+    }
 }
 

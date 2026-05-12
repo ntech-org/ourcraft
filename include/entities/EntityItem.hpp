@@ -14,6 +14,7 @@ public:
     int age = 0;
     int pickupDelay = 10;
     float hoverStart = 0.0f;
+    bool pickingUp = false;
     int pickupAnimationTicks = 0;
     int pickupAnimationTotalTicks = 10;
     double pickupStartX = 0.0;

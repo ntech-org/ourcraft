@@ -99,6 +99,11 @@ void EntityLiving::onUpdate() {
     handleWaterMovement();
     handleLavaMovement();
 
+    if (inWater && !wasInWater) {
+        if (onPlaySound) onPlaySound("liquid.splash", 1.0f, 1.0f);
+    }
+    wasInWater = inWater;
+
     if (handlePhysics) {
         bool chunkLoaded = worldObj.isChunkLoaded((int)std::floor(posX / 16.0), (int)std::floor(posZ / 16.0));
 
@@ -158,6 +163,38 @@ void EntityLiving::onUpdate() {
     if (f > 1.0f) f = 1.0f;
     limbSwingAmount += (f - limbSwingAmount) * 0.4f;
     limbSwing += limbSwingAmount;
+
+    if (onPlaySound && (onGround || inWater)) {
+        // Apply the 0.6 multiplier used in moveEntity to match engine expectations
+        float walked = dist * 0.6f;
+        
+        if (walked > 0.005f) {
+            footstepAccum += walked;
+            if (footstepAccum >= 0.85f) {
+                footstepAccum = 0.0f;
+                
+                // Check mid-body and feet for liquid
+                int feetY = (int)std::floor(posY - 0.2f);
+                uint8_t feetBlock = worldObj.getBlockID((int)std::floor(posX), feetY, (int)std::floor(posZ));
+                uint8_t midBlock = worldObj.getBlockID((int)std::floor(posX), (int)std::floor(posY + 0.5f), (int)std::floor(posZ));
+                
+                bool isInLiquid = (feetBlock >= 8 && feetBlock <= 11) || (midBlock >= 8 && midBlock <= 11);
+                
+                if (isInLiquid) {
+                    onPlaySound("liquid.water", 0.4f, 1.0f);
+                } else {
+                    int bx = (int)std::floor(posX);
+                    int by = feetY;
+                    int bz = (int)std::floor(posZ);
+                    uint8_t bid = feetBlock;
+                    if (bid == 0) bid = worldObj.getBlockID(bx, by - 1, bz);
+                    if (const Block* b = Block::blocksList[bid]) {
+                        onPlaySound(b->stepSound->getStepSound(), 0.5f, 1.0f);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void EntityLiving::swing() {
@@ -192,5 +229,8 @@ void EntityLiving::fall(float distance) {
     int damage = (int)std::ceil(distance - 3.0f);
     if (damage > 0) {
         attackEntityFrom(nullptr, damage);
+        if (onPlaySound) {
+            onPlaySound(distance > 5.0f ? "damage.fallbig" : "damage.hit", 1.0f, 1.0f);
+        }
     }
 }

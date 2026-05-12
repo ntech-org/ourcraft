@@ -22,6 +22,9 @@ public:
     float soundVolume = 1.0f;
     float musicVolume = 1.0f;
 
+    std::string username = "Player";
+    std::string uuid = "00000000-0000-0000-0000-000000000000";
+
 private:
     std::string getOptionsFile();
 };

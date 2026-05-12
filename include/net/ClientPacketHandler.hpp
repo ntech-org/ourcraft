@@ -29,7 +29,10 @@ inline void handleClientPacket(NetworkHandler& handler, World& world, EntityPlay
             item->handlePhysics = false;
             entity = std::move(item);
         } else {
-            entity = std::make_unique<EntityPlayer>(world);
+            auto p = std::make_unique<EntityPlayer>(world);
+            p->username = packet.username;
+            p->uuid = packet.uuid;
+            entity = std::move(p);
         }
         entity->entityID = packet.id;
         entity->setPosAndPrev(packet.x, packet.y, packet.z);
@@ -151,12 +154,28 @@ inline void handleClientPacket(NetworkHandler& handler, World& world, EntityPlay
                     try {
                         auto& mc = player.getMinecraft();
                         if (auto* snd = mc.getSoundPool().getRandom("random.pop", mc.getSoundSystem()))
-                            mc.getSoundSystem().play(snd, mc.getSettings().soundVolume, 1.0f);
+                            mc.getSoundSystem().play3D(snd, (float)item->posX, (float)item->posY, (float)item->posZ, mc.getSettings().soundVolume, 1.0f);
                     } catch (...) {}
                 }
                 break;
             }
         }
+    } else if (type == PacketType::PlaySound) {
+        PacketPlaySound packet;
+        packet.deserialize(ptr, size - 1);
+        try {
+            auto& mc = player.getMinecraft();
+            
+            // Don't play sounds from the server that are at our exact location (predicted local footsteps/blocks)
+            double distSq = (packet.x - player.posX) * (packet.x - player.posX) + 
+                            (packet.y - player.posY) * (packet.y - player.posY) + 
+                            (packet.z - player.posZ) * (packet.z - player.posZ);
+            if (distSq < 0.0001) return;
+
+            if (auto* snd = mc.getSoundPool().getRandom(packet.name, mc.getSoundSystem())) {
+                mc.getSoundSystem().play3D(snd, (float)packet.x, (float)packet.y, (float)packet.z, packet.volume, packet.pitch);
+            }
+        } catch (...) {}
     } else if (type == PacketType::ChunkUnload) {
         PacketChunkUnload packet;
         packet.deserialize(ptr, size - 1);

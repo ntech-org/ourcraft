@@ -71,12 +71,22 @@ void Server::sendPacket(ENetPeer* peer, const Packet& packet, bool reliable) {
     enet_peer_send(peer, 0, enetPacket);
 }
 
-void Server::broadcastPacket(const Packet& packet, bool reliable) {
+void Server::broadcastPacket(const Packet& packet, bool reliable, ENetPeer* excludePeer) {
     std::vector<uint8_t> buffer;
     packet.serialize(buffer);
     
-    ENetPacket* enetPacket = enet_packet_create(buffer.data(), buffer.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
-    enet_host_broadcast(m_server, 0, enetPacket);
+    if (excludePeer == nullptr) {
+        ENetPacket* enetPacket = enet_packet_create(buffer.data(), buffer.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
+        enet_host_broadcast(m_server, 0, enetPacket);
+    } else {
+        for (size_t i = 0; i < m_server->peerCount; ++i) {
+            ENetPeer* peer = &m_server->peers[i];
+            if (peer->state != ENET_PEER_STATE_CONNECTED || peer == excludePeer) continue;
+            
+            ENetPacket* enetPacket = enet_packet_create(buffer.data(), buffer.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
+            enet_peer_send(peer, 0, enetPacket);
+        }
+    }
 }
 
 void Server::kick(ENetPeer* peer, const std::string& reason) {
