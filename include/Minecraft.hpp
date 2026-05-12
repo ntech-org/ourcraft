@@ -11,6 +11,8 @@
 #include "InputHandler.hpp"
 #include "net/NetworkHandler.hpp"
 #include "util/GameSettings.hpp"
+#include "sound/SoundSystem.hpp"
+#include "sound/SoundPool.hpp"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -51,6 +53,10 @@ public:
     const HitResult& getObjectMouseOver() const { return m_objectMouseOver; }
     HitResult& getObjectMouseOverRef() { return m_objectMouseOver; }
     InputHandler& getInputHandler() { return *m_inputHandler; }
+
+    SoundSystem& getSoundSystem() { return *m_soundSystem; }
+    bool hasSoundSystem() const { return m_soundSystem != nullptr; }
+    SoundPool& getSoundPool() { return m_soundPool; }
 
     bool isBreakingBlock() const { return m_isBreakingBlock; }
     void setBreakingBlock(bool v) { m_isBreakingBlock = v; }
@@ -113,4 +119,14 @@ private:
     int m_hitDelayTimer = 0;
     int m_rightClickDelayTimer = 0;
     HitResult m_objectMouseOver;
+
+    std::unique_ptr<SoundSystem> m_soundSystem;
+    SoundPool m_soundPool;
+    float m_footstepAccum = 0.0f;
+    float m_lastFallDistance = 0.0f;
+    int m_lastHealth = 20;
+    bool m_wasInWater = false;
+    int m_musicTimer = 0;
+    std::vector<std::string> m_musicPools;
+    std::vector<std::string> m_menuMusicPools;
 };

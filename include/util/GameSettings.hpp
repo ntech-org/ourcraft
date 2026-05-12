@@ -19,6 +19,8 @@ public:
     bool ambientOcclusion = true;
     int guiScale = 0; // 0 = Auto
     float fov = 70.0f;
+    float soundVolume = 1.0f;
+    float musicVolume = 1.0f;
 
 private:
     std::string getOptionsFile();

@@ -33,6 +33,8 @@ void GameSettings::loadOptions() {
         if (key == "ambientOcclusion") ambientOcclusion = (value == "true");
         if (key == "guiScale") guiScale = std::stoi(value);
         if (key == "fov") fov = std::stof(value);
+        if (key == "soundVolume") soundVolume = std::stof(value);
+        if (key == "musicVolume") musicVolume = std::stof(value);
     }
 }
 
@@ -50,4 +52,6 @@ void GameSettings::saveOptions() {
     file << "ambientOcclusion:" << (ambientOcclusion ? "true" : "false") << "\n";
     file << "guiScale:" << guiScale << "\n";
     file << "fov:" << fov << "\n";
+    file << "soundVolume:" << soundVolume << "\n";
+    file << "musicVolume:" << musicVolume << "\n";
 }

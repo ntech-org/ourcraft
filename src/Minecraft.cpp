@@ -37,11 +37,42 @@ Minecraft::~Minecraft() {
         saveAndQuit();
     }
     if (m_ft) FT_Done_FreeType(m_ft);
+    if (m_soundSystem) {
+        m_soundSystem->shutdown();
+        m_soundSystem.reset();
+    }
 }
 
 void Minecraft::init() {
     Block::init();
     Item::init();
+
+    m_soundSystem = std::make_unique<SoundSystem>();
+    m_soundSystem->init();
+    buildSoundPool(m_soundPool, "assets/resources/sound/");
+    buildSoundPool(m_soundPool, "assets/resources/music/");
+    buildSoundPool(m_soundPool, "assets/resources/menumusic/");
+
+    // Preload common sounds so first play isn't delayed by OGG decode
+    auto preload = [this](const std::string& pool) {
+        m_soundPool.getRandom(pool, *m_soundSystem);
+    };
+    preload("random.click");
+    preload("step.stone");
+    preload("step.grass");
+    preload("step.wood");
+    preload("dig.stone");
+    preload("dig.grass");
+    preload("dig.wood");
+
+    // Collect music pool names for background music playback
+    for (const auto& name : m_soundPool.getPoolNames()) {
+        if (name.find("menu") == 0)
+            m_menuMusicPools.push_back(name);
+        else if (name.find("calm") == 0 || name.find("hal") == 0 ||
+                 name.find("nuance") == 0 || name.find("piano") == 0)
+            m_musicPools.push_back(name);
+    }
 
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
@@ -191,9 +222,29 @@ void Minecraft::run() {
         m_fps = frameDelta > 0.0 ? (float)(1.0 / frameDelta) : 0.0f;
 
         m_timer.updateTimer();
+
+        if (m_soundSystem && m_player) {
+            m_soundSystem->update((float)m_player->posX, (float)m_player->posY + 1.6f, (float)m_player->posZ,
+                                  m_player->rotationYaw, m_player->rotationPitch,
+                                  m_settings.soundVolume, m_settings.musicVolume);
+        }
+
         double updateStart = (double)SDL_GetTicksNS() / 1e9;
         for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
         m_gameRenderer->getProfiler().updateTime = ((double)SDL_GetTicksNS() / 1e9 - updateStart) * 1000.0;
+
+        // Music tick — uses dedicated music source so SFX don't block it
+        if (m_soundSystem && m_settings.musicVolume > 0.0f) {
+            if (!m_soundSystem->isMusicPlaying() && ++m_musicTimer > 1800) { // ~30s between tracks
+                m_musicTimer = 0;
+                const auto& pools = (m_gameState == GameState::MainMenu) ? m_menuMusicPools : m_musicPools;
+                if (!pools.empty()) {
+                    int idx = std::rand() % (int)pools.size();
+                    if (auto* snd = m_soundPool.getRandom(pools[idx], *m_soundSystem))
+                        m_soundSystem->playMusic(snd, m_settings.musicVolume, 1.0f);
+                }
+            }
+        }
 
         float renderPartialTicks = m_timer.renderPartialTicks;
         if (m_gameState == GameState::Paused) {
@@ -294,6 +345,62 @@ void Minecraft::tick() {
         }
 
         m_player->onUpdate();
+
+        // Hurt sound when player takes damage
+        if (m_soundSystem && m_player->hurtTime > 0 && m_lastHealth > m_player->health && m_lastHealth > 0) {
+            auto* snd = m_soundPool.getRandom("damage.hit", *m_soundSystem);
+            if (snd) m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume, 1.0f);
+        }
+        m_lastHealth = m_player->health;
+
+        // Splash when entering water (check at mid-body, not eye level)
+        if (m_soundSystem) {
+            int feetBlock = m_world->getBlockID((int)std::floor(m_player->posX), (int)std::floor(m_player->posY + 0.5), (int)std::floor(m_player->posZ));
+            bool inWater = (feetBlock >= 8 && feetBlock <= 11);
+            if (inWater && !m_wasInWater) {
+                auto* snd = m_soundPool.getRandom("liquid.splash", *m_soundSystem);
+                if (snd) m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume, 1.0f);
+            }
+            m_wasInWater = inWater;
+        }
+
+        // Fall damage sound
+        if (m_soundSystem && m_player->fallDistance > 2.0f && m_player->onGround) {
+            if (m_lastFallDistance < 2.0f) {
+                auto* snd = m_soundPool.getRandom(m_player->fallDistance > 5.0f ? "damage.fallbig" : "damage.hit", *m_soundSystem);
+                if (snd) m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume, 1.0f);
+            }
+        }
+        m_lastFallDistance = m_player->fallDistance;
+
+        // Footstep sounds — every ~0.85 blocks, matching Infdev/modern Minecraft
+        if (m_soundSystem && m_player->onGround) {
+            float walked = std::abs(m_player->distanceWalkedModified - m_player->prevDistanceWalkedModified);
+            if (walked > 0.005f) {
+                m_footstepAccum += walked;
+                if (m_footstepAccum >= 0.85f) {
+                    m_footstepAccum = 0.0f;
+                    // Liquid step sounds when in water (check at mid-body)
+                    int waterCheck = m_world->getBlockID((int)std::floor(m_player->posX), (int)std::floor(m_player->posY + 0.5), (int)std::floor(m_player->posZ));
+                    bool inWater = (waterCheck >= 8 && waterCheck <= 11);
+                    if (inWater) {
+                        if (auto* snd = m_soundPool.getRandom("liquid.water", *m_soundSystem))
+                            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * 0.4f, 1.0f);
+                    } else {
+                        int bx = (int)std::floor(m_player->posX);
+                        int by = (int)std::floor(m_player->posY - 0.2f);
+                        int bz = (int)std::floor(m_player->posZ);
+                        uint8_t bid = m_world->getBlockID(bx, by, bz);
+                        if (bid == 0) bid = m_world->getBlockID(bx, by - 1, bz);
+                        if (const Block* b = Block::blocksList[bid]) {
+                            if (auto* snd = m_soundPool.getRandom(b->stepSound->getStepSound(), *m_soundSystem))
+                                m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * 0.5f, 1.0f);
+                        }
+                    }
+                }
+            }
+        }
+
         m_gameRenderer->updateItemEquippedProgress();
         m_gameRenderer->getRenderEngine().updateTextureFX();
         if (m_networkHandler) {
@@ -339,6 +446,10 @@ bool Minecraft::finishBreakingCurrentBlock() {
     m_objectMouseOver.type = HitType::NONE;
     m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
     m_player->swing();
+    if (const Block* b = Block::blocksList[targetID]) {
+        if (auto* snd = m_soundPool.getRandom(b->stepSound->getBreakSound(), *m_soundSystem))
+            m_soundSystem->play3D(snd, (float)m_breakX, (float)m_breakY, (float)m_breakZ, m_settings.soundVolume, 1.0f);
+    }
     resetBlockBreaking(false);
     return true;
 }

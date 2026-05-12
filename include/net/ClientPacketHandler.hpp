@@ -5,6 +5,7 @@
 #include "entities/EntityItem.hpp"
 #include "entities/EntityZombie.hpp"
 #include "entities/EntityPlayer.hpp"
+#include "Minecraft.hpp"
 #include <cstring>
 
 inline void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& player, int32_t& playerID,
@@ -146,6 +147,12 @@ inline void handleClientPacket(NetworkHandler& handler, World& world, EntityPlay
             if (entity->entityID == packet.itemEntityID) {
                 if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
                     item->startPickupAnimation(targetX, targetY, targetZ);
+                    // Play pickup sound via the player's minecraft instance
+                    try {
+                        auto& mc = player.getMinecraft();
+                        if (auto* snd = mc.getSoundPool().getRandom("random.pop", mc.getSoundSystem()))
+                            mc.getSoundSystem().play(snd, mc.getSettings().soundVolume, 1.0f);
+                    } catch (...) {}
                 }
                 break;
             }

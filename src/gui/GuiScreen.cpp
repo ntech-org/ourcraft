@@ -54,6 +54,10 @@ void GuiScreen::mouseClicked(int mouseX, int mouseY, int button) {
     if (button == SDL_BUTTON_LEFT) {
         for (size_t i = 0; i < controlList.size(); ++i) {
             if (controlList[i]->mousePressed(mouseX, mouseY)) {
+                if (mc) {
+                    auto* snd = mc->getSoundPool().getRandom("random.click", mc->getSoundSystem());
+                    if (snd) mc->getSoundSystem().play(snd, mc->getSettings().soundVolume, 1.0f);
+                }
                 actionPerformed(controlList[i].get());
                 if (mc->getCurrentScreen().get() != this) {
                     break;

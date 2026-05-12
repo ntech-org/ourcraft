@@ -37,6 +37,13 @@ inline void handleBlockBreaking(Minecraft& mc, EntityPlayer& player, World& worl
                 mc.setBreakSwingTick(0);
                 mc.getNetworkHandler()->sendDigging(DiggingAction::START, hit.x, hit.y, hit.z, hit.sideHit);
                 player.swing();
+                if (player.gameMode != GameMode::CREATIVE) {
+                    const Block* block = Block::blocksList[targetID];
+                    if (block) {
+                        const SoundBuffer* snd = mc.getSoundPool().getRandom(block->stepSound->getBreakSound(), mc.getSoundSystem());
+                        if (snd) mc.getSoundSystem().play3D(snd, (float)hit.x, (float)hit.y, (float)hit.z, mc.getSettings().soundVolume, 1.0f);
+                    }
+                }
             }
         }
 
@@ -48,6 +55,10 @@ inline void handleBlockBreaking(Minecraft& mc, EntityPlayer& player, World& worl
                 world.setBlockWithNotify(mc.getBreakX(), mc.getBreakY(), mc.getBreakZ(), 0);
                 mc.getNetworkHandler()->sendDigging(DiggingAction::FINISH, mc.getBreakX(), mc.getBreakY(), mc.getBreakZ(), mc.getBreakFace() >= 0 ? mc.getBreakFace() : 1);
                 player.swing();
+                if (const Block* b = Block::blocksList[targetID]) {
+                    if (auto* snd = mc.getSoundPool().getRandom(b->stepSound->getBreakSound(), mc.getSoundSystem()))
+                        mc.getSoundSystem().play3D(snd, (float)mc.getBreakX(), (float)mc.getBreakY(), (float)mc.getBreakZ(), mc.getSettings().soundVolume, 1.0f);
+                }
                 mc.resetBlockBreaking(false);
                 mc.setHitDelayTimer(5);
             } else {
@@ -107,6 +118,10 @@ inline void handleBlockPlacement(Minecraft& mc, EntityPlayer& player, World& wor
                     if (!shouldConsume || player.inventory.consumeCurrentItem(1)) {
                         world.setBlockWithNotify(x, y, z, (uint8_t)itemID);
                         player.swing();
+                        if (auto* b = Block::blocksList[itemID]) {
+                            if (auto* snd = mc.getSoundPool().getRandom(b->stepSound->getBreakSound(), mc.getSoundSystem()))
+                                mc.getSoundSystem().play3D(snd, (float)x, (float)y, (float)z, mc.getSettings().soundVolume, 0.8f);
+                        }
                         mc.getNetworkHandler()->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
                         mc.setRightClickDelayTimer(4);
                     }

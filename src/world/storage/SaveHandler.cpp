@@ -117,7 +117,14 @@ bool SaveHandler::loadLevelData(LevelData& data) {
     rocksdb::Status status = m_db->Get(rocksdb::ReadOptions(), "__level_metadata__", &value);
     if (!status.ok()) return false;
 
-    auto tag = stringToNbt(value);
+    std::shared_ptr<nbt::Tag> tag;
+    try {
+        tag = stringToNbt(value);
+    } catch (const std::exception& e) {
+        std::cerr << "SaveHandler: Failed to parse level metadata: " << e.what() << std::endl;
+        m_db->Delete(rocksdb::WriteOptions(), "__level_metadata__");
+        return false;
+    }
     if (!tag || tag->type != nbt::TagType::Compound) return false;
 
     auto& root = std::get<nbt::Compound>(tag->value);
