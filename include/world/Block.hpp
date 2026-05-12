@@ -100,6 +100,7 @@ public:
     virtual bool isOccluder() const;
     virtual bool isGreedyMergeable() const;
     virtual bool isOpaqueCube() const;
+    virtual bool isSameTypeCulled() const;
 
     virtual void getCollisionBoxes(World& world, int x, int y, int z, const AxisAlignedBB& mask, std::vector<AxisAlignedBB>& list) const;
     virtual AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const;

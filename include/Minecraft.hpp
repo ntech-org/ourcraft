@@ -49,14 +49,37 @@ public:
     Font& getFont() { return *m_font; }
     std::shared_ptr<GuiScreen> getCurrentScreen() { return m_currentScreen; }
     const HitResult& getObjectMouseOver() const { return m_objectMouseOver; }
+    HitResult& getObjectMouseOverRef() { return m_objectMouseOver; }
+    InputHandler& getInputHandler() { return *m_inputHandler; }
+
+    bool isBreakingBlock() const { return m_isBreakingBlock; }
+    void setBreakingBlock(bool v) { m_isBreakingBlock = v; }
+    int getBreakX() const { return m_breakX; }
+    void setBreakX(int v) { m_breakX = v; }
+    int getBreakY() const { return m_breakY; }
+    void setBreakY(int v) { m_breakY = v; }
+    int getBreakZ() const { return m_breakZ; }
+    void setBreakZ(int v) { m_breakZ = v; }
+    int getBreakFace() const { return m_breakFace; }
+    void setBreakFace(int v) { m_breakFace = v; }
+    float getBreakProgress() const { return m_breakProgress; }
+    void setBreakProgress(float v) { m_breakProgress = v; }
+    int getBreakSwingTick() const { return m_breakSwingTick; }
+    int& getBreakSwingTickRef() { return m_breakSwingTick; }
+    void setBreakSwingTick(int v) { m_breakSwingTick = v; }
+    int getHitDelayTimer() const { return m_hitDelayTimer; }
+    void setHitDelayTimer(int v) { m_hitDelayTimer = v; }
+    int getRightClickDelayTimer() const { return m_rightClickDelayTimer; }
+    void setRightClickDelayTimer(int v) { m_rightClickDelayTimer = v; }
+
+    void resetBlockBreaking(bool sendStopPacket);
+    float getBreakDeltaForBlock(uint8_t blockID) const;
+    bool finishBreakingCurrentBlock();
 
 private:
 
     void init();
     void tick();
-    void resetBlockBreaking(bool sendStopPacket);
-    float getBreakDeltaForBlock(uint8_t blockID) const;
-    bool finishBreakingCurrentBlock();
 
     SDL_Window* m_window;
     int m_width;

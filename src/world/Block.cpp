@@ -1,4 +1,5 @@
 #include "world/Block.hpp"
+#include "world/BlockRegistry.hpp"
 #include "world/World.hpp"
 #include "world/BlockFluid.hpp"
 #include "world/IBlockAccess.hpp"
@@ -65,68 +66,6 @@ const Block* Block::minecartTrack = nullptr;
 const Block* Block::stairCompactStone = nullptr;
 const Block* Block::signWall = nullptr;
 
-class BlockGrass : public Block {
-public:
-    BlockGrass(int id) : Block(id, 3, Material::ground) {}
-    int getTexture(int side) const override {
-        if (side == 1) return 0; // Top
-        if (side == 0) return 2; // Bottom
-        return 3; // Sides
-    }
-};
-
-class BlockLog : public Block {
-public:
-    BlockLog(int id) : Block(id, 20, Material::wood) {}
-    int getTexture(int side) const override {
-        if (side == 1 || side == 0) return 21; // Top/Bottom
-        return 20; // Sides
-    }
-};
-
-class BlockLeaves : public Block {
-public:
-    BlockLeaves(int id) : Block(id, 52, Material::leaves) {}
-    bool isOpaqueCube() const override { return false; }
-    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
-};
-
-class BlockGlass : public Block {
-public:
-    BlockGlass(int id) : Block(id, 49, Material::glass) {}
-    bool isOpaqueCube() const override { return false; }
-    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
-};
-
-class BlockWorkbench : public Block {
-public:
-    BlockWorkbench(int id) : Block(id, 43, Material::wood) {}
-    int getTexture(int side) const override {
-        if (side == 1) return 43; // Top
-        if (side == 0) return 4;  // Bottom (using planks tex index)
-        if (side == 2 || side == 3) return 59; 
-        return 60; 
-    }
-    bool onBlockActivated(World& world, int x, int y, int z, EntityPlayer* player) const override {
-        if (world.isRemote) {
-            player->openCraftingTable();
-        }
-        return true;
-    }
-};
-
-class BlockCross : public Block {
-public:
-    BlockCross(int id, int tex) : Block(id, tex, Material::plants) {
-        setBlockBounds(0.1f, 0.0f, 0.1f, 0.9f, 0.8f, 0.9f);
-    }
-    bool isFullCube() const override { return false; }
-    bool isOpaqueCube() const override { return false; }
-    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
-    BlockRenderShape getRenderShape() const override { return BlockRenderShape::Cross; }
-    AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const override { return AxisAlignedBB(0,0,0,0,0,0); }
-};
-
 void Block::init() {
     for (int i = 0; i < 256; ++i) {
         blockHardness[i] = 1.0f;
@@ -140,7 +79,7 @@ void Block::init() {
     planks = new Block(5, 4, Material::wood);
     sapling = new BlockCross(6, 15);
     bedrock = new Block(7, 17, Material::rock);
-    waterMoving = new BlockFlowing(8, Material::water); 
+    waterMoving = new BlockFlowing(8, Material::water);
     waterStill = new BlockStationary(9, Material::water);
     lavaMoving = new BlockFlowing(10, Material::lava);
     lavaStill = new BlockStationary(11, Material::lava);
@@ -187,87 +126,45 @@ void Block::init() {
     stairCompactStone = new Block(67, 16, Material::rock);
     signWall = new Block(68, 4, Material::wood);
 
-    blockHardness[1] = 1.5f;   // stone
-    blockHardness[2] = 0.6f;   // grass
-    blockHardness[3] = 0.5f;   // dirt
-    blockHardness[4] = 2.0f;   // cobblestone
-    blockHardness[5] = 2.0f;   // planks
-    blockHardness[6] = 0.0f;   // sapling
-    blockHardness[7] = -1.0f;  // bedrock
-    blockHardness[8] = -1.0f;  // water moving
-    blockHardness[9] = -1.0f;  // water still
-    blockHardness[10] = -1.0f; // lava moving
-    blockHardness[11] = -1.0f; // lava still
-    blockHardness[12] = 0.5f;  // sand
-    blockHardness[13] = 0.6f;  // gravel
-    blockHardness[14] = 3.0f;  // ore gold
-    blockHardness[15] = 3.0f;  // ore iron
-    blockHardness[16] = 3.0f;  // ore coal
-    blockHardness[17] = 2.0f;  // wood
-    blockHardness[18] = 0.2f;  // leaves
-    blockHardness[19] = 0.6f;  // sponge
-    blockHardness[20] = 0.3f;  // glass
-    blockHardness[35] = 0.8f;  // wool
-    blockHardness[37] = 0.0f;  // yellow flower
-    blockHardness[38] = 0.0f;  // red flower
-    blockHardness[39] = 0.0f;  // brown mushroom
-    blockHardness[40] = 0.0f;  // red mushroom
-    blockHardness[41] = 5.0f;  // gold block
-    blockHardness[42] = 5.0f;  // iron block
-    blockHardness[43] = 2.0f;  // double slab
-    blockHardness[44] = 2.0f;  // slab
-    blockHardness[45] = 2.0f;  // brick
-    blockHardness[46] = 0.0f;  // tnt
-    blockHardness[47] = 1.5f;  // bookshelf
-    blockHardness[48] = 2.0f;  // mossy cobblestone
-    blockHardness[49] = 10.0f; // obsidian
-    blockHardness[50] = 0.0f;  // torch
-    blockHardness[51] = -1.0f; // fire
-    blockHardness[52] = 5.0f;  // spawner
-    blockHardness[53] = 2.0f;  // wood stairs
-    blockHardness[54] = 2.5f;  // chest
-    blockHardness[55] = 0.0f;  // gear/redstone wire
-    blockHardness[56] = 3.0f;  // diamond ore
-    blockHardness[57] = 5.0f;  // diamond block
-    blockHardness[58] = 2.5f;  // workbench
-    blockHardness[59] = 0.0f;  // crops
-    blockHardness[60] = 0.6f;  // farmland
-    blockHardness[61] = 3.5f;  // furnace idle
-    blockHardness[62] = 3.5f;  // furnace active
-    blockHardness[63] = 1.0f;  // sign
-    blockHardness[64] = 3.0f;  // wooden door
-    blockHardness[65] = 0.4f;  // ladder
-    blockHardness[66] = 0.7f;  // rail
-    blockHardness[67] = 2.0f;  // cobble stairs
-    blockHardness[68] = 1.0f;  // wall sign
+    static const float hardnessValues[] = {
+        1, 1.5f, 0.6f, 0.5f, 2, 2, 0, -1, -1, -1, -1, -1, 0.5f, 0.6f, 3, 3, 3,
+        2, 0.2f, 0.6f, 0.3f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.8f,
+        0, 0, 0, 0, 0, 5, 5, 2, 2, 2, 0, 1.5f, 2, 10, 0, -1, 5, 2.5f, 0,
+        3, 5, 2.5f, 0, 0.6f, 3.5f, 3.5f, 1, 3, 0.4f, 0.7f, 2, 1
+    };
+    for (int i = 0; i < 69; ++i) {
+        if (hardnessValues[i] != 0.0f || i == 0) {
+            blockHardness[i] = hardnessValues[i];
+        }
+    }
 
-    lightOpacity[6] = 0; // sapling
-    lightOpacity[8] = 3; // water moving
-    lightOpacity[9] = 3; // water still
-    lightOpacity[10] = 3; // lava moving
-    lightOpacity[11] = 3; // lava still
-    lightOpacity[18] = 1; // leaves (standard MC is 1 or 3)
-    lightOpacity[20] = 0; // glass
-    lightOpacity[37] = 0; // flower y
-    lightOpacity[38] = 0; // flower r
-    lightOpacity[39] = 0; // mushroom b
-    lightOpacity[40] = 0; // mushroom r
-    lightOpacity[50] = 0; // torch
-    lightOpacity[51] = 0; // fire
-    lightOpacity[59] = 0; // crops
-    lightOpacity[63] = 0; // sign
-    lightOpacity[65] = 0; // ladder
-    lightOpacity[66] = 0; // rail
+    lightOpacity[6] = 0;
+    lightOpacity[8] = 3;
+    lightOpacity[9] = 3;
+    lightOpacity[10] = 3;
+    lightOpacity[11] = 3;
+    lightOpacity[18] = 1;
+    lightOpacity[20] = 0;
+    lightOpacity[37] = 0;
+    lightOpacity[38] = 0;
+    lightOpacity[39] = 0;
+    lightOpacity[40] = 0;
+    lightOpacity[50] = 0;
+    lightOpacity[51] = 0;
+    lightOpacity[59] = 0;
+    lightOpacity[63] = 0;
+    lightOpacity[65] = 0;
+    lightOpacity[66] = 0;
 
-    lightValue[10] = 15; // Lava Moving
-    lightValue[11] = 15; // Lava Still
-    lightValue[50] = 14; // Torch
-    lightValue[51] = 15; // Fire
-    lightValue[62] = 13; // Active Furnace
+    lightValue[10] = 15;
+    lightValue[11] = 15;
+    lightValue[50] = 14;
+    lightValue[51] = 15;
+    lightValue[62] = 13;
 }
 
-Block::Block(int id, int tex, const Material& mat) 
-    : blockID(id), blockIndexInTexture(tex), blockMaterial(mat) 
+Block::Block(int id, int tex, const Material& mat)
+    : blockID(id), blockIndexInTexture(tex), blockMaterial(mat)
 {
     blocksList[id] = this;
     opaqueCubeLookup[id] = isOpaqueCube();
@@ -302,6 +199,10 @@ bool Block::isGreedyMergeable() const {
 
 bool Block::isOpaqueCube() const {
     return true;
+}
+
+bool Block::isSameTypeCulled() const {
+    return false;
 }
 
 bool Block::shouldSideBeRendered(const IBlockAccess& world, int x, int y, int z, int side) const {

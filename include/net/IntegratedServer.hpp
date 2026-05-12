@@ -22,6 +22,18 @@ public:
     bool isPaused() const { return m_paused; }
     int getPlayerCount() const { return (int)m_players.size(); }
 
+    Server* getServer() const { return m_server.get(); }
+    World* getWorld() const { return m_world.get(); }
+
+    struct PlayerSession {
+        int32_t entityID;
+        std::string username;
+        InventoryPlayer inventory;
+        ItemStack cursorStack;
+        std::unordered_map<uint64_t, ChunkState> sentChunks;
+        std::unordered_set<int32_t> sentEntities;
+    };
+
 private:
     void run();
     void onPacketReceived(ENetPeer* peer, const uint8_t* data, size_t size);
@@ -33,13 +45,5 @@ private:
     std::atomic<bool> m_paused{false};
     bool m_isDedicated = false;
 
-    struct PlayerSession {
-        int32_t entityID;
-        std::string username;
-        InventoryPlayer inventory;
-        ItemStack cursorStack;
-        std::unordered_map<uint64_t, ChunkState> sentChunks;
-        std::unordered_set<int32_t> sentEntities;
-    };
     std::map<ENetPeer*, PlayerSession> m_players;
 };

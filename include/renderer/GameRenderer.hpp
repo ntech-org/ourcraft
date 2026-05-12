@@ -47,25 +47,24 @@ public:
     ProfilerResult& getProfiler() { return m_profiler; }
     Shader& getUIShader() { return *m_uiShader; }
     Shader& getTextShader() { return *m_textShader; }
+    Shader& getEntityShader() { return *m_entityShader; }
+    ModelBiped& getPlayerModel() { return *m_playerModel; }
+    ModelZombie& getZombieModel() { return *m_zombieModel; }
 
     float getScaledWidth() const { return m_scaledWidth; }
     float getScaledHeight() const { return m_scaledHeight; }
     int getGuiScale() const { return m_guiScale; }
+    void drawTexturedModalRect(float x, float y, int u, int v, int width, int height);
 
 private:
-    void setupFog(const glm::vec3& fogColor, float py, bool inWater, bool inLava);
     void renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening);
     void renderBreakingOverlay(const glm::mat4& projection, const glm::mat4& view);
     void renderSelectionBox(const glm::mat4& projection, const glm::mat4& view);
     void renderEntities(float partialTicks, const glm::mat4& projection, const glm::mat4& view, int cameraMode, const glm::vec3& fogColor);
     void renderFirstPersonArm(float partialTicks, const glm::mat4& projection);
-    void renderThirdPersonHeldItem(class EntityPlayer* player, float partialTicks, const glm::mat4& modelMat);
+    void renderThirdPersonHeldItem(class EntityPlayer* player, float partialTicks, const glm::dvec3& cameraPos);
 
     void renderUI(bool showDebug, bool showProfiler, float fps, int cameraMode);
-    void renderHUD();
-    void renderCrosshair();
-    void renderUnderwaterOverlay();
-    void drawTexturedModalRect(float x, float y, int u, int v, int width, int height);
 
 
     SDL_Window* m_window;

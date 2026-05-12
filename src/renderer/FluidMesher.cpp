@@ -20,6 +20,7 @@ bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
     if (!nid) return false;
     const Block* b = Block::blocksList[bid], * n = Block::blocksList[nid];
     if (!b || !n) return false;
+    if (bid == nid && b->isSameTypeCulled()) return true;
     if (n->isOccluder()) return true;
     if (b->blockMaterial == n->blockMaterial) return true;
     return false;

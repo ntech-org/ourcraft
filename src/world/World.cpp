@@ -1,4 +1,5 @@
 #include "world/World.hpp"
+#include "world/WorldHelpers.hpp"
 #include "world/Block.hpp"
 #include "world/JavaRandom.hpp"
 #include "entities/Entity.hpp"
@@ -29,6 +30,17 @@ uint8_t World::getBlockID(int x, int y, int z) const {
     if (y < 0 || y >= Chunk::HEIGHT) return 0;
     auto chunk = getChunk(x >> 4, z >> 4);
     return chunk ? chunk->getBlockID(x & 15, y, z & 15) : 0;
+}
+
+uint8_t World::getBlockMetadata(int x, int y, int z) const {
+    if (y < 0 || y >= Chunk::HEIGHT) return 0;
+    auto chunk = getChunk(x >> 4, z >> 4);
+    return chunk ? chunk->getBlockMetadata(x & 15, y, z & 15) : 0;
+}
+
+const Material& World::getBlockMaterial(int x, int y, int z) const {
+    uint8_t id = getBlockID(x, y, z);
+    return id == 0 ? Material::air : Block::blocksList[id]->blockMaterial;
 }
 
 bool World::setBlockID(int x, int y, int z, uint8_t id) {
@@ -65,87 +77,18 @@ bool World::setBlockID(int x, int y, int z, uint8_t id) {
     return true;
 }
 
-void World::setBlockWithNotify(int x, int y, int z, uint8_t id) { setBlockID(x, y, z, id); notifyBlockChange(x, y, z, id); }
+bool World::setBlockIDAndMetadata(int x, int y, int z, uint8_t id, uint8_t meta) {
+    applyBlockChange(x, y, z, id, meta, false);
+    return true;
+}
 
-void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8_t meta) {
-    if (y < 0 || y >= Chunk::HEIGHT) return;
-    auto chunk = getChunk(x >> 4, z >> 4);
-    if (!chunk) return;
-    int lx = x & 15, lz = z & 15;
-
-    uint8_t oldID = chunk->getBlockID(lx, y, lz);
-    uint8_t oldMeta = chunk->getBlockMetadata(lx, y, lz);
-    if (oldID == id && oldMeta == meta) return;
-
-    int oldOpacity = Block::lightOpacity[oldID];
-    int oldBlockLight = Block::lightValue[oldID];
-    int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
-
-    int si = Chunk::getSectionIndex(y);
-    chunk->setBlockID(lx, y, lz, id);
-    chunk->setBlockMetadata(lx, y, lz, meta);
-
-    if (onBlockChanged) {
-        onBlockChanged(x, y, z, id, meta);
-    }
-
-    if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
-    else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
-    if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
-    else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
-
-    updateLightForBlockChange(x, y, z, oldOpacity, Block::lightOpacity[id], oldBlockLight, Block::lightValue[id], oldSkyLight);
-
-    if (id > 0 && Block::blocksList[id]) {
-        Block::blocksList[id]->onBlockAdded(*this, x, y, z);
-    }
-
+void World::setBlockWithNotify(int x, int y, int z, uint8_t id) {
+    setBlockID(x, y, z, id);
     notifyBlockChange(x, y, z, id);
 }
 
-uint8_t World::getBlockMetadata(int x, int y, int z) const {
-    if (y < 0 || y >= Chunk::HEIGHT) return 0;
-    auto chunk = getChunk(x >> 4, z >> 4);
-    return chunk ? chunk->getBlockMetadata(x & 15, y, z & 15) : 0;
-}
-bool World::setBlockIDAndMetadata(int x, int y, int z, uint8_t id, uint8_t meta) {
-    if (y < 0 || y >= Chunk::HEIGHT) return false;
-    auto chunk = getChunk(x >> 4, z >> 4);
-    if (!chunk) return false;
-    int lx = x & 15, lz = z & 15;
-
-    uint8_t oldID = chunk->getBlockID(lx, y, lz);
-    uint8_t oldMeta = chunk->getBlockMetadata(lx, y, lz);
-    if (oldID == id && oldMeta == meta) return false;
-
-    int oldOpacity = Block::lightOpacity[oldID];
-    int oldBlockLight = Block::lightValue[oldID];
-    int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
-
-    int si = Chunk::getSectionIndex(y);
-    chunk->setBlockID(lx, y, lz, id);
-    chunk->setBlockMetadata(lx, y, lz, meta);
-
-    if (onBlockChanged) {
-        onBlockChanged(x, y, z, id, meta);
-    }
-
-    if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
-    else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
-    if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
-    else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
-
-    int newOpacity = Block::lightOpacity[id];
-    int newBlockLight = Block::lightValue[id];
-    if (newOpacity != oldOpacity || newBlockLight != oldBlockLight || id == 0) {
-        updateLightForBlockChange(x, y, z, oldOpacity, newOpacity, oldBlockLight, newBlockLight, oldSkyLight);
-    }
-
-    if (id > 0 && Block::blocksList[id]) {
-        Block::blocksList[id]->onBlockAdded(*this, x, y, z);
-    }
-
-    return true;
+void World::setBlockAndMetadataWithNotify(int x, int y, int z, uint8_t id, uint8_t meta) {
+    applyBlockChange(x, y, z, id, meta, true);
 }
 
 void World::setBlockMetadata(int x, int y, int z, uint8_t meta) {
@@ -160,7 +103,6 @@ void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
     auto chunk = getChunk(x >> 4, z >> 4);
     if (!chunk) return;
 
-    // Check if metadata actually changes to avoid unnecessary notifications
     uint8_t oldMeta = chunk->getBlockMetadata(x & 15, y, z & 15);
     if (oldMeta == meta) return;
 
@@ -172,17 +114,10 @@ void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
     notifyBlockChange(x, y, z, id);
 }
 
-const Material& World::getBlockMaterial(int x, int y, int z) const {
-    uint8_t id = getBlockID(x, y, z);
-    return id == 0 ? Material::air : Block::blocksList[id]->blockMaterial;
-}
-
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int delay) {
-    // Check if there's already a scheduled update for this block position
-    // Use a time of 0 for the search to find any entry at this position
     for (const auto& existing : m_scheduledTickSet) {
         if (existing.x == x && existing.y == y && existing.z == z && existing.blockID == id) {
-            return; // Already scheduled, don't add duplicate
+            return;
         }
     }
     NextTickListEntry e; e.x = x; e.y = y; e.z = z; e.blockID = id; e.scheduledTime = m_tickCount + delay;
@@ -232,7 +167,6 @@ void World::update(float dt) {
                 if (cid > 0 && Block::blocksList[cid]) {
                     bool canTick = (cid == e.blockID);
                     if (!canTick) {
-                        // Allow fluid updates if the ID changed between moving and still
                         if ((e.blockID == 8 || e.blockID == 9) && (cid == 8 || cid == 9)) canTick = true;
                         if ((e.blockID == 10 || e.blockID == 11) && (cid == 10 || cid == 11)) canTick = true;
                     }
@@ -308,7 +242,6 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
     }
     return {HitType::NONE};
 }
-
 
 void World::spawnEntity(std::unique_ptr<Entity> e) { if (e->entityID == -1) e->entityID = m_nextEntityID++; m_entities.push_back(std::move(e)); }
 
@@ -388,12 +321,10 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
             if (newLight > oldLight) {
                 nChunk->setLightInternal(type, nidx, newLight);
                 nChunk->markSectionDirtyInternal(ny >> 4);
-                
-                // If we are on a section boundary, mark the adjacent section as dirty too
+
                 if ((ny & 15) == 0 && ny > 0) nChunk->markSectionDirtyInternal((ny >> 4) - 1);
                 else if ((ny & 15) == 15 && ny < Chunk::HEIGHT - 1) nChunk->markSectionDirtyInternal((ny >> 4) + 1);
 
-                // If we are on a chunk boundary, mark the neighbor chunk section as dirty
                 if (nlx == 0) { if (auto nb = getRawChunk(nx - 1, nz)) nb->markSectionDirtyInternal(ny >> 4); }
                 else if (nlx == 15) { if (auto nb = getRawChunk(nx + 1, nz)) nb->markSectionDirtyInternal(ny >> 4); }
                 if (nlz == 0) { if (auto nb = getRawChunk(nx, nz - 1)) nb->markSectionDirtyInternal(ny >> 4); }
@@ -457,7 +388,6 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
                 nChunk->setLightInternal(type, nidx, 0);
                 nChunk->markSectionDirtyInternal(ny >> 4);
 
-                // Boundary dirtying
                 if ((ny & 15) == 0 && ny > 0) nChunk->markSectionDirtyInternal((ny >> 4) - 1);
                 else if ((ny & 15) == 15 && ny < Chunk::HEIGHT - 1) nChunk->markSectionDirtyInternal((ny >> 4) + 1);
 
@@ -540,7 +470,6 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
     }
 }
 
-
 void World::calculateInitialSkylight(Chunk& chunk) {
     chunk.generateHeightMap();
     const int cx = chunk.getX() << 4;
@@ -551,7 +480,6 @@ void World::calculateInitialSkylight(Chunk& chunk) {
     skyQueue.reserve(Chunk::SIZE / 2);
     blockQueue.reserve(Chunk::SIZE / 32);
 
-    // Rebuild vertical skylight from scratch to avoid stale/light-leak state.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             int sky = 15;
@@ -582,7 +510,6 @@ void World::calculateInitialSkylight(Chunk& chunk) {
 
     chunk.setLightWipeComplete(true);
 
-    // Seed boundary light from already-loaded neighbors for seamless joins.
     auto seedNeighborBoundary = [&](Chunk* neighbor, int wx, int wz) {
         if (!neighbor) return;
         for (int y = 0; y < Chunk::HEIGHT; ++y) {

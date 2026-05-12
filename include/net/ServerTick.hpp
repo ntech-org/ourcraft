@@ -1,0 +1,310 @@
+#pragma once
+
+#include "net/IntegratedServer.hpp"
+#include "net/Server.hpp"
+#include "net/Packets.hpp"
+#include "world/Block.hpp"
+#include "entities/EntityItem.hpp"
+#include "entities/EntityZombie.hpp"
+#include "entities/EntityPlayer.hpp"
+#include "items/Item.hpp"
+#include <iostream>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <unordered_map>
+
+namespace {
+
+struct ChunkOffset {
+    int dx;
+    int dz;
+    int distSq;
+};
+
+const std::vector<ChunkOffset>& getChunkOffsetsForRadius(int radius) {
+    static std::unordered_map<int, std::vector<ChunkOffset>> cache;
+    auto cached = cache.find(radius);
+    if (cached != cache.end()) {
+        return cached->second;
+    }
+
+    std::vector<ChunkOffset> offsets;
+    offsets.reserve((radius * 2 + 1) * (radius * 2 + 1));
+    for (int dx = -radius; dx <= radius; ++dx) {
+        for (int dz = -radius; dz <= radius; ++dz) {
+            offsets.push_back({dx, dz, dx * dx + dz * dz});
+        }
+    }
+    std::sort(offsets.begin(), offsets.end(), [](const ChunkOffset& a, const ChunkOffset& b) {
+        return a.distSq < b.distSq;
+    });
+    return cache.emplace(radius, std::move(offsets)).first->second;
+}
+
+inline void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players) {
+    auto saveHandler = world.getSaveHandler();
+    if (!saveHandler) return;
+
+    LevelData data;
+    if (!saveHandler->loadLevelData(data)) {
+        data.seed = 1772835215;
+        data.spawnX = 0; data.spawnY = 128; data.spawnZ = 0;
+    }
+    data.time = world.getWorldTime();
+    saveHandler->saveLevelData(data);
+
+    for (auto& [peer, session] : players) {
+        for (const auto& entity : world.getEntities()) {
+            if (entity->entityID == session.entityID) {
+                PlayerSaveData pData;
+                pData.name = session.username;
+                pData.x = entity->posX; pData.y = entity->posY; pData.z = entity->posZ;
+                pData.yaw = entity->rotationYaw; pData.pitch = entity->rotationPitch;
+                if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) pData.health = living->health;
+                for (int i = 0; i < 45; ++i) pData.inventory[i] = session.inventory.mainInventory[i];
+                saveHandler->savePlayerData(pData);
+                break;
+            }
+        }
+    }
+    saveHandler->flush();
+}
+
+inline void broadcastEntityPositions(World& world, Server& server) {
+    for (const auto& entity : world.getEntities()) {
+        if (entity->posX != entity->prevPosX || entity->posY != entity->prevPosY || entity->posZ != entity->prevPosZ ||
+            entity->rotationYaw != entity->prevRotationYaw || entity->rotationPitch != entity->prevRotationPitch) {
+
+            PacketMoveEntity move;
+            move.id = entity->entityID;
+            move.x = entity->posX;
+            move.y = entity->posY;
+            move.z = entity->posZ;
+            move.yaw = entity->rotationYaw;
+            move.pitch = entity->rotationPitch;
+            server.broadcastPacket(move, false);
+        }
+    }
+}
+
+inline void handleRespawns(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players) {
+    for (auto& [peer, session] : players) {
+        for (const auto& entity : world.getEntities()) {
+            if (entity->entityID == session.entityID) {
+                auto* living = dynamic_cast<EntityLiving*>(entity.get());
+                if (living && living->health <= 0) {
+                    LevelData levelData;
+                    auto saveHandler = world.getSaveHandler();
+                    if (saveHandler && saveHandler->loadLevelData(levelData)) {
+                        entity->setPosition(levelData.spawnX, levelData.spawnY, levelData.spawnZ);
+                    } else {
+                        entity->setPosition(0.0, 128.0, 0.0);
+                    }
+                    living->health = living->maxHealth;
+                    living->deathTime = 0;
+                    entity->motionX = entity->motionY = entity->motionZ = 0;
+
+                    PacketPlayerPosLook respawnPos;
+                    respawnPos.x = entity->posX; respawnPos.y = entity->posY; respawnPos.z = entity->posZ;
+                    respawnPos.yaw = entity->rotationYaw; respawnPos.pitch = entity->rotationPitch;
+                    server.sendPacket(peer, respawnPos, true);
+                }
+                break;
+            }
+        }
+    }
+}
+
+inline void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+                               const std::unordered_map<int32_t, Entity*>& entitiesById) {
+    struct PendingPickup {
+        ENetPeer* peer;
+        int collectorEntityID;
+        int itemEntityID;
+        int itemID;
+        int count;
+        uint8_t metadata;
+    };
+    std::vector<PendingPickup> pickups;
+    for (const auto& entity : world.getEntities()) {
+        auto* item = dynamic_cast<EntityItem*>(entity.get());
+        if (!item || item->pickupDelay > 0) continue;
+
+        for (auto& [peer, session] : players) {
+            auto it = entitiesById.find(session.entityID);
+            if (it == entitiesById.end()) continue;
+            auto* player = dynamic_cast<EntityPlayer*>(it->second);
+            if (!player) continue;
+
+            AxisAlignedBB pickupBox = player->boundingBox.expand(0.6, 0.6, 0.6);
+            if (!pickupBox.intersectsWith(item->boundingBox)) continue;
+
+            pickups.push_back({peer, player->entityID, item->entityID, item->itemID, item->count, item->metadata});
+            break;
+        }
+    }
+    for (const PendingPickup& pickup : pickups) {
+        if (players.count(pickup.peer)) {
+            auto& session = players[pickup.peer];
+            session.inventory.addItem(pickup.itemID, pickup.count, pickup.metadata);
+            PacketWindowItems packet;
+            packet.windowId = 0;
+            for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+                packet.items.push_back({session.inventory.mainInventory[i].itemID,
+                                      session.inventory.mainInventory[i].count,
+                                      session.inventory.mainInventory[i].metadata});
+            }
+            server.sendPacket(pickup.peer, packet, true);
+        }
+        PacketCollectItem collectPacket;
+        collectPacket.itemEntityID = pickup.itemEntityID;
+        collectPacket.collectorEntityID = pickup.collectorEntityID;
+        server.broadcastPacket(collectPacket, true);
+        world.removeEntity(pickup.itemEntityID, false);
+    }
+}
+
+inline void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players) {
+    for (auto& [peer, session] : players) {
+        for (const auto& entity : world.getEntities()) {
+            if (!session.sentEntities.insert(entity->entityID).second) continue;
+
+            PacketSpawnEntity spawn;
+            spawn.id = entity->entityID;
+            spawn.type = dynamic_cast<EntityZombie*>(entity.get()) ? 1 : (dynamic_cast<EntityItem*>(entity.get()) ? 2 : 0);
+            spawn.x = entity->posX;
+            spawn.y = entity->posY;
+            spawn.z = entity->posZ;
+            spawn.yaw = entity->rotationYaw;
+            spawn.pitch = entity->rotationPitch;
+            if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
+                spawn.dataA = item->itemID;
+                spawn.dataB = item->count;
+                spawn.dataC = item->metadata;
+            }
+            server.sendPacket(peer, spawn, true);
+        }
+    }
+}
+
+inline void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+                                 const std::unordered_map<int32_t, Entity*>& entitiesById) {
+    for (auto& [peer, session] : players) {
+        auto playerIt = entitiesById.find(session.entityID);
+        Entity* player = playerIt == entitiesById.end() ? nullptr : playerIt->second;
+        if (!player) continue;
+
+        int px = (int)std::floor(player->posX / 16.0);
+        int pz = (int)std::floor(player->posZ / 16.0);
+        int viewRadius = 8;
+        int requestRadius = 10;
+        const auto& offsets = getChunkOffsetsForRadius(requestRadius);
+
+        int chunksSentThisTick = 0;
+        constexpr int chunkLimitPerTick = 8;
+
+        for (const ChunkOffset& off : offsets) {
+            const int cx = px + off.dx;
+            const int cz = pz + off.dz;
+            const bool inView = std::abs(off.dx) <= viewRadius && std::abs(off.dz) <= viewRadius;
+
+            uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) | static_cast<uint32_t>(cz);
+
+            auto chunk = world.getChunk(cx, cz);
+            if (!chunk) {
+                world.requestChunk(cx, cz);
+                continue;
+            }
+
+            if (!inView) continue;
+            if (chunksSentThisTick >= chunkLimitPerTick) break;
+
+            ChunkState currentState = chunk->getState();
+            if (currentState < ChunkState::Lighted) continue;
+
+            auto it = session.sentChunks.find(key);
+            if (it == session.sentChunks.end()) {
+                PacketChunkData packet;
+                packet.x = cx; packet.z = cz;
+                packet.primaryBitmask = 0xFF;
+                packet.blockPtr = chunk->getBlocks();
+                packet.metaPtr = chunk->getMetadata();
+                packet.skyPtr = chunk->getSkylight();
+                packet.blockLightPtr = chunk->getBlocklight();
+                server.sendPacket(peer, packet, true);
+                session.sentChunks[key] = currentState;
+                chunksSentThisTick++;
+            }
+        }
+    }
+}
+
+inline void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+                             const std::unordered_map<int32_t, Entity*>& entitiesById) {
+    std::vector<std::pair<int, int>> toUnload;
+    for (const auto& chunk : world.getAllChunks()) {
+        bool keep = false;
+        for (auto& [peer, session] : players) {
+            auto playerIt = entitiesById.find(session.entityID);
+            Entity* player = playerIt == entitiesById.end() ? nullptr : playerIt->second;
+            if (!player) continue;
+
+            int dx = std::abs(chunk->getX() - (int)std::floor(player->posX / 16.0));
+            int dz = std::abs(chunk->getZ() - (int)std::floor(player->posZ / 16.0));
+            if (dx <= 12 && dz <= 12) {
+                keep = true;
+                break;
+            }
+        }
+        if (!keep) {
+            toUnload.push_back({chunk->getX(), chunk->getZ()});
+        }
+    }
+
+    for (auto& pos : toUnload) {
+        world.removeChunk(pos.first, pos.second);
+        PacketChunkUnload packet;
+        packet.x = pos.first; packet.z = pos.second;
+        server.broadcastPacket(packet, true);
+        uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(pos.first)) << 32) | static_cast<uint32_t>(pos.second);
+        for (auto& [peer, session] : players) session.sentChunks.erase(key);
+    }
+}
+
+inline void spawnMobs(World& world, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+                       const std::unordered_map<int32_t, Entity*>& entitiesById) {
+    for (auto& [peer, session] : players) {
+        auto it = entitiesById.find(session.entityID);
+        if (it == entitiesById.end()) continue;
+        Entity* player = it->second;
+
+        for (int i = 0; i < 3; ++i) {
+            int rx = (std::rand() % 64) - 32;
+            int rz = (std::rand() % 64) - 32;
+            int x = (int)std::floor(player->posX) + rx;
+            int z = (int)std::floor(player->posZ) + rz;
+
+            int y = 0;
+            for (y = 127; y > 0; --y) {
+                if (world.getBlockID(x, y, z) != 0) break;
+            }
+            y++;
+
+            if (y > 0 && y < 128) {
+                int light = world.getSavedLightValue(LightType::Block, x, y, z);
+                int skyLight = world.getSavedLightValue(LightType::Sky, x, y, z);
+
+                if (light < 7 && skyLight < 7) {
+                    auto zombie = std::make_unique<EntityZombie>(world);
+                    zombie->setPosition(x + 0.5, y, z + 0.5);
+                    if (world.getCollidingBoundingBoxes(zombie->boundingBox).empty()) {
+                        world.spawnEntity(std::move(zombie));
+                    }
+                }
+            }
+        }
+    }
+}
+
+} // namespace

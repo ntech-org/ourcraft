@@ -86,9 +86,9 @@ void GuiTextField::mouseClicked(int mouseX, int mouseY, int button) {
 void GuiTextField::drawTextField(Minecraft* mc, Font& font, Shader& shader) {
     if (!visible) return;
 
-    shader.use();
-    drawRect(shader, (float)x - 1, (float)y - 1, (float)x + (float)width + 1, (float)y + (float)height + 1, 0xFFA0A0A0);
-    drawRect(shader, (float)x, (float)y, (float)x + (float)width, (float)y + (float)height, 0xFF000000);
+    Shader& uiShader = mc->getGameRenderer().getUIShader();
+    drawRect(uiShader, (float)x - 1, (float)y - 1, (float)x + (float)width + 1, (float)y + (float)height + 1, 0xFFA0A0A0);
+    drawRect(uiShader, (float)x, (float)y, (float)x + (float)width, (float)y + (float)height, 0xFF000000);
 
     int color = 0xFFE0E0E0;
     std::string display = m_text;

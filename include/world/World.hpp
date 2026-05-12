@@ -156,7 +156,9 @@ private:
     std::deque<BlockUpdate> m_notificationQueue;
     bool m_processingNotifications = false;
 
-    void notifyBlockOfNeighborChange(int x, int y, int z, int neighborID);    static int floorDiv(int value, int divisor);
+    void notifyBlockOfNeighborChange(int x, int y, int z, int neighborID);
+    void applyBlockChange(int x, int y, int z, uint8_t id, uint8_t meta, bool notify);
+    static int floorDiv(int value, int divisor);
     static int floorMod(int value, int divisor);
     static std::uint64_t chunkKey(int chunkX, int chunkZ);
     static glm::vec3 unpackColor(std::uint32_t rgb);

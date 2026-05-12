@@ -91,13 +91,15 @@ bool World::pollGeneratedChunks() {
             addChunk(chunk);
             worldChanged = true;
 
-            // Wake up fluids and neighbors - only flowing fluids need ticking
-            // Stationary fluids (9=water, 11=lava) only update via neighbor changes
-            for (int x = 0; x < 16; ++x) {
-                for (int z = 0; z < 16; ++z) {
-                    for (int y = 0; y < Chunk::HEIGHT; ++y) {
+            // Schedule flowing fluids at chunk edges so water levels
+            // equalize across chunk seams — the BlockStationary::updateTick
+            // fix handles conversion from stationary when flow reaches boundaries.
+            for (int y = 0; y < Chunk::HEIGHT; ++y) {
+                for (int x = 0; x < 16; ++x) {
+                    for (int z = 0; z < 16; ++z) {
+                        if (x != 0 && x != 15 && z != 0 && z != 15) continue;
                         uint8_t id = chunk->getBlockID(x, y, z);
-                        if (id == 8 || id == 10) { // Only flowing water (8) and flowing lava (10)
+                        if (id == 8 || id == 10) {
                             scheduleBlockUpdate(cx * 16 + x, y, cz * 16 + z, id, Block::blocksList[id]->tickRate());
                         }
                     }

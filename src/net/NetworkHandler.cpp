@@ -1,4 +1,5 @@
 #include "net/NetworkHandler.hpp"
+#include "net/ClientPacketHandler.hpp"
 #include "net/NetworkManager.hpp"
 #include "net/Packets.hpp"
 #include "entities/EntityItem.hpp"
@@ -41,7 +42,6 @@ void NetworkHandler::update() {
     m_client->poll();
 
     if (++m_posUpdateTimer >= 20) {
-        // Keep-alive/Sync every second
         PacketPlayerRotation packet;
         packet.yaw = m_player.rotationYaw; packet.pitch = m_player.rotationPitch;
         packet.onGround = m_player.onGround;
@@ -75,7 +75,7 @@ void NetworkHandler::sendPlayerPosition(const EntityPlayer& player) {
     float dYaw = player.rotationYaw - m_lastYaw;
     float dPitch = player.rotationPitch - m_lastPitch;
 
-    bool moved = (dx * dx + dy * dy + dz * dz) > 9e-4; // 0.03 blocks
+    bool moved = (dx * dx + dy * dy + dz * dz) > 9e-4;
     bool turned = std::abs(dYaw) > 0.1f || std::abs(dPitch) > 0.1f;
 
     if (moved && turned) {
@@ -84,11 +84,11 @@ void NetworkHandler::sendPlayerPosition(const EntityPlayer& player) {
         packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch;
         packet.onGround = player.onGround;
         m_client->sendPacket(packet, false);
-        m_posUpdateTimer = 0; // Reset timer since we just sent a packet
+        m_posUpdateTimer = 0;
     } else if (moved) {
         PacketPlayerPosition packet;
         packet.x = player.posX; packet.y = player.posY; packet.z = player.posZ;
-        packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch; // Fallback for old servers
+        packet.yaw = player.rotationYaw; packet.pitch = player.rotationPitch;
         packet.onGround = player.onGround;
         m_client->sendPacket(packet, false);
         m_posUpdateTimer = 0;
@@ -130,184 +130,5 @@ void NetworkHandler::sendPacket(const Packet& packet) {
 void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {
     const uint8_t* ptr = data;
     PacketType type = (PacketType)Packet::readByte(ptr);
-
-    if (type == PacketType::LoginResponse) {
-        PacketLoginResponse packet;
-        packet.deserialize(ptr, size - 1);
-        m_playerID = packet.entityID;
-        m_player.entityID = m_playerID;
-    } else if (type == PacketType::SpawnEntity) {
-        PacketSpawnEntity packet;
-        packet.deserialize(ptr, size - 1);
-        if (packet.id == m_playerID) return;
-
-        std::unique_ptr<Entity> entity;
-        if (packet.type == 1) {
-            entity = std::make_unique<EntityZombie>(m_world);
-        } else if (packet.type == 2) {
-            auto item = std::make_unique<EntityItem>(m_world, packet.dataA, packet.dataB, packet.dataC);
-            item->pickupDelay = 0;
-            item->handlePhysics = false;
-            entity = std::move(item);
-        } else {
-            entity = std::make_unique<EntityPlayer>(m_world);
-        }
-        entity->entityID = packet.id;
-        entity->setPosAndPrev(packet.x, packet.y, packet.z);
-        entity->rotationYaw = packet.yaw;
-        entity->rotationPitch = packet.pitch;
-        entity->handlePhysics = false;
-
-        entity->serverPosX = packet.x;
-        entity->serverPosY = packet.y;
-        entity->serverPosZ = packet.z;
-        entity->serverYaw = packet.yaw;
-        entity->serverPitch = packet.pitch;
-
-        m_world.spawnEntity(std::move(entity));
-    } else if (type == PacketType::MoveEntity) {
-        PacketMoveEntity packet;
-        packet.deserialize(ptr, size - 1);
-        if (packet.id == m_playerID) return;
-
-        for (auto& entity : m_world.getEntities()) {
-            if (entity->entityID == packet.id) {
-                entity->serverPosX = packet.x;
-                entity->serverPosY = packet.y;
-                entity->serverPosZ = packet.z;
-                entity->serverYaw = packet.yaw;
-                entity->serverPitch = packet.pitch;
-                entity->posRotationIncrements = 3;
-                break;
-            }
-        }
-    } else if (type == PacketType::ChunkData) {
-        PacketChunkData packet;
-        packet.deserialize(ptr, size - 1);
-
-        std::uint64_t key = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(packet.x)) << 32) | static_cast<std::uint32_t>(packet.z);
-        m_world.m_pendingRequests.erase(key);
-        m_world.m_pendingChunks.erase(key);
-
-        std::shared_ptr<Chunk> chunk = m_world.getChunk(packet.x, packet.z);
-        bool isNew = false;
-        if (!chunk) {
-            chunk = std::make_shared<Chunk>(packet.x, packet.z);
-            isNew = true;
-        }
-
-        std::memcpy(chunk->getBlocks(), packet.blocks.data(), packet.blocks.size());
-        std::memcpy(chunk->getMetadata(), packet.metadata.data(), packet.metadata.size());
-        std::memcpy(chunk->getSkylight(), packet.skylight.data(), packet.skylight.size());
-        std::memcpy(chunk->getBlocklight(), packet.blocklight.data(), packet.blocklight.size());
-
-        bool hasLight = false;
-        for (uint8_t b : packet.skylight) if (b != 0) { hasLight = true; break; }
-        if (!hasLight) {
-            for (uint8_t b : packet.blocklight) if (b != 0) { hasLight = true; break; }
-        }
-
-        if (!hasLight) {
-            m_world.predictLighting(*chunk);
-        } else {
-            chunk->setLightWipeComplete(true);
-        }
-
-        chunk->setState(ChunkState::Complete);
-        chunk->generateHeightMap();
-        chunk->generateBitmask();
-
-        if (isNew) {
-            m_world.addChunk(chunk);
-        }
-
-        // Cache neighbors to avoid repeated lookups in the loop
-        auto nW = m_world.getChunk(packet.x - 1, packet.z);
-        auto nE = m_world.getChunk(packet.x + 1, packet.z);
-        auto nN = m_world.getChunk(packet.x, packet.z - 1);
-        auto nS = m_world.getChunk(packet.x, packet.z + 1);
-
-        // Mark all sections as dirty so they rebuild meshes
-        for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
-            chunk->markSectionDirtyInternal(i);
-
-            // Also touch neighbors to fix seams/lighting at boundaries
-            if (nW) nW->touchSection(i);
-            if (nE) nE->touchSection(i);
-            if (nN) nN->touchSection(i);
-            if (nS) nS->touchSection(i);
-        }
-    } else if (type == PacketType::BlockChange) {
-        PacketBlockChange packet;
-        packet.deserialize(ptr, size - 1);
-        m_world.setBlockAndMetadataWithNotify(packet.x, packet.y, packet.z, packet.blockID, packet.metadata);
-    } else if (type == PacketType::DestroyEntity) {
-        PacketDestroyEntity packet;
-        packet.deserialize(ptr, size - 1);
-        m_world.removeEntity(packet.id);
-    } else if (type == PacketType::CollectItem) {
-        PacketCollectItem packet;
-        packet.deserialize(ptr, size - 1);
-        double targetX = m_player.posX;
-        double targetY = m_player.posY + m_player.height * 0.3;
-        double targetZ = m_player.posZ;
-        for (auto& entity : m_world.getEntities()) {
-            if (entity->entityID != packet.collectorEntityID) continue;
-            targetX = entity->posX;
-            targetY = entity->posY + entity->height * 0.3;
-            targetZ = entity->posZ;
-            break;
-        }
-        targetX *= 0.995;
-        targetZ *= 0.995;
-        for (auto& entity : m_world.getEntities()) {
-            if (entity->entityID == packet.itemEntityID) {
-                if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
-                    item->startPickupAnimation(targetX, targetY, targetZ);
-                }
-                break;
-            }
-        }
-    } else if (type == PacketType::ChunkUnload) {
-        PacketChunkUnload packet;
-        packet.deserialize(ptr, size - 1);
-        m_world.removeChunk(packet.x, packet.z);
-    } else if (type == PacketType::PlayerPosLook) {
-        PacketPlayerPosLook packet;
-        packet.deserialize(ptr, size - 1);
-        m_player.setPosition(packet.x, packet.y, packet.z);
-        m_player.rotationYaw = packet.yaw;
-        m_player.rotationPitch = packet.pitch;
-        m_player.onGround = packet.onGround;
-
-        m_lastX = packet.x; m_lastY = packet.y; m_lastZ = packet.z;
-        m_lastYaw = packet.yaw; m_lastPitch = packet.pitch;
-    } else if (type == PacketType::InventoryAdd) {
-        PacketInventoryAdd packet;
-        packet.deserialize(ptr, size - 1);
-        m_player.inventory.addItem(packet.itemID, packet.count, packet.metadata);
-    } else if (type == PacketType::WindowItems) {
-        PacketWindowItems packet;
-        packet.deserialize(ptr, size - 1);
-        if (packet.windowId == 0) {
-            for (size_t i = 0; i < packet.items.size() && i < InventoryPlayer::TOTAL_SIZE; ++i) {
-                m_player.inventory.mainInventory[i] = {packet.items[i].id, (int)packet.items[i].count, packet.items[i].metadata};
-            }
-        }
-    } else if (type == PacketType::SetSlot) {
-        PacketSetSlot packet;
-        packet.deserialize(ptr, size - 1);
-        if (packet.windowId == 0) {
-            if (packet.slot == -1) {
-                m_player.inventory.cursorStack = {packet.itemID, packet.count, packet.metadata};
-            } else if (packet.slot >= 0 && packet.slot < InventoryPlayer::TOTAL_SIZE) {
-                m_player.inventory.mainInventory[packet.slot] = {packet.itemID, packet.count, packet.metadata};
-            }
-        }
-    }
- else if (type == PacketType::ConfirmTransaction) {
-        PacketConfirmTransaction packet;
-        packet.deserialize(ptr, size - 1);
-        // If rejected, the server should follow up with SetSlot/WindowItems to correct the client.
-    }
+    handleClientPacket(*this, m_world, m_player, m_playerID, ptr, size, type);
 }
