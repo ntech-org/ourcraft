@@ -4,16 +4,9 @@
 #include <cmath>
 
 namespace {
-constexpr std::uint32_t kWhiteColor = 0xFFFFFFFFu;
-enum class FaceDirection { Down = 0, Up = 1, North = 2, South = 3, West = 4, East = 5 };
 
 void appendVertex(ChunkMeshData::Pass& p, float x, float y, float z, float u, float v, int tex, FaceDirection dir, float flow, float liq, float depth, float skyLight, float blockLight) {
     p.vertices.push_back({x, y, z, u, v, kWhiteColor, (std::uint32_t)tex, (std::uint32_t)dir, flow, liq, depth, skyLight, blockLight});
-}
-
-void appendIndices(ChunkMeshData::Pass& p) {
-    std::uint32_t b = (std::uint32_t)p.vertices.size() - 4;
-    p.indices.insert(p.indices.end(), {b, b + 1, b + 2, b, b + 2, b + 3}); p.quadCount++;
 }
 
 bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
@@ -24,20 +17,6 @@ bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
     if (n->isOccluder()) return true;
     if (b->blockMaterial == n->blockMaterial) return true;
     return false;
-}
-
-float getWaterDepth(const IBlockAccess& n, int x, int y, int z) {
-    float d = 0;
-    // Only count depth if the column of liquid is continuous from y+1 upwards.
-    // This prevents "underwater" darkening in air pockets/caves below oceans.
-    for (int i = 0; (y + i + 1) < Chunk::HEIGHT; ++i) {
-        if (n.getBlockMaterial(x, y + i + 1, z).isLiquid()) {
-            d += 1.0f;
-        } else {
-            break;
-        }
-    }
-    return d;
 }
 
 float getCornerHeight(const IBlockAccess& n, int x, int y, int z, const Material& mat) {

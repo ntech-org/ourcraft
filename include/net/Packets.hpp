@@ -4,67 +4,64 @@
 #include "util/Compression.hpp"
 #include <cstring>
 
-class PacketLogin : public Packet {
+class PacketLogin : public AutoPacket<PacketLogin> {
 public:
     std::string username;
     std::string uuid;
     int32_t protocolVersion;
 
     PacketType getType() const override { return PacketType::Login; }
-    
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeString(buffer, username);
         writeString(buffer, uuid);
         writeInt(buffer, protocolVersion);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         username = readString(data);
         uuid = readString(data);
         protocolVersion = readInt(data);
     }
 };
 
-class PacketDisconnect : public Packet {
+class PacketDisconnect : public AutoPacket<PacketDisconnect> {
 public:
     std::string reason;
 
     PacketType getType() const override { return PacketType::Disconnect; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeString(buffer, reason);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         reason = readString(data);
     }
 };
 
-class PacketLoginResponse : public Packet {
+class PacketLoginResponse : public AutoPacket<PacketLoginResponse> {
 public:
     int32_t entityID;
     std::string username;
     std::string uuid;
 
     PacketType getType() const override { return PacketType::LoginResponse; }
-    
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, entityID);
         writeString(buffer, username);
         writeString(buffer, uuid);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         entityID = readInt(data);
         username = readString(data);
         uuid = readString(data);
     }
 };
 
-class PacketPlayerPosition : public Packet {
+class PacketPlayerPosition : public AutoPacket<PacketPlayerPosition> {
 public:
     double x, y, z;
     float yaw, pitch;
@@ -72,8 +69,7 @@ public:
 
     PacketType getType() const override { return PacketType::PlayerPosition; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeDouble(buffer, x);
         writeDouble(buffer, y);
         writeDouble(buffer, z);
@@ -82,7 +78,7 @@ public:
         writeByte(buffer, onGround ? 1 : 0);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readDouble(data);
         y = readDouble(data);
         z = readDouble(data);
@@ -92,28 +88,27 @@ public:
     }
 };
 
-class PacketPlayerRotation : public Packet {
+class PacketPlayerRotation : public AutoPacket<PacketPlayerRotation> {
 public:
     float yaw, pitch;
     bool onGround;
 
     PacketType getType() const override { return PacketType::PlayerRotation; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeFloat(buffer, yaw);
         writeFloat(buffer, pitch);
         writeByte(buffer, onGround ? 1 : 0);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         yaw = readFloat(data);
         pitch = readFloat(data);
         onGround = readByte(data) != 0;
     }
 };
 
-class PacketPlayerPosLook : public Packet {
+class PacketPlayerPosLook : public AutoPacket<PacketPlayerPosLook> {
 public:
     double x, y, z;
     float yaw, pitch;
@@ -121,8 +116,7 @@ public:
 
     PacketType getType() const override { return PacketType::PlayerPosLook; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeDouble(buffer, x);
         writeDouble(buffer, y);
         writeDouble(buffer, z);
@@ -131,7 +125,7 @@ public:
         writeByte(buffer, onGround ? 1 : 0);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readDouble(data);
         y = readDouble(data);
         z = readDouble(data);
@@ -141,7 +135,7 @@ public:
     }
 };
 
-class PacketSpawnEntity : public Packet {
+class PacketSpawnEntity : public AutoPacket<PacketSpawnEntity> {
 public:
     int32_t id;
     uint8_t type; // 0 = Player, 1 = Zombie, 2 = Item
@@ -155,8 +149,7 @@ public:
 
     PacketType getType() const override { return PacketType::SpawnEntity; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, id);
         writeByte(buffer, type);
         writeDouble(buffer, x);
@@ -171,7 +164,7 @@ public:
         writeString(buffer, uuid);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         id = readInt(data);
         type = readByte(data);
         x = readDouble(data);
@@ -187,7 +180,7 @@ public:
     }
 };
 
-class PacketMoveEntity : public Packet {
+class PacketMoveEntity : public AutoPacket<PacketMoveEntity> {
 public:
     int32_t id;
     double x, y, z;
@@ -195,8 +188,7 @@ public:
 
     PacketType getType() const override { return PacketType::MoveEntity; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, id);
         writeDouble(buffer, x);
         writeDouble(buffer, y);
@@ -205,7 +197,7 @@ public:
         writeFloat(buffer, pitch);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         id = readInt(data);
         x = readDouble(data);
         y = readDouble(data);
@@ -215,11 +207,11 @@ public:
     }
 };
 
-class PacketChunkData : public Packet {
+class PacketChunkData : public AutoPacket<PacketChunkData> {
 public:
     int32_t x, z;
     uint8_t primaryBitmask = 0;
-    
+
     // Use pointers to avoid massive copies if possible
     const uint8_t* blockPtr = nullptr;
     const uint8_t* metaPtr = nullptr;
@@ -234,8 +226,7 @@ public:
 
     PacketType getType() const override { return PacketType::ChunkData; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, x);
         writeInt(buffer, z);
         writeByte(buffer, primaryBitmask);
@@ -290,14 +281,14 @@ public:
         writeBytes(buffer, compressed.data(), compressed.size());
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readInt(data);
         z = readInt(data);
         primaryBitmask = readByte(data);
-        
+
         int32_t compressedSize = readInt(data);
         const uint8_t* compressedPtr = data;
-        
+
         int sectionCount = 0;
         for(int i = 0; i < 8; ++i) if(primaryBitmask & (1 << i)) sectionCount++;
 
@@ -311,7 +302,7 @@ public:
         blocklight.assign(16 * 128 * 16 / 2, 0);
 
         const uint8_t* ptr = decompressed.data();
-        
+
         // 1. Blocks
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
@@ -352,7 +343,7 @@ enum class DiggingAction : uint8_t {
     FINISH = 2
 };
 
-class PacketPlayerDigging : public Packet {
+class PacketPlayerDigging : public AutoPacket<PacketPlayerDigging> {
 public:
     DiggingAction action;
     int32_t x, y, z;
@@ -360,8 +351,7 @@ public:
 
     PacketType getType() const override { return PacketType::PlayerDigging; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeByte(buffer, (uint8_t)action);
         writeInt(buffer, x);
         writeInt(buffer, y);
@@ -369,7 +359,7 @@ public:
         writeByte(buffer, face);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         action = (DiggingAction)readByte(data);
         x = readInt(data);
         y = readInt(data);
@@ -378,7 +368,7 @@ public:
     }
 };
 
-class PacketBlockPlacement : public Packet {
+class PacketBlockPlacement : public AutoPacket<PacketBlockPlacement> {
 public:
     int32_t x, y, z;
     uint8_t face;
@@ -387,8 +377,7 @@ public:
 
     PacketType getType() const override { return PacketType::BlockPlacement; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, x);
         writeInt(buffer, y);
         writeInt(buffer, z);
@@ -397,7 +386,7 @@ public:
         writeByte(buffer, metadata);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readInt(data);
         y = readInt(data);
         z = readInt(data);
@@ -407,7 +396,7 @@ public:
     }
 };
 
-class PacketBlockChange : public Packet {
+class PacketBlockChange : public AutoPacket<PacketBlockChange> {
 public:
     int32_t x, y, z;
     uint8_t blockID;
@@ -415,8 +404,7 @@ public:
 
     PacketType getType() const override { return PacketType::BlockChange; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, x);
         writeInt(buffer, y);
         writeInt(buffer, z);
@@ -424,7 +412,7 @@ public:
         writeByte(buffer, metadata);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readInt(data);
         y = readInt(data);
         z = readInt(data);
@@ -433,42 +421,40 @@ public:
     }
 };
 
-class PacketDestroyEntity : public Packet {
+class PacketDestroyEntity : public AutoPacket<PacketDestroyEntity> {
 public:
     int32_t id;
 
     PacketType getType() const override { return PacketType::DestroyEntity; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, id);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         id = readInt(data);
     }
 };
 
-class PacketCollectItem : public Packet {
+class PacketCollectItem : public AutoPacket<PacketCollectItem> {
 public:
     int32_t itemEntityID;
     int32_t collectorEntityID;
 
     PacketType getType() const override { return PacketType::CollectItem; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, itemEntityID);
         writeInt(buffer, collectorEntityID);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         itemEntityID = readInt(data);
         collectorEntityID = readInt(data);
     }
 };
 
-class PacketPlaySound : public Packet {
+class PacketPlaySound : public AutoPacket<PacketPlaySound> {
 public:
     std::string name;
     double x, y, z;
@@ -477,8 +463,7 @@ public:
 
     PacketType getType() const override { return PacketType::PlaySound; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeString(buffer, name);
         writeDouble(buffer, x);
         writeDouble(buffer, y);
@@ -487,7 +472,7 @@ public:
         writeFloat(buffer, pitch);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         name = readString(data);
         x = readDouble(data);
         y = readDouble(data);
@@ -497,43 +482,41 @@ public:
     }
 };
 
-class PacketChunkRequest : public Packet {
+class PacketChunkRequest : public AutoPacket<PacketChunkRequest> {
 public:
     int32_t x, z;
 
     PacketType getType() const override { return PacketType::ChunkRequest; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, x);
         writeInt(buffer, z);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readInt(data);
         z = readInt(data);
     }
 };
 
-class PacketChunkUnload : public Packet {
+class PacketChunkUnload : public AutoPacket<PacketChunkUnload> {
 public:
     int32_t x, z;
 
     PacketType getType() const override { return PacketType::ChunkUnload; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, x);
         writeInt(buffer, z);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         x = readInt(data);
         z = readInt(data);
     }
 };
 
-class PacketInventoryAdd : public Packet {
+class PacketInventoryAdd : public AutoPacket<PacketInventoryAdd> {
 public:
     int32_t itemID = 0;
     int32_t count = 0;
@@ -541,21 +524,20 @@ public:
 
     PacketType getType() const override { return PacketType::InventoryAdd; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, itemID);
         writeInt(buffer, count);
         writeByte(buffer, metadata);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         itemID = readInt(data);
         count = readInt(data);
         metadata = readByte(data);
     }
 };
 
-class PacketWindowItems : public Packet {
+class PacketWindowItems : public AutoPacket<PacketWindowItems> {
 public:
     uint8_t windowId;
     struct Item { int32_t id; int32_t count; uint8_t metadata; };
@@ -563,8 +545,7 @@ public:
 
     PacketType getType() const override { return PacketType::WindowItems; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeByte(buffer, windowId);
         writeInt(buffer, (int32_t)items.size());
         for (const auto& item : items) {
@@ -574,7 +555,7 @@ public:
         }
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         windowId = readByte(data);
         int32_t count = readInt(data);
         items.resize(count);
@@ -586,7 +567,7 @@ public:
     }
 };
 
-class PacketSetSlot : public Packet {
+class PacketSetSlot : public AutoPacket<PacketSetSlot> {
 public:
     uint8_t windowId;
     int32_t slot;
@@ -596,8 +577,7 @@ public:
 
     PacketType getType() const override { return PacketType::SetSlot; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeByte(buffer, windowId);
         writeInt(buffer, slot);
         writeInt(buffer, itemID);
@@ -605,7 +585,7 @@ public:
         writeByte(buffer, metadata);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         windowId = readByte(data);
         slot = readInt(data);
         itemID = readInt(data);
@@ -614,7 +594,7 @@ public:
     }
 };
 
-class PacketClickWindow : public Packet {
+class PacketClickWindow : public AutoPacket<PacketClickWindow> {
 public:
     uint8_t windowId;
     int32_t slot;
@@ -627,8 +607,7 @@ public:
 
     PacketType getType() const override { return PacketType::ClickWindow; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeByte(buffer, windowId);
         writeInt(buffer, slot);
         writeByte(buffer, button);
@@ -639,7 +618,7 @@ public:
         writeByte(buffer, metadata);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         windowId = readByte(data);
         slot = readInt(data);
         button = readByte(data);
@@ -651,7 +630,7 @@ public:
     }
 };
 
-class PacketConfirmTransaction : public Packet {
+class PacketConfirmTransaction : public AutoPacket<PacketConfirmTransaction> {
 public:
     uint8_t windowId;
     int16_t actionId;
@@ -659,21 +638,20 @@ public:
 
     PacketType getType() const override { return PacketType::ConfirmTransaction; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeByte(buffer, windowId);
         writeInt(buffer, (int32_t)actionId);
         writeByte(buffer, accepted ? 1 : 0);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         windowId = readByte(data);
         actionId = (int16_t)readInt(data);
         accepted = readByte(data) != 0;
     }
 };
 
-class PacketUseEntity : public Packet {
+class PacketUseEntity : public AutoPacket<PacketUseEntity> {
 public:
     int32_t userEntityID;
     int32_t targetEntityID;
@@ -681,14 +659,13 @@ public:
 
     PacketType getType() const override { return PacketType::UseEntity; }
 
-    void serialize(std::vector<uint8_t>& buffer) const override {
-        writeByte(buffer, (uint8_t)getType());
+    void writeImpl(std::vector<uint8_t>& buffer) const {
         writeInt(buffer, userEntityID);
         writeInt(buffer, targetEntityID);
         writeByte(buffer, leftClick);
     }
 
-    void deserialize(const uint8_t* data, size_t size) override {
+    void readImpl(const uint8_t*& data) {
         userEntityID = readInt(data);
         targetEntityID = readInt(data);
         leftClick = readByte(data);

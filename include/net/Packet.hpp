@@ -52,3 +52,16 @@ public:
     static uint8_t readByte(const uint8_t*& data);
     static void readBytes(const uint8_t*& data, uint8_t* target, size_t size);
 };
+
+template<typename T>
+class AutoPacket : public Packet {
+public:
+    void serialize(std::vector<uint8_t>& buffer) const override {
+        writeByte(buffer, (uint8_t)static_cast<const T*>(this)->getType());
+        static_cast<const T*>(this)->writeImpl(buffer);
+    }
+    void deserialize(const uint8_t* data, size_t size) override {
+        (void)size;
+        static_cast<T*>(this)->readImpl(data);
+    }
+};
