@@ -293,6 +293,15 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
                         // Track fall distance from client position packets
                         // (independent of server physics simulation)
                         double yDiff = p.y - session.lastSentY;
+
+                        // Water absorbs fall damage
+                        int fx = (int)std::floor(p.x), fz = (int)std::floor(p.z);
+                        int waterCheckY = (int)std::floor(p.y + 0.5);
+                        uint8_t feetBlock = m_world->getBlockID(fx, waterCheckY, fz);
+                        if (feetBlock == 8 || feetBlock == 9) {
+                            session.accumulatedFall = 0.0f;
+                        }
+
                         if (yDiff < -0.001) {
                             // Falling: accumulate distance
                             session.accumulatedFall += (float)(-yDiff);
