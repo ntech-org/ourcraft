@@ -72,7 +72,7 @@ void Block::init() {
     }
     blockHardness[0] = 0.0f;
 
-    stone = new Block(1, 1, Material::rock);
+    stone = new BlockStone(1);
     grass = new BlockGrass(2);
     dirt = new Block(3, 2, Material::ground);
     cobblestone = new Block(4, 16, Material::rock);
@@ -84,10 +84,10 @@ void Block::init() {
     lavaMoving = new BlockFlowing(10, Material::lava);
     lavaStill = new BlockStationary(11, Material::lava);
     sand = new Block(12, 18, Material::sand);
-    gravel = new Block(13, 19, Material::sand);
-    oreGold = new Block(14, 32, Material::rock);
-    oreIron = new Block(15, 33, Material::rock);
-    oreCoal = new Block(16, 34, Material::rock);
+    gravel = new BlockGravel(13);
+    oreGold = new BlockOre(14, 32);
+    oreIron = new BlockOre(15, 33);
+    oreCoal = new BlockOre(16, 34);
     wood = new BlockLog(17);
     leaves = new BlockLeaves(18);
     sponge = new Block(19, 48, Material::sponge);
@@ -112,11 +112,11 @@ void Block::init() {
     stairCompactWood = new Block(53, 4, Material::wood);
     chest = new Block(54, 26, Material::wood);
     gear = new Block(55, 62, Material::iron);
-    oreDiamond = new Block(56, 50, Material::rock);
+    oreDiamond = new BlockOre(56, 50);
     blockDiamond = new Block(57, 40, Material::iron);
     workbench = new BlockWorkbench(58);
     crops = new BlockCross(59, 88);
-    farmland = new Block(60, 87, Material::ground);
+    farmland = new BlockFarmland(60);
     furnaceIdle = new Block(61, 44, Material::rock);
     furnaceActive = new Block(62, 60, Material::rock);
     signStanding = new Block(63, 4, Material::wood);
@@ -255,6 +255,10 @@ AxisAlignedBB Block::getCollisionBoundingBoxFromPool(World& world, int x, int y,
 void Block::setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1) {
     minX = x0; minY = y0; minZ = z0;
     maxX = x1; maxY = y1; maxZ = z1;
+}
+
+int Block::idDropped(int metadata) const {
+    return blockID;
 }
 
 float Block::getHardness(uint8_t blockID) {

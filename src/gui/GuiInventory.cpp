@@ -6,6 +6,12 @@
 #include "items/Item.hpp"
 #include <SDL3/SDL.h>
 
+void GuiInventory::initGui() {
+    if (mc) {
+        mc->getPlayer().inventory.updateCrafting();
+    }
+}
+
 void GuiInventory::drawScreen(int mouseX, int mouseY, float partialTicks) {
     drawDefaultBackground();
     RenderEngine& renderEngine = mc->getGameRenderer().getRenderEngine();

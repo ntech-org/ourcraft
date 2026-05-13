@@ -1,9 +1,16 @@
 #pragma once
 
+#include <cstdlib>
 #include "world/Block.hpp"
 #include "world/BlockFluid.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
+
+class BlockStone : public Block {
+public:
+    BlockStone(int id) : Block(id, 1, Material::rock) {}
+    int idDropped(int metadata) const override { return 4; }
+};
 
 class BlockGrass : public Block {
 public:
@@ -12,6 +19,32 @@ public:
         if (side == 1) return 0;
         if (side == 0) return 2;
         return 3;
+    }
+    int idDropped(int metadata) const override { return 3; }
+};
+
+class BlockGravel : public Block {
+public:
+    BlockGravel(int id) : Block(id, 19, Material::sand) {}
+    int idDropped(int metadata) const override {
+        if (std::rand() % 10 == 0) return 318;
+        return 13;
+    }
+};
+
+class BlockFarmland : public Block {
+public:
+    BlockFarmland(int id) : Block(id, 87, Material::ground) {}
+    int idDropped(int metadata) const override { return 3; }
+};
+
+class BlockOre : public Block {
+public:
+    BlockOre(int id, int tex) : Block(id, tex, Material::rock) {}
+    int idDropped(int metadata) const override {
+        if (blockID == 16) return 263;
+        if (blockID == 56) return 264;
+        return blockID;
     }
 };
 
@@ -29,6 +62,7 @@ public:
     BlockLeaves(int id) : Block(id, 52, Material::leaves) {}
     bool isOpaqueCube() const override { return false; }
     BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
+    int idDropped(int metadata) const override { return 0; }
 };
 
 class BlockGlass : public Block {

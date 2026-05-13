@@ -25,7 +25,7 @@ public:
     float cameraPitch = 0.0f;
     float prevCameraPitch = 0.0f;
 
-    GameMode gameMode = GameMode::CREATIVE;
+    GameMode gameMode = GameMode::SURVIVAL;
     InventoryPlayer inventory;
 
     std::string username = "Player";

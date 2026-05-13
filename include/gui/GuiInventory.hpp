@@ -9,6 +9,7 @@ public:
     static constexpr float GUI_WIDTH = 176.0f;
     static constexpr float GUI_HEIGHT = 166.0f;
 
+    void initGui() override;
     void drawScreen(int mouseX, int mouseY, float partialTicks) override;
     void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) override;
     void mouseClicked(int mouseX, int mouseY, int button) override;

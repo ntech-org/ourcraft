@@ -3,6 +3,7 @@
 #include "net/Packets.hpp"
 #include "world/InfdevWorldGenerator.hpp"
 #include "entities/EntityItem.hpp"
+#include "entities/EntityLiving.hpp"
 #include "entities/EntityZombie.hpp"
 #include "entities/EntityPlayer.hpp"
 #include "world/Block.hpp"
@@ -19,16 +20,18 @@ IntegratedServer::IntegratedServer() {
     m_world->initSaveHandler("world");
 
     LevelData levelData;
-    auto saveHandler = m_world->getSaveHandler();
-    if (saveHandler && saveHandler->loadLevelData(levelData)) {
-        m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(levelData.seed));
-        m_world->setWorldTime(levelData.time);
-    } else {
+        auto saveHandler = m_world->getSaveHandler();
+        if (saveHandler && saveHandler->loadLevelData(levelData)) {
+            m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(levelData.seed));
+            m_world->setWorldTime(levelData.time);
+            // Clamp old saves that used y=128 as spawn
+            if (levelData.spawnY > 100 || levelData.spawnY < 5) levelData.spawnY = 66;
+        } else {
         int64_t seed = 1772835215;
         m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(seed));
         if (saveHandler) {
             levelData.seed = seed;
-            levelData.spawnX = 0; levelData.spawnY = 128; levelData.spawnZ = 0;
+            levelData.spawnX = 0; levelData.spawnY = 66; levelData.spawnZ = 0;
             levelData.time = 6000;
             saveHandler->saveLevelData(levelData);
         }
@@ -131,6 +134,36 @@ void IntegratedServer::run() {
 
             broadcastEntityPositions(*m_world, *m_server);
             m_world->update(0.05f);
+            // Server-side void protection
+            for (auto& entity : m_world->getEntities()) {
+                if (entity->posY < -64.0) {
+                    entity->setPosition(entity->posX, 66.0, entity->posY);
+                    entity->motionY = 0.0;
+                    entity->fallDistance = 0.0f;
+                    if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) {
+                        if (living->health < living->maxHealth / 2) {
+                            living->health = living->maxHealth;
+                        }
+                    }
+                }
+            }
+            // Sync health to client whenever it changes (server is authoritative)
+            for (auto& [peer, session] : m_players) {
+                for (const auto& entity : m_world->getEntities()) {
+                    if (entity->entityID == session.entityID) {
+                        if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) {
+                            if (living->health != session.lastHealth) {
+                                session.lastHealth = living->health;
+                                PacketUpdateHealth hpPacket;
+                                hpPacket.health = living->health;
+                                hpPacket.maxHealth = living->maxHealth;
+                                m_server->sendPacket(peer, hpPacket, true);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
             handleRespawns(*m_world, *m_server, m_players);
             handleItemPickups(*m_world, *m_server, m_players, entitiesById);
             spawnNewEntities(*m_world, *m_server, m_players);
@@ -179,9 +212,10 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             std::cout << "Server: No save data found for " << packet.username << ", using world spawn." << std::endl;
             LevelData levelData;
             if (saveHandler && saveHandler->loadLevelData(levelData)) {
+                if (levelData.spawnY > 100 || levelData.spawnY < 5) levelData.spawnY = 66;
                 player->setPosition(levelData.spawnX, levelData.spawnY, levelData.spawnZ);
             } else {
-                player->setPosition(0.0, 128.0, 0.0);
+                player->setPosition(0.0, 66.0, 0.0);
             }
         }
 
@@ -194,6 +228,7 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
         int32_t eid = pPtr->entityID;
         m_players[peer] = {eid, packet.username, packet.uuid, {}, {}, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}};
         PlayerSession& session = m_players[peer];
+        session.lastSentY = pPtr->posY;
 
         for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
             session.inventory.mainInventory[i] = pPtr->inventory.mainInventory[i];
@@ -211,6 +246,13 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
                                      session.inventory.mainInventory[i].metadata});
         }
         m_server->sendPacket(peer, invPacket);
+
+        session.lastHealth = pPtr->health;
+
+        PacketUpdateHealth hpPacket;
+        hpPacket.health = pPtr->health;
+        hpPacket.maxHealth = pPtr->maxHealth;
+        m_server->sendPacket(peer, hpPacket, true);
 
         PacketPlayerPosLook posPacket;
         posPacket.x = pPtr->posX; posPacket.y = pPtr->posY; posPacket.z = pPtr->posZ;
@@ -248,6 +290,26 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
                         PacketPlayerPosition p;
                         p.deserialize(ptr, size - 1);
                         
+                        // Track fall distance from client position packets
+                        // (independent of server physics simulation)
+                        double yDiff = p.y - session.lastSentY;
+                        if (yDiff < -0.001) {
+                            // Falling: accumulate distance
+                            session.accumulatedFall += (float)(-yDiff);
+                        } else {
+                            // Stationary or moving up: apply pending fall damage
+                            if (session.accumulatedFall > 3.0f) {
+                                int dmg = (int)std::ceil(session.accumulatedFall - 3.0f);
+                                if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) {
+                                    living->attackEntityFrom(nullptr, dmg);
+                                }
+                            }
+                            session.accumulatedFall = 0.0f;
+                        }
+                        session.lastSentY = p.y;
+                        entity->fallDistance = 0.0f;
+                        entity->onGround = (std::abs(yDiff) < 0.001);
+                        
                         entity->setPosition(p.x, p.y, p.z);
                         if (type == PacketType::PlayerPosLook) {
                             entity->rotationYaw = p.yaw;
@@ -277,15 +339,23 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             }
 
             if (oldID > 0 && Block::getHardness(oldID) >= 0.0f) {
-                auto item = std::make_unique<EntityItem>(*m_world, oldID, 1, oldMeta);
-                double spread = 0.7;
-                item->setPosition(
-                    packet.x + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
-                    packet.y + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
-                    packet.z + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5
-                );
-                item->pickupDelay = 6;
-                m_world->spawnEntity(std::move(item));
+                int dropID = oldID;
+                int dropCount = 1;
+                if (const Block* b = Block::blocksList[oldID]) {
+                    dropID = b->idDropped(oldMeta);
+                    dropCount = b->quantityDropped();
+                }
+                if (dropID > 0 && dropCount > 0) {
+                    auto item = std::make_unique<EntityItem>(*m_world, dropID, dropCount, 0);
+                    double spread = 0.7;
+                    item->setPosition(
+                        packet.x + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
+                        packet.y + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
+                        packet.z + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5
+                    );
+                    item->pickupDelay = 6;
+                    m_world->spawnEntity(std::move(item));
+                }
             }
         }
     } else if (type == PacketType::BlockPlacement) {
@@ -301,10 +371,7 @@ void IntegratedServer::onPacketReceived(ENetPeer* peer, const uint8_t* data, siz
             broadcastSound(b->stepSound->getBreakSound(), x + 0.5, y + 0.5, z + 0.5, 1.0f, 0.8f, peer);
         }
 
-        if (m_players.count(peer)) {
-            PlayerSession& session = m_players[peer];
-            session.inventory.consumeCurrentItem(1);
-        }
+        // Client-side handles inventory consumption for placement
     } else if (type == PacketType::ChunkRequest) {
         PacketChunkRequest packet;
         packet.deserialize(ptr, size - 1);

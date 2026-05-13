@@ -38,6 +38,9 @@ public:
         bool wasInWater = false;
         std::unordered_map<uint64_t, ChunkState> sentChunks;
         std::unordered_set<int32_t> sentEntities;
+        int lastHealth = 20;
+        float accumulatedFall = 0.0f;
+        double lastSentY = 0.0;
     };
 
 private:

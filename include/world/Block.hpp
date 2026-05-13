@@ -111,6 +111,8 @@ public:
     virtual void onBlockAdded(World& world, int x, int y, int z) const {}
     virtual bool onBlockActivated(World& world, int x, int y, int z, EntityPlayer* player) const { return false; }
     virtual int tickRate() const { return 10; }
+    virtual int idDropped(int metadata) const;
+    virtual int quantityDropped() const { return 1; }
     virtual bool shouldSideBeRendered(const class IBlockAccess& world, int x, int y, int z, int side) const;
     virtual void velocityToAddToEntity(World& world, int x, int y, int z, Entity* entity, glm::vec3& velocity) const {}
 

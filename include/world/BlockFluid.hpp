@@ -6,6 +6,7 @@
 class BlockFluid : public Block {
 public:
     BlockFluid(int id, const Material& mat);
+    int idDropped(int metadata) const override { return 0; }
 
     void onBlockAdded(World& world, int x, int y, int z) const override;
     void onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const override;

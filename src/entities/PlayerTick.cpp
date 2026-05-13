@@ -6,6 +6,7 @@
 #include "entities/EntityItem.hpp"
 #include "entities/EntityPlayer.hpp"
 #include "items/Item.hpp"
+#include "items/ItemTool.hpp"
 #include <glm/geometric.hpp>
 #include <algorithm>
 #include <cmath>
@@ -52,7 +53,6 @@ void handleBlockBreaking(Minecraft& mc, EntityPlayer& player, World& world, floa
                 mc.resetBlockBreaking(true);
             } else if (player.gameMode == GameMode::CREATIVE) {
                 world.setBlockWithNotify(mc.getBreakX(), mc.getBreakY(), mc.getBreakZ(), 0);
-                mc.getNetworkHandler()->sendDigging(DiggingAction::FINISH, mc.getBreakX(), mc.getBreakY(), mc.getBreakZ(), mc.getBreakFace() >= 0 ? mc.getBreakFace() : 1);
                 player.swing();
                 if (const Block* b = Block::blocksList[targetID]) {
                     if (auto* snd = mc.getSoundPool().getRandom(b->stepSound->getBreakSound(), mc.getSoundSystem()))
@@ -67,6 +67,24 @@ void handleBlockBreaking(Minecraft& mc, EntityPlayer& player, World& world, floa
                 }
                 if (mc.getBreakProgress() >= 1.0f) {
                     mc.finishBreakingCurrentBlock();
+                    // Damage the held tool
+                    if (player.gameMode == GameMode::SURVIVAL) {
+                        ItemStack& held = player.inventory.getCurrentStack();
+                        if (!held.isEmpty() && Item::itemsList[held.itemID]) {
+                            Item* item = Item::itemsList[held.itemID];
+                            if (auto* tool = dynamic_cast<ItemTool*>(item)) {
+                                held.damage += 1;
+                                if (held.damage >= tool->maxDamage) {
+                                    const Block* b = Block::blocksList[targetID];
+                                    if (b) {
+                                        auto* snd = mc.getSoundPool().getRandom("random.break", mc.getSoundSystem());
+                                        if (snd) mc.getSoundSystem().play3D(snd, (float)mc.getBreakX(), (float)mc.getBreakY(), (float)mc.getBreakZ(), mc.getSettings().soundVolume, 1.0f);
+                                    }
+                                    held = {0, 0, 0};
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -112,7 +130,8 @@ void handleBlockPlacement(Minecraft& mc, EntityPlayer& player, World& world) {
             AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
             if (!player.boundingBox.intersectsWith(blockBB)) {
                 int itemID = player.inventory.getCurrentItemID();
-                if (itemID > 0) {
+                // Only place blocks (IDs < 256 and valid block), not tools/items
+                if (itemID > 0 && itemID < 256 && Block::blocksList[itemID]) {
                     const bool shouldConsume = player.gameMode == GameMode::SURVIVAL;
                     if (!shouldConsume || player.inventory.consumeCurrentItem(1)) {
                         world.setBlockWithNotify(x, y, z, (uint8_t)itemID);

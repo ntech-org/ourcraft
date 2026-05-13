@@ -651,6 +651,24 @@ public:
     }
 };
 
+class PacketUpdateHealth : public AutoPacket<PacketUpdateHealth> {
+public:
+    int32_t health;
+    int32_t maxHealth;
+
+    PacketType getType() const override { return PacketType::UpdateHealth; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeInt(buffer, health);
+        writeInt(buffer, maxHealth);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        health = readInt(data);
+        maxHealth = readInt(data);
+    }
+};
+
 class PacketUseEntity : public AutoPacket<PacketUseEntity> {
 public:
     int32_t userEntityID;

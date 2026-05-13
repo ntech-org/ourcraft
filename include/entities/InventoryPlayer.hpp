@@ -7,6 +7,7 @@ struct ItemStack {
     int itemID = 0;
     int count = 0;
     uint8_t metadata = 0;
+    int damage = 0;
 
     bool isEmpty() const {
         return itemID == 0 || count <= 0;
@@ -17,12 +18,13 @@ struct ItemStack {
     }
 
     ItemStack splitStack(int amount) {
-        ItemStack split = {itemID, amount, metadata};
+        ItemStack split = {itemID, amount, metadata, damage};
         count -= amount;
         if (count <= 0) {
             itemID = 0;
             count = 0;
             metadata = 0;
+            damage = 0;
         }
         return split;
     }

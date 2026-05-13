@@ -8,6 +8,9 @@ GuiCrafting::GuiCrafting() {
 }
 
 void GuiCrafting::initGui() {
+    if (mc) {
+        mc->getPlayer().inventory.updateCrafting();
+    }
 }
 
 int GuiCrafting::getCraftingSlotFromMouse(float left, float top, int mouseX, int mouseY) const {

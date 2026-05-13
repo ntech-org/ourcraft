@@ -81,7 +81,7 @@ void Minecraft::init() {
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
-    m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->setPosition(0.0, 66.0, 0.0);
     m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
         if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
             m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
@@ -130,7 +130,7 @@ void Minecraft::saveAndQuit() {
     m_player = std::make_unique<EntityPlayer>(*m_world);
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
-    m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->setPosition(0.0, 66.0, 0.0);
     m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
         if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
             m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
@@ -179,7 +179,7 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
         if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
             m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
     };
-    m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->setPosition(0.0, 66.0, 0.0);
     m_player->onOpenCraftingTable = [this]() {
         displayGuiScreen(std::make_shared<GuiCrafting>());
     };
@@ -361,6 +361,16 @@ void Minecraft::tick() {
 
         m_player->onUpdate();
 
+        // Void protection: prevent falling through the world
+        if (m_player->posY < -64.0) {
+            m_player->setPosition(m_player->posX, 66.0, m_player->posZ);
+            m_player->motionY = 0.0;
+            m_player->fallDistance = 0.0f;
+            if (m_player->health < m_player->maxHealth / 2) {
+                m_player->health = m_player->maxHealth;
+            }
+        }
+
         m_lastHealth = m_player->health;
         m_lastFallDistance = m_player->fallDistance;
 
@@ -390,8 +400,26 @@ float Minecraft::getBreakDeltaForBlock(uint8_t blockID) const {
     if (hardness <= 0.0f) {
         return 1.0f;
     }
-    constexpr float baseSpeed = 1.0f / 15.0f;
-    return baseSpeed / hardness;
+
+    const Block* block = Block::blocksList[blockID];
+    if (!block) return 1.0f;
+
+    const ItemStack& held = m_player->inventory.getCurrentStack();
+
+    if (!held.isEmpty()) {
+        if (Item* item = Item::itemsList[held.itemID]) {
+            if (item->canHarvestBlock(*block)) {
+                float strength = item->getStrVsBlock(*block);
+                if (m_player->inWater) strength /= 5.0f;
+                if (!m_player->onGround) strength /= 5.0f;
+                return strength / hardness / 30.0f;
+            } else {
+                return 1.0f / hardness / 100.0f;
+            }
+        }
+    }
+
+    return 1.0f / hardness / 30.0f;
 }
 
 bool Minecraft::finishBreakingCurrentBlock() {
@@ -405,7 +433,12 @@ bool Minecraft::finishBreakingCurrentBlock() {
         return false;
     }
 
-    m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
+    // In creative, remove block client-side immediately.
+    // In survival, let the server handle removal to prevent dupes and ensure proper item drops.
+    if (m_player->gameMode == GameMode::CREATIVE) {
+        m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
+    }
+
     m_objectMouseOver.type = HitType::NONE;
     m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
     m_player->swing();

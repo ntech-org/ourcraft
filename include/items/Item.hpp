@@ -6,6 +6,7 @@
 
 class World;
 class EntityPlayer;
+class Block;
 
 class Item {
 public:
@@ -66,6 +67,28 @@ public:
     static Item* minecart;
     static Item* saddle;
 
+    // Armor
+    static Item* helmetLeather;
+    static Item* plateLeather;
+    static Item* legsLeather;
+    static Item* bootsLeather;
+    static Item* helmetChain;
+    static Item* plateChain;
+    static Item* legsChain;
+    static Item* bootsChain;
+    static Item* helmetSteel;
+    static Item* plateSteel;
+    static Item* legsSteel;
+    static Item* bootsSteel;
+    static Item* helmetDiamond;
+    static Item* plateDiamond;
+    static Item* legsDiamond;
+    static Item* bootsDiamond;
+    static Item* helmetGold;
+    static Item* plateGold;
+    static Item* legsGold;
+    static Item* bootsGold;
+
     static void init();
 
     Item(int id);
@@ -73,6 +96,9 @@ public:
 
     virtual bool onItemUse(ItemStack& stack, EntityPlayer& player, World& world, int x, int y, int z, int side) { return false; }
     virtual ItemStack onItemRightClick(ItemStack stack, World& world, EntityPlayer& player) { return stack; }
+
+    virtual float getStrVsBlock(const Block& block) const;
+    virtual bool canHarvestBlock(const Block& block) const;
 
     int itemID;
     int iconIndex = 0;

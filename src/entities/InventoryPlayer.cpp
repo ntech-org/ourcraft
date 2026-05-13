@@ -7,16 +7,6 @@ InventoryPlayer::InventoryPlayer() {
         mainInventory[i] = {0, 0, 0};
     }
     cursorStack = {0, 0, 0};
-    // Infdev-style starter hotbar for rapid building/testing.
-    mainInventory[0] = {1, 64};  // Stone
-    mainInventory[1] = {3, 64};  // Dirt
-    mainInventory[2] = {5, 64};  // Planks
-    mainInventory[3] = {4, 64};  // Cobblestone
-    mainInventory[4] = {12, 64}; // Sand
-    mainInventory[5] = {17, 64}; // Wood
-    mainInventory[6] = {20, 64}; // Glass
-    mainInventory[7] = {50, 64}; // Torch
-    mainInventory[8] = {45, 64}; // Brick
 }
 
 bool InventoryPlayer::addItem(int itemID, int count, uint8_t metadata) {

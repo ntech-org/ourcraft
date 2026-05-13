@@ -185,6 +185,9 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         player.rotationYaw = packet.yaw;
         player.rotationPitch = packet.pitch;
         player.onGround = packet.onGround;
+        player.fallDistance = 0.0f;
+        player.motionX = player.motionY = player.motionZ = 0.0;
+        player.deathTime = 0;
     } else if (type == PacketType::InventoryAdd) {
         PacketInventoryAdd packet;
         packet.deserialize(ptr, size - 1);
@@ -210,5 +213,12 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
     } else if (type == PacketType::ConfirmTransaction) {
         PacketConfirmTransaction packet;
         packet.deserialize(ptr, size - 1);
+    } else if (type == PacketType::UpdateHealth) {
+        PacketUpdateHealth packet;
+        packet.deserialize(ptr, size - 1);
+        player.health = packet.health;
+        player.maxHealth = packet.maxHealth;
+        player.fallDistance = 0.0f;
+        player.deathTime = 0;
     }
 }

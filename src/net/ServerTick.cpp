@@ -52,7 +52,7 @@ void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, Integrated
     LevelData data;
     if (!saveHandler->loadLevelData(data)) {
         data.seed = 1772835215;
-        data.spawnX = 0; data.spawnY = 128; data.spawnZ = 0;
+        data.spawnX = 0; data.spawnY = 66; data.spawnZ = 0;
     }
     data.time = world.getWorldTime();
     saveHandler->saveLevelData(data);
@@ -100,9 +100,10 @@ void handleRespawns(World& world, Server& server, std::map<ENetPeer*, Integrated
                     LevelData levelData;
                     auto saveHandler = world.getSaveHandler();
                     if (saveHandler && saveHandler->loadLevelData(levelData)) {
+                        if (levelData.spawnY > 100 || levelData.spawnY < 5) levelData.spawnY = 66;
                         entity->setPosition(levelData.spawnX, levelData.spawnY, levelData.spawnZ);
                     } else {
-                        entity->setPosition(0.0, 128.0, 0.0);
+                        entity->setPosition(0.0, 66.0, 0.0);
                     }
                     living->health = living->maxHealth;
                     living->deathTime = 0;
@@ -112,6 +113,11 @@ void handleRespawns(World& world, Server& server, std::map<ENetPeer*, Integrated
                     respawnPos.x = entity->posX; respawnPos.y = entity->posY; respawnPos.z = entity->posZ;
                     respawnPos.yaw = entity->rotationYaw; respawnPos.pitch = entity->rotationPitch;
                     server.sendPacket(peer, respawnPos, true);
+                    PacketUpdateHealth hpPkt;
+                    hpPkt.health = living->health;
+                    hpPkt.maxHealth = living->maxHealth;
+                    server.sendPacket(peer, hpPkt, true);
+                    session.lastHealth = living->health;
                 }
                 break;
             }
