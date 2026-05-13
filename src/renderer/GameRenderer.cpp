@@ -37,7 +37,7 @@ GameRenderer::GameRenderer(SDL_Window* window, World& world, EntityPlayer& playe
     m_basicShader = std::make_unique<Shader>("assets/shaders/basic.vert", "assets/shaders/basic.frag");
     m_basicShader->use();
     m_basicShader->setInt("texture1", 0);
-    m_terrainTex = m_renderEngine->getTexture("/terrain.png");
+    m_terrainTex = m_renderEngine->getTexture(TEX_TERRAIN);
 
     m_entityShader = std::make_unique<Shader>("assets/shaders/entity.vert", "assets/shaders/entity.frag");
     m_debugShader = std::make_unique<Shader>("assets/shaders/debug.vert", "assets/shaders/debug.frag");

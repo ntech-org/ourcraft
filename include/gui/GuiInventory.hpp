@@ -20,12 +20,5 @@ protected:
     void handleDragDistribution(InventoryPlayer& inv, int slot);
     void drawInventorySlots(float left, float top, int mouseX, int mouseY);
     void drawStackAt(const ItemStack& stack, float x, float y, bool highlight);
-    void drawBlockStack3D(int blockID, float x, float y);
-    void drawBlockStack2D(int blockID, float x, float y);
-    void drawItemStack2D(int itemID, float x, float y);
     void drawCursorStack(int mouseX, int mouseY);
-
-    int16_t m_actionCount = 0;
-    bool m_draggingLeft = false;
-    std::array<bool, InventoryPlayer::TOTAL_SIZE> m_dragVisited {};
 };

@@ -5,7 +5,6 @@
 #include "world/Block.hpp"
 #include "items/Item.hpp"
 #include <SDL3/SDL.h>
-#include <glm/gtc/matrix_transform.hpp>
 
 void GuiInventory::drawScreen(int mouseX, int mouseY, float partialTicks) {
     drawDefaultBackground();
@@ -62,14 +61,6 @@ void GuiInventory::drawStackAt(const ItemStack& stack, float x, float y, bool hi
     if (stack.isEmpty()) return;
 
     Gui::drawItemStack(mc, stack, x, y);
-}
-
-void GuiInventory::drawBlockStack3D(int blockID, float x, float y) {
-    Gui::drawBlockStack3D(mc, blockID, x, y);
-}
-
-void GuiInventory::drawItemStack2D(int itemID, float x, float y) {
-    Gui::drawItemIcon2D(mc, itemID, x, y);
 }
 
 void GuiInventory::drawCursorStack(int mouseX, int mouseY) {

@@ -22,29 +22,24 @@
 
 namespace {
 
-float getEntityBrightness(World& world, double ex, double ey, double ez) {
-    auto light1 = world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.1), (int)std::floor(ez));
-    auto light2 = world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.9), (int)std::floor(ez));
-    int sky = std::max(light1.first, light2.first);
-    int block = std::max(light1.second, light2.second);
-
+float computeLightBrightness(int sky, int block, float daylightStrength) {
     float skyVar2 = 1.0f - std::clamp((float)sky, 0.0f, 15.0f) / 15.0f;
     float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
     float blockVar2 = 1.0f - std::clamp((float)block, 0.0f, 15.0f) / 15.0f;
     float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
-    return std::max(skyBr * world.getDaylightStrength(), blockBr);
+    return std::max(skyBr * daylightStrength, blockBr);
+}
+
+float getEntityBrightness(World& world, double ex, double ey, double ez) {
+    auto light1 = world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.1), (int)std::floor(ez));
+    auto light2 = world.getLightPair((int)std::floor(ex), (int)std::floor(ey + 0.9), (int)std::floor(ez));
+    return computeLightBrightness(std::max(light1.first, light2.first), std::max(light1.second, light2.second), world.getDaylightStrength());
 }
 
 float getFirstPersonBrightness(World& world, EntityPlayer& player) {
     auto light1 = world.getLightPair((int)std::floor(player.posX), (int)std::floor(player.posY + 0.5), (int)std::floor(player.posZ));
     auto light2 = world.getLightPair((int)std::floor(player.posX), (int)std::floor(player.posY + 1.2), (int)std::floor(player.posZ));
-    int sky = std::max(light1.first, light2.first);
-    int block = std::max(light1.second, light2.second);
-    float skyVar2 = 1.0f - std::clamp((float)sky, 0.0f, 15.0f) / 15.0f;
-    float skyBr = (1.0f - skyVar2) / (skyVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
-    float blockVar2 = 1.0f - std::clamp((float)block, 0.0f, 15.0f) / 15.0f;
-    float blockBr = (1.0f - blockVar2) / (blockVar2 * 3.0f + 1.0f) * 0.9f + 0.1f;
-    return std::max(skyBr * world.getDaylightStrength(), blockBr);
+    return computeLightBrightness(std::max(light1.first, light2.first), std::max(light1.second, light2.second), world.getDaylightStrength());
 }
 
 static constexpr float kFaceShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
@@ -78,9 +73,9 @@ void renderEntity(Entity& entity, float pTicks, World& world, Camera& camera, Sh
     if (auto* item = dynamic_cast<EntityItem*>(&entity)) {
         const bool isBlockItem = isInventoryBlockModel(item->itemID);
         if (isBlockItem) {
-            renderEngine.bindTexture(renderEngine.getTexture("/terrain.png"));
+            renderEngine.bindTexture(renderEngine.getTexture(TEX_TERRAIN));
         } else {
-            renderEngine.bindTexture(renderEngine.getTexture(item->itemID < 256 ? "/terrain.png" : "/gui/items.png"));
+            renderEngine.bindTexture(renderEngine.getTexture(item->itemID < 256 ? TEX_TERRAIN : TEX_ITEMS));
         }
 
         const int tex = getItemIconTexture(item->itemID);
@@ -121,7 +116,7 @@ void renderEntity(Entity& entity, float pTicks, World& world, Camera& camera, Sh
         return;
     }
 
-    renderEngine.bindTexture(renderEngine.getTexture(dynamic_cast<EntityPlayer*>(&entity) ? "/char.png" : "/mob/zombie.png"));
+    renderEngine.bindTexture(renderEngine.getTexture(dynamic_cast<EntityPlayer*>(&entity) ? TEX_CHAR : "/mob/zombie.png"));
 
     float renderYaw = 0.0f, interpYaw = entity.rotationYaw, headPitch = entity.rotationPitch;
     if (auto living = dynamic_cast<EntityLiving*>(&entity)) {
@@ -174,7 +169,7 @@ void renderFirstPersonArm(GameRenderer& renderer, EntityPlayer& player, World& w
     float swingProgress = player.isSwinging ? ((float)player.swingProgressInt + partialTicks) / 8.0f : 0.0f;
 
     if (itemToRenderID <= 0) {
-        renderEngine.bindTexture(renderEngine.getTexture("/char.png"));
+        renderEngine.bindTexture(renderEngine.getTexture(TEX_CHAR));
         glm::mat4 armMat = baseBobMat;
         float var5 = 0.8f;
         if (swingProgress > 0.0f) {
@@ -222,7 +217,7 @@ void renderFirstPersonArm(GameRenderer& renderer, EntityPlayer& player, World& w
         heldMat = glm::scale(heldMat, glm::vec3(0.4f, 0.4f, 0.4f));
         const bool isBlockItem = isInventoryBlockModel(itemToRenderID);
         if (isBlockItem) {
-            renderEngine.bindTexture(renderEngine.getTexture("/terrain.png"));
+            renderEngine.bindTexture(renderEngine.getTexture(TEX_TERRAIN));
             entityShader.setMat4("model", heldMat);
             entityShader.setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
 
@@ -245,7 +240,7 @@ void renderFirstPersonArm(GameRenderer& renderer, EntityPlayer& player, World& w
             Tessellator* t = Tessellator::instance;
             const int tex = getItemIconTexture(itemToRenderID);
             const FaceUV uv = getTextureUV(tex);
-            renderEngine.bindTexture(renderEngine.getTexture(itemToRenderID < 256 ? "/terrain.png" : "/gui/items.png"));
+            renderEngine.bindTexture(renderEngine.getTexture(itemToRenderID < 256 ? TEX_TERRAIN : TEX_ITEMS));
             t->startDrawingQuads();
             t->setColorOpaque(255, 255, 255);
             renderFlatHeldItem(t, uv);
@@ -286,7 +281,7 @@ void renderThirdPersonHeldItem(EntityPlayer* player, float partialTicks, const g
         float s = 0.375f;
         heldMat = glm::scale(heldMat, glm::vec3(s, -s, s));
 
-        renderEngine.bindTexture(renderEngine.getTexture("/terrain.png"));
+        renderEngine.bindTexture(renderEngine.getTexture(TEX_TERRAIN));
         entityShader.setMat4("model", heldMat);
         entityShader.setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
 
@@ -313,7 +308,7 @@ void renderThirdPersonHeldItem(EntityPlayer* player, float partialTicks, const g
         float v0 = (float)((tex & 240)) / 256.0f;
         FaceUV uv = {u0, v0, u0 + 16.0f / 256.0f, v0 + 16.0f / 256.0f};
 
-        renderEngine.bindTexture(renderEngine.getTexture(stack.itemID < 256 ? "/terrain.png" : "/gui/items.png"));
+        renderEngine.bindTexture(renderEngine.getTexture(stack.itemID < 256 ? TEX_TERRAIN : TEX_ITEMS));
         entityShader.setMat4("model", heldMat);
         entityShader.setMat3("normalMatrix", glm::mat3(glm::inverseTranspose(heldMat)));
 

@@ -54,7 +54,7 @@ void RenderEngine::registerTextureFX(std::unique_ptr<TextureFX> fx) {
 void RenderEngine::updateTextureFX() {
     if (textureFXList.empty()) return;
 
-    int terrainID = getTexture("/terrain.png");
+    int terrainID = getTexture(TEX_TERRAIN);
     if (terrainID < 0) return;
     
     glBindTexture(GL_TEXTURE_2D, (GLuint)terrainID);

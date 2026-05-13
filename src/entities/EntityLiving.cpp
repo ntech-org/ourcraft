@@ -167,21 +167,21 @@ void EntityLiving::onUpdate() {
     if (onPlaySound && (onGround || inWater)) {
         // Apply the 0.6 multiplier used in moveEntity to match engine expectations
         float walked = dist * 0.6f;
-        
+
         if (walked > 0.005f) {
             footstepAccum += walked;
             if (footstepAccum >= 0.85f) {
                 footstepAccum = 0.0f;
-                
+
                 // Check mid-body and feet for liquid
                 int feetY = (int)std::floor(posY - 0.2f);
                 uint8_t feetBlock = worldObj.getBlockID((int)std::floor(posX), feetY, (int)std::floor(posZ));
                 uint8_t midBlock = worldObj.getBlockID((int)std::floor(posX), (int)std::floor(posY + 0.5f), (int)std::floor(posZ));
-                
+
                 bool isInLiquid = (feetBlock >= 8 && feetBlock <= 11) || (midBlock >= 8 && midBlock <= 11);
-                
+
                 if (isInLiquid) {
-                    onPlaySound("liquid.water", 0.4f, 1.0f);
+                    onPlaySound("liquid.swim", 0.4f, 1.0f);
                 } else {
                     int bx = (int)std::floor(posX);
                     int by = feetY;

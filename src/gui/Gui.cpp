@@ -113,7 +113,7 @@ void Gui::drawBlockStack3D(Minecraft* mc, int blockID, float x, float y) {
     if (!block) return;
 
     RenderEngine& renderEngine = mc->getGameRenderer().getRenderEngine();
-    renderEngine.bindTexture(renderEngine.getTexture("/terrain.png"));
+    renderEngine.bindTexture(renderEngine.getTexture(TEX_TERRAIN));
 
     auto tileUV = [](int tex, float& u0, float& v0, float& u1, float& v1) {
         u0 = (float)((tex & 15) * 16) / 256.0f;
@@ -166,14 +166,14 @@ void Gui::drawBlockStack3D(Minecraft* mc, int blockID, float x, float y) {
 void Gui::drawBlockStack2D(Minecraft* mc, int blockID, float x, float y) {
     const Block* block = Block::blocksList[blockID];
     if (!block) return;
-    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture("/terrain.png"));
+    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture(TEX_TERRAIN));
     const int tex = block->getTexture(0);
     // Use 16x16 with slight offset to center in 18x18 if needed, but here we use the provided x,y
     drawTexturedModalRect(mc->getGameRenderer().getUIShader(), x, y, (tex & 15) * 16, (tex >> 4) * 16, 16, 16);
 }
 
 void Gui::drawItemIcon2D(Minecraft* mc, int itemID, float x, float y) {
-    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture("/gui/items.png"));
+    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture(TEX_ITEMS));
     int tex = 0;
     if (itemID >= 0 && itemID < 1024 && Item::itemsList[itemID]) {
         tex = Item::itemsList[itemID]->iconIndex;

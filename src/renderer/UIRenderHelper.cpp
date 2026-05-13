@@ -25,7 +25,7 @@ void renderHUD(GameRenderer& renderer, EntityPlayer& player, Shader& uiShader, S
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    renderEngine.bindTexture(renderEngine.getTexture("/gui/gui.png"));
+    renderEngine.bindTexture(renderEngine.getTexture(TEX_GUI));
     float centerX = scaledWidth / 2.0f;
     renderer.drawTexturedModalRect(centerX - 91.0f, scaledHeight - 22.0f, 0, 0, 182, 22);
     renderer.drawTexturedModalRect(centerX - 91.0f - 1.0f + (float)player.inventory.currentSlot * 20.0f, scaledHeight - 22.0f - 1.0f, 0, 22, 24, 22);
@@ -45,7 +45,7 @@ void renderHUD(GameRenderer& renderer, EntityPlayer& player, Shader& uiShader, S
         uiShader.setMat4("view", view);
         uiShader.setBool("hasTexture", true);
 
-        renderEngine.bindTexture(renderEngine.getTexture("/gui/icons.png"));
+        renderEngine.bindTexture(renderEngine.getTexture(TEX_ICONS));
         for (int i = 0; i < 10; ++i) {
             float x = centerX - 91.0f + (float)i * 8.0f;
             float y = scaledHeight - 32.0f;
@@ -71,7 +71,7 @@ void renderHUD(GameRenderer& renderer, EntityPlayer& player, Shader& uiShader, S
 }
 
 void renderCrosshair(GameRenderer& renderer, RenderEngine& renderEngine, float scaledWidth, float scaledHeight) {
-    renderEngine.bindTexture(renderEngine.getTexture("/gui/icons.png"));
+    renderEngine.bindTexture(renderEngine.getTexture(TEX_ICONS));
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR);
     float x = std::floor(scaledWidth / 2.0f) - 8.0f;
@@ -81,7 +81,7 @@ void renderCrosshair(GameRenderer& renderer, RenderEngine& renderEngine, float s
 }
 
 void renderUnderwaterOverlay(Shader& uiShader, RenderEngine& renderEngine, EntityPlayer& player, World& world, float scaledWidth, float scaledHeight) {
-    renderEngine.bindTexture(renderEngine.getTexture("/water.png"));
+    renderEngine.bindTexture(renderEngine.getTexture(TEX_WATER));
 
     Tessellator* t = Tessellator::instance;
     float b = world.getDaylightStrength();

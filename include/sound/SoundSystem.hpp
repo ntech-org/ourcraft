@@ -12,6 +12,7 @@
 
 struct SoundBuffer {
     ALuint buffer = 0;
+    ALuint monoBuffer = 0;
     int sampleRate = 0;
     bool loading = false;
     std::shared_ptr<std::atomic<bool>> loadDone;
@@ -59,7 +60,8 @@ private:
     ALCcontext* m_context = nullptr;
     std::unordered_map<std::string, std::unique_ptr<SoundBuffer>> m_cache;
     std::mutex m_cacheMutex;
-    std::vector<ALuint> m_sources;
+    struct ActiveSource { ALuint source = 0; float baseVolume = 1.0f; };
+    std::vector<ActiveSource> m_sources;
     std::vector<PendingPlay> m_pendingPlays;
     ALuint m_musicSource = 0;
     bool m_initialized = false;

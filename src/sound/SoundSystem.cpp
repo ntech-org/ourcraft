@@ -41,8 +41,10 @@ void SoundSystem::shutdown() {
     stopAll();
 
     for (auto& [path, buf] : m_cache) {
-        if (buf && buf->buffer)
-            alDeleteBuffers(1, &buf->buffer);
+        if (buf) {
+            if (buf->buffer) alDeleteBuffers(1, &buf->buffer);
+            if (buf->monoBuffer) alDeleteBuffers(1, &buf->monoBuffer);
+        }
     }
     m_cache.clear();
 
@@ -80,9 +82,9 @@ void SoundSystem::pollLoads() {
 
         // Async decode finished. Upload PCM to OpenAL on main thread.
         if (buf->rawPCM && buf->rawTotalSamples > 0 && buf->rawChannels > 0) {
-            ALenum format = (buf->rawChannels == 1) ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
             int totalShorts = buf->rawTotalSamples * buf->rawChannels;
             ALsizei dataSize = totalShorts * (ALsizei)sizeof(short);
+            ALenum format = (buf->rawChannels == 1) ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
 
             ALuint alBuffer = 0;
             alGenBuffers(1, &alBuffer);
@@ -93,6 +95,27 @@ void SoundSystem::pollLoads() {
             } else {
                 alDeleteBuffers(1, &alBuffer);
                 std::cerr << "[Sound] alBufferData failed: " << path << std::endl;
+            }
+
+            // For stereo sources, also create a mono buffer for proper 3D spatialization
+            if (buf->rawChannels == 2) {
+                int monoCount = buf->rawTotalSamples;
+                short* mono = (short*)malloc(monoCount * sizeof(short));
+                for (int i = 0; i < monoCount; ++i) {
+                    int l = buf->rawPCM[i * 2];
+                    int r = buf->rawPCM[i * 2 + 1];
+                    mono[i] = (short)((l + r) >> 1);
+                }
+                ALuint monoBuf = 0;
+                alGenBuffers(1, &monoBuf);
+                alGetError();
+                alBufferData(monoBuf, AL_FORMAT_MONO16, mono, monoCount * (ALsizei)sizeof(short), buf->sampleRate);
+                if (alGetError() == AL_NO_ERROR) {
+                    buf->monoBuffer = monoBuf;
+                } else {
+                    alDeleteBuffers(1, &monoBuf);
+                }
+                free(mono);
             }
         }
         free(buf->rawPCM);
@@ -166,7 +189,9 @@ ALuint SoundSystem::createSource(const SoundBuffer* buf, float volume, float pit
     alGenSources(1, &src);
     if (alGetError() != AL_NO_ERROR) return 0;
 
-    alSourcei(src, AL_BUFFER, (ALint)buf->buffer);
+    // Use mono buffer for 3D spatialization if available (stereo cannot be spatialized)
+    ALuint useBuffer = (is3D && buf->monoBuffer) ? buf->monoBuffer : buf->buffer;
+    alSourcei(src, AL_BUFFER, (ALint)useBuffer);
     alSourcef(src, AL_GAIN, volume);
     alSourcef(src, AL_PITCH, pitch);
     alSourcei(src, AL_LOOPING, AL_FALSE);
@@ -174,8 +199,8 @@ ALuint SoundSystem::createSource(const SoundBuffer* buf, float volume, float pit
     if (is3D) {
         alSourcei(src, AL_SOURCE_RELATIVE, AL_FALSE);
         alSource3f(src, AL_POSITION, x, y, z);
-        alSourcef(src, AL_REFERENCE_DISTANCE, 4.0f);
-        alSourcef(src, AL_MAX_DISTANCE, 64.0f);
+        alSourcef(src, AL_REFERENCE_DISTANCE, 1.5f);
+        alSourcef(src, AL_MAX_DISTANCE, 24.0f);
         alSourcef(src, AL_ROLLOFF_FACTOR, 1.0f);
     } else {
         alSourcei(src, AL_SOURCE_RELATIVE, AL_TRUE);
@@ -187,7 +212,7 @@ ALuint SoundSystem::createSource(const SoundBuffer* buf, float volume, float pit
 
     alSourcePlay(src);
     if (addToSources) {
-        m_sources.push_back(src);
+        m_sources.push_back({src, volume});
     }
     return src;
 }
@@ -237,9 +262,9 @@ void SoundSystem::play3D(const SoundBuffer* buf, float x, float y, float z,
 }
 
 void SoundSystem::stopAll() {
-    for (ALuint src : m_sources) {
-        alSourceStop(src);
-        alDeleteSources(1, &src);
+    for (auto& as : m_sources) {
+        alSourceStop(as.source);
+        alDeleteSources(1, &as.source);
     }
     m_sources.clear();
     if (m_musicSource) {
@@ -251,12 +276,12 @@ void SoundSystem::stopAll() {
 
 void SoundSystem::cleanupSources() {
     m_sources.erase(std::remove_if(m_sources.begin(), m_sources.end(),
-        [](ALuint src) {
-            if (!src) return true;
+        [](ActiveSource& as) {
+            if (!as.source) return true;
             ALint state;
-            alGetSourcei(src, AL_SOURCE_STATE, &state);
+            alGetSourcei(as.source, AL_SOURCE_STATE, &state);
             if (state == AL_STOPPED) {
-                alDeleteSources(1, &src);
+                alDeleteSources(1, &as.source);
                 return true;
             }
             return false;
@@ -292,12 +317,12 @@ void SoundSystem::update(float lx, float ly, float lz, float yaw, float pitch,
     cleanupSources();
 
     // Apply master volumes to all active sources (real-time slider support)
-    for (ALuint src : m_sources) {
-        if (!src) continue;
+    for (auto& as : m_sources) {
+        if (!as.source) continue;
         ALint state;
-        alGetSourcei(src, AL_SOURCE_STATE, &state);
+        alGetSourcei(as.source, AL_SOURCE_STATE, &state);
         if (state == AL_PLAYING || state == AL_PAUSED)
-            alSourcef(src, AL_GAIN, soundVolume);
+            alSourcef(as.source, AL_GAIN, as.baseVolume * soundVolume);
     }
     if (m_musicSource) {
         ALint state;

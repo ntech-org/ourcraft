@@ -33,7 +33,7 @@ void GuiSlider::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX
         }
     }
 
-    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture("/gui/gui.png"));
+    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture(TEX_GUI));
     shader.setBool("hasTexture", true);
 
     // Draw background (disabled state look)

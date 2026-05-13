@@ -1,7 +1,8 @@
 #pragma once
 #include "gui/GuiButton.hpp"
-#include "renderer/ModernFont.hpp"
 #include <functional>
+
+class Font;
 
 class GuiSlider : public GuiButton {
 public:

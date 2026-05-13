@@ -36,6 +36,7 @@ Minecraft::~Minecraft() {
     if (m_gameState != GameState::MainMenu) {
         saveAndQuit();
     }
+    m_font.reset();
     if (m_ft) FT_Done_FreeType(m_ft);
     if (m_soundSystem) {
         m_soundSystem->shutdown();
@@ -81,6 +82,10 @@ void Minecraft::init() {
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
+        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
+            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
+    };
     m_player->onOpenCraftingTable = [this]() {
         displayGuiScreen(std::make_shared<GuiCrafting>());
     };
@@ -126,6 +131,10 @@ void Minecraft::saveAndQuit() {
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 128.0, 0.0);
+    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
+        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
+            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
+    };
     m_player->onOpenCraftingTable = [this]() {
         displayGuiScreen(std::make_shared<GuiCrafting>());
     };

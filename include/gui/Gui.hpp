@@ -1,9 +1,9 @@
 #pragma once
 #include <string>
 #include <cstdint>
-#include <glm/glm.hpp>
 #include "renderer/Shader.hpp"
-#include "renderer/ModernFont.hpp"
+
+class Font;
 
 class Minecraft;
 struct ItemStack;

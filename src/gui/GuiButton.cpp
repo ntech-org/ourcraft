@@ -8,7 +8,7 @@ GuiButton::GuiButton(int id, int x, int y, int width, int height, const std::str
 void GuiButton::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX, int mouseY) {
     if (!visible) return;
 
-    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture("/gui/gui.png"));
+    mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture(TEX_GUI));
     shader.setBool("hasTexture", true);
 
     bool hovered = isMouseOver(mouseX, mouseY);

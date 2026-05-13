@@ -1,7 +1,8 @@
 #pragma once
 #include "gui/Gui.hpp"
-#include "renderer/ModernFont.hpp"
 #include <string>
+
+class Font;
 
 class Minecraft;
 
