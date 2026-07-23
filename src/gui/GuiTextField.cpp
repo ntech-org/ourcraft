@@ -2,8 +2,8 @@
 #include <SDL3/SDL.h>
 #include "Minecraft.hpp"
 
-GuiTextField::GuiTextField(int id, int x, int y, int width, int height)
-    : id(id), x(x), y(y), width(width), height(height) {}
+GuiTextField::GuiTextField(int id, int x, int y, int width, int height, SDL_Window* window)
+    : id(id), x(x), y(y), width(width), height(height), m_window(window) {}
 
 void GuiTextField::updateCursorCounter() {
     m_cursorCounter++;
@@ -20,12 +20,15 @@ std::string GuiTextField::getText() const {
     return m_text;
 }
 
-void GuiTextField::setFocused(bool focused) {
+void GuiTextField::setFocused(bool focused, SDL_Window* window) {
     m_isFocused = focused;
-    if (m_isFocused) {
-        SDL_StartTextInput(SDL_GetKeyboardFocus());
-    } else {
-        SDL_StopTextInput(SDL_GetKeyboardFocus());
+    SDL_Window* w = window ? window : m_window;
+    if (w) {
+        if (m_isFocused) {
+            SDL_StartTextInput(w);
+        } else {
+            SDL_StopTextInput(w);
+        }
     }
 }
 
@@ -40,39 +43,13 @@ void GuiTextField::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
         if (!m_text.empty()) {
             m_text.pop_back();
         }
-    } else if (m_text.length() < (size_t)maxStringLength) {
-        // In SDL3, we should use SDL_EVENT_TEXT_INPUT for actual characters,
-        // but for basic IP addresses/ASCII we can still map keycodes.
-        // Let's implement a very basic mapping for now to keep it similar to the original.
-        
-        char c = 0;
-        const bool shift = SDL_GetModState() & SDL_KMOD_SHIFT;
+    }
+}
 
-        if (key >= SDLK_0 && key <= SDLK_9) {
-            c = '0' + (key - SDLK_0);
-            if (shift) {
-                if (c == '0') c = ')';
-                else if (c == '1') c = '!';
-                else if (c == '2') c = '@';
-                else if (c == '3') c = '#';
-                else if (c == '4') c = '$';
-                else if (c == '5') c = '%';
-                else if (c == '6') c = '^';
-                else if (c == '7') c = '&';
-                else if (c == '8') c = '*';
-                else if (c == '9') c = '(';
-            }
-        } else if (key >= SDLK_A && key <= SDLK_Z) {
-            c = (shift ? 'A' : 'a') + (key - SDLK_A);
-        } else if (key == SDLK_PERIOD) {
-            c = shift ? '>' : '.';
-        } else if (key == SDLK_MINUS) {
-            c = shift ? '_' : '-';
-        } else if (key == SDLK_SEMICOLON) {
-            c = shift ? ':' : ';';
-        }
-
-        if (c != 0) {
+void GuiTextField::appendText(const std::string& text) {
+    if (!m_isFocused) return;
+    for (char c : text) {
+        if (m_text.length() < (size_t)maxStringLength) {
             m_text += c;
         }
     }
@@ -80,7 +57,7 @@ void GuiTextField::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
 
 void GuiTextField::mouseClicked(int mouseX, int mouseY, int button) {
     bool over = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
-    setFocused(over);
+    setFocused(over, m_window);
 }
 
 void GuiTextField::drawTextField(Minecraft* mc, Font& font, Shader& shader) {

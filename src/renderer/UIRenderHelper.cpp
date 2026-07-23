@@ -6,6 +6,8 @@
 #include "entities/EntityPlayer.hpp"
 #include "world/World.hpp"
 #include "world/Material.hpp"
+#include "items/Item.hpp"
+#include "items/ItemTool.hpp"
 #include "gui/Gui.hpp"
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
@@ -37,6 +39,21 @@ void renderHUD(GameRenderer& renderer, EntityPlayer& player, Shader& uiShader, S
         const float iconX = centerX - 91.0f + (float)slot * 20.0f + 3.0f;
         const float iconY = scaledHeight - 19.0f;
         Gui::drawItemStack(&player.getMinecraft(), stack, iconX, iconY);
+
+        if (stack.damage > 0 && stack.itemID >= 256) {
+            Item* item = Item::itemsList[stack.itemID];
+            if (auto* tool = dynamic_cast<ItemTool*>(item)) {
+                float ratio = 1.0f - (float)stack.damage / (float)tool->maxDamage;
+                float barWidth = 13.0f;
+                float filled = barWidth * ratio;
+                uint32_t barColor;
+                if (ratio > 0.5f) barColor = 0xFF00FF00;
+                else if (ratio > 0.25f) barColor = 0xFFFFFF00;
+                else barColor = 0xFFFF0000;
+                Gui::drawRect(uiShader, iconX, iconY + 16.0f, iconX + barWidth, iconY + 17.0f, 0xFF000000);
+                Gui::drawRect(uiShader, iconX, iconY + 16.0f, iconX + filled, iconY + 17.0f, barColor);
+            }
+        }
     }
 
     if (player.gameMode == GameMode::SURVIVAL) {

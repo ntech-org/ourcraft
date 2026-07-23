@@ -2,6 +2,7 @@
 #include "renderer/ItemRenderer.hpp"
 #include "renderer/EntityRenderHelper.hpp"
 #include "renderer/UIRenderHelper.hpp"
+#include "renderer/ChatRenderer.hpp"
 #include "renderer/TextureFX.hpp"
 #include "Minecraft.hpp"
 #include "world/Block.hpp"
@@ -33,6 +34,7 @@ GameRenderer::GameRenderer(SDL_Window* window, World& world, EntityPlayer& playe
 
     m_worldRenderer = std::make_unique<WorldRenderer>(m_world);
     m_skyRenderer = std::make_unique<SkyRenderer>(*m_renderEngine);
+    m_cloudRenderer = std::make_unique<CloudRenderer>(*m_renderEngine);
 
     m_basicShader = std::make_unique<Shader>("assets/shaders/basic.vert", "assets/shaders/basic.frag");
     m_basicShader->use();
@@ -144,6 +146,12 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     double renderStart = (double)SDL_GetTicksNS() / 1e9;
     m_skyRenderer->render(m_world, m_camera, projection, view, fogColor);
 
+    int cloudLevel = m_player.getMinecraft().getSettings().fancyGraphics ? 2 : 1;
+    if (cloudLevel > 0) {
+        m_cloudRenderer->tick();
+        m_cloudRenderer->render(m_world, m_camera, projection, view, fogColor, partialTicks, cloudLevel);
+    }
+
     double worldStart = (double)SDL_GetTicksNS() / 1e9;
     renderWorld(partialTicks, projection, view, fogColor, voidDarkening);
     m_profiler.worldTime = ((double)SDL_GetTicksNS() / 1e9 - worldStart) * 1000.0;
@@ -247,7 +255,7 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
 }
 
 void GameRenderer::renderSelectionBox(const glm::mat4& projection, const glm::mat4& view) {
-    const HitResult& hit = m_player.getMinecraft().getObjectMouseOver();
+    const HitResult& hit = m_player.getMinecraft().getBlockBreaking().getObjectMouseOver();
     if (hit.type != HitType::BLOCK) return;
 
     int x = hit.x;
@@ -438,6 +446,10 @@ void GameRenderer::renderUI(bool showDebug, bool showProfiler, float fps, int ca
     m_uiShader->use();
     m_uiShader->setBool("hasTexture", true);
     ::renderCrosshair(*this, *m_renderEngine, m_scaledWidth, m_scaledHeight);
+
+    m_player.getMinecraft().getChatRenderer().render(
+        m_player.getMinecraft(), m_player.getMinecraft().getFont(),
+        *m_textShader, *m_uiShader, m_scaledWidth, m_scaledHeight);
 
     if (!showDebug) {
         glEnable(GL_CULL_FACE);

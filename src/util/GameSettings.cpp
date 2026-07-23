@@ -7,6 +7,24 @@ GameSettings::GameSettings() {
     loadOptions();
 }
 
+void GameSettings::setDefaults() {
+    mouseSensitivity = 0.5f;
+    invertMouse = false;
+    renderDistance = 1.0f;
+    viewBobbing = true;
+    anaglyph = false;
+    limitFramerate = false;
+    fancyGraphics = true;
+    ambientOcclusion = true;
+    guiScale = 0;
+    fov = 70.0f;
+    soundVolume = 1.0f;
+    musicVolume = 1.0f;
+    cloudLevel = 2;
+    maxFps = 60;
+    enableVsync = true;
+}
+
 std::string GameSettings::getOptionsFile() {
     return "options.txt";
 }
@@ -35,6 +53,9 @@ void GameSettings::loadOptions() {
         if (key == "fov") fov = std::stof(value);
         if (key == "soundVolume") soundVolume = std::stof(value);
         if (key == "musicVolume") musicVolume = std::stof(value);
+        if (key == "cloudLevel") cloudLevel = std::stoi(value);
+        if (key == "maxFps") maxFps = std::stoi(value);
+        if (key == "enableVsync") enableVsync = (value == "true");
     }
 }
 
@@ -54,4 +75,7 @@ void GameSettings::saveOptions() {
     file << "fov:" << fov << "\n";
     file << "soundVolume:" << soundVolume << "\n";
     file << "musicVolume:" << musicVolume << "\n";
+    file << "cloudLevel:" << cloudLevel << "\n";
+    file << "maxFps:" << maxFps << "\n";
+    file << "enableVsync:" << (enableVsync ? "true" : "false") << "\n";
 }

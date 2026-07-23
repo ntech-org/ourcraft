@@ -20,7 +20,7 @@ struct PlayerSaveData {
     double x, y, z;
     float yaw, pitch;
     int health;
-    ItemStack inventory[45]; // TOTAL_SIZE
+    ItemStack inventory[InventoryPlayer::TOTAL_SIZE];
 };
 
 class SaveHandler {

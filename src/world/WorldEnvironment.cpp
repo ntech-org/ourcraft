@@ -23,6 +23,17 @@ glm::vec3 World::getSkyColor(float partialTick) const {
     return unpackColor(m_skyColor) * daylight;
 }
 
+glm::vec3 World::getCloudColor(float partialTick) const {
+    const float angle = getCelestialAngle(partialTick);
+    const float daylight = std::clamp(std::cos(angle * glm::two_pi<float>()) * 2.0f + 0.5f, 0.0f, 1.0f);
+    glm::vec3 color = unpackColor(m_cloudColor);
+    return {
+        color.r * (daylight * 0.9f + 0.1f),
+        color.g * (daylight * 0.9f + 0.1f),
+        color.b * (daylight * 0.85f + 0.15f)
+    };
+}
+
 glm::vec3 World::getFogColor(float partialTick) const {
     const float angle = getCelestialAngle(partialTick);
     const float daylight = std::clamp(std::cos(angle * glm::two_pi<float>()) * 2.0f + 0.5f, 0.0f, 1.0f);

@@ -11,7 +11,7 @@ public:
 
     float mouseSensitivity = 0.5f;
     bool invertMouse = false;
-    float renderDistance = 1.0f; // 0.5 = Tiny, 1.0 = Normal, 2.0 = Far
+    float renderDistance = 1.0f; // 0.0 = Tiny, 1.0 = Normal, 2.0 = Far
     bool viewBobbing = true;
     bool anaglyph = false;
     bool limitFramerate = false;
@@ -21,9 +21,14 @@ public:
     float fov = 70.0f;
     float soundVolume = 1.0f;
     float musicVolume = 1.0f;
+    int cloudLevel = 2; // 0 = Off, 1 = Fast, 2 = Fancy
+    int maxFps = 60;
+    bool enableVsync = true;
 
     std::string username = "Player";
     std::string uuid = "00000000-0000-0000-0000-000000000000";
+
+    void setDefaults();
 
 private:
     std::string getOptionsFile();

@@ -17,6 +17,7 @@ class EntityPlayer : public EntityLiving {
 public:
     EntityPlayer(World& world);
 
+    EntityType getType() const override { return EntityType::Player; }
     void onUpdate() override;
     void updateEntityActionState() override;
 
@@ -37,7 +38,9 @@ public:
 
     virtual void attackEntityFrom(Entity* source, int amount) override;
     virtual void openCraftingTable() { if (onOpenCraftingTable) onOpenCraftingTable(); }
+    virtual void openFurnace(class World& world, int x, int y, int z) { if (onOpenFurnace) onOpenFurnace(x, y, z); }
     std::function<void()> onOpenCraftingTable;
+    std::function<void(int, int, int)> onOpenFurnace;
 
     void setMinecraft(Minecraft* mc) { this->mc = mc; }
     Minecraft& getMinecraft() { return *mc; }

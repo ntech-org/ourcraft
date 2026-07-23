@@ -8,6 +8,7 @@ class EntityLiving : public Entity {
 public:
     EntityLiving(World& world);
 
+    EntityType getType() const override { return EntityType::Living; }
     void onUpdate() override;
 
     float limbSwing;

@@ -1,44 +1,13 @@
 #include "gui/GuiOptions.hpp"
-#include "gui/GuiSlider.hpp"
+#include "gui/GuiGraphicsSettings.hpp"
 #include "Minecraft.hpp"
 
 void GuiOptions::initGui() {
     controlList.push_back(std::make_unique<GuiButton>(100, width / 2 - 100, height / 6 + 144, 200, 20, "Done"));
 
-    // FOV Slider: 30 to 110
-    float fovVal = (mc->getSettings().fov - 30.0f) / 80.0f;
-    auto fovSlider = std::make_unique<GuiSlider>(1, width / 2 - 155, height / 6 + 0, fovVal, "FOV: ", [this](float val) {
-        this->mc->getSettings().fov = 30.0f + val * 80.0f;
-    });
-    fovSlider->width = 150;
-    controlList.push_back(std::move(fovSlider));
-
-    // Sensitivity Slider: 0.0 to 1.0
-    auto sensSlider = std::make_unique<GuiSlider>(2, width / 2 + 5, height / 6 + 0, mc->getSettings().mouseSensitivity, "Sensitivity: ", [this](float val) {
-        this->mc->getSettings().mouseSensitivity = val;
-    });
-    sensSlider->width = 150;
-    controlList.push_back(std::move(sensSlider));
-
-    // GUI Scale Button
-    std::string scaleText = "GUI Scale: ";
-    if (mc->getSettings().guiScale == 0) scaleText += "Auto";
-    else scaleText += std::to_string(mc->getSettings().guiScale);
-    controlList.push_back(std::make_unique<GuiButton>(3, width / 2 - 100, height / 6 + 24, 200, 20, scaleText));
-
-    // Sound Volume Slider: 0.0 to 1.0
-    auto soundSlider = std::make_unique<GuiSlider>(4, width / 2 - 155, height / 6 + 48, mc->getSettings().soundVolume, "Sound: ", [this](float val) {
-        this->mc->getSettings().soundVolume = val;
-    });
-    soundSlider->width = 150;
-    controlList.push_back(std::move(soundSlider));
-
-    // Music Volume Slider: 0.0 to 1.0
-    auto musicSlider = std::make_unique<GuiSlider>(5, width / 2 + 5, height / 6 + 48, mc->getSettings().musicVolume, "Music: ", [this](float val) {
-        this->mc->getSettings().musicVolume = val;
-    });
-    musicSlider->width = 150;
-    controlList.push_back(std::move(musicSlider));
+    controlList.push_back(std::make_unique<GuiButton>(1, width / 2 - 100, height / 6 + 0, 200, 20, "Video Settings..."));
+    controlList.push_back(std::make_unique<GuiButton>(2, width / 2 - 100, height / 6 + 24, 200, 20, "Sound Settings..."));
+    controlList.push_back(std::make_unique<GuiButton>(3, width / 2 - 100, height / 6 + 48, 200, 20, "Controls Settings..."));
 }
 
 void GuiOptions::drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -57,19 +26,19 @@ void GuiOptions::drawScreen(int mouseX, int mouseY, float partialTicks) {
 void GuiOptions::actionPerformed(GuiButton* button) {
     if (button->id == 100) {
         mc->getSettings().saveOptions();
-        mc->displayGuiScreen(parentScreen); // Go back to parent
+        mc->displayGuiScreen(parentScreen);
+    }
+    if (button->id == 1) {
+        auto graphicsScreen = std::make_shared<GuiGraphicsSettings>();
+        graphicsScreen->parentScreen = shared_from_this();
+        mc->displayGuiScreen(graphicsScreen);
+    }
+    if (button->id == 2) {
+        mc->getSettings().saveOptions();
+        mc->displayGuiScreen(parentScreen);
     }
     if (button->id == 3) {
-        mc->getSettings().guiScale = (mc->getSettings().guiScale + 1) % 9;
-        std::string scaleText = "GUI Scale: ";
-        if (mc->getSettings().guiScale == 0) scaleText += "Auto";
-        else scaleText += std::to_string(mc->getSettings().guiScale);
-        button->text = scaleText;
-
-        // Trigger resize to update scaled resolution
-        int w, h;
-        SDL_GetWindowSizeInPixels(mc->getWindow(), &w, &h);
-        mc->getGameRenderer().resize(w, h);
-        this->setWorldAndResolution(mc, mc->getGameRenderer().getScaledWidth(), mc->getGameRenderer().getScaledHeight());
+        mc->getSettings().saveOptions();
+        mc->displayGuiScreen(parentScreen);
     }
 }

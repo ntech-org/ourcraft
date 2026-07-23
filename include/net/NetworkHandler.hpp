@@ -24,6 +24,9 @@ public:
     void sendDigging(DiggingAction action, int x, int y, int z, int face);
     void sendPlacement(int x, int y, int z, int face, int id, int meta);
     void sendPacket(const Packet& packet);
+    void sendChatMessage(const std::string& message);
+    void setRenderDistance(float dist);
+    CommandHandler* getCommandHandler();
 
     int32_t getPlayerID() const { return m_playerID; }
 

@@ -6,6 +6,7 @@
 #include "entities/EntityZombie.hpp"
 #include <iostream>
 #include <cstring>
+#include <chrono>
 
 NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startServer)
     : m_world(world), m_player(player)
@@ -37,6 +38,15 @@ NetworkHandler::~NetworkHandler() {}
 
 bool NetworkHandler::connect(const std::string& address, int port) {
     return m_client->connect(address, port);
+}
+
+void NetworkHandler::setRenderDistance(float dist) {
+    if (m_server) {
+        int keepDist = 4 + (int)(dist * 8);
+        if (keepDist < 4) keepDist = 4;
+        if (keepDist > 24) keepDist = 24;
+        m_server->setChunkKeepDistance(keepDist);
+    }
 }
 
 void NetworkHandler::update() {
@@ -126,6 +136,24 @@ void NetworkHandler::sendPacket(const Packet& packet) {
     if (m_client) {
         m_client->sendPacket(packet);
     }
+}
+
+void NetworkHandler::sendChatMessage(const std::string& message) {
+    if (m_client) {
+        PacketChatMessage packet;
+        packet.sender = m_player.username;
+        packet.message = message;
+        packet.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        m_client->sendPacket(packet);
+    }
+}
+
+CommandHandler* NetworkHandler::getCommandHandler() {
+    if (m_server) {
+        return &m_server->getCommandHandler();
+    }
+    return nullptr;
 }
 
 void NetworkHandler::onPacketReceived(const uint8_t* data, size_t size) {

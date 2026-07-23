@@ -1,10 +1,12 @@
 #include "net/IntegratedServer.hpp"
+#include "net/CommandHandler.hpp"
 #include "net/NetworkManager.hpp"
 #include "world/Block.hpp"
 #include <iostream>
 #include <csignal>
 #include <atomic>
 #include <thread>
+#include <string>
 
 IntegratedServer* g_server = nullptr;
 
@@ -28,12 +30,28 @@ int main(int argc, char* argv[]) {
         auto server = std::make_unique<IntegratedServer>();
         g_server = server.get();
         
-        // Use dedicated mode to run IntegratedServer logic in the main thread
         server->setDedicated(true);
-        
-        std::cout << "[Server] Server is now running. Press Ctrl+C to stop." << std::endl;
-        
         server->start();
+        
+        std::cout << "[Server] Server is now running. Type 'help' for commands. Press Ctrl+C to stop." << std::endl;
+
+        std::string line;
+        while (server->isRunning() && std::getline(std::cin, line)) {
+            if (line.empty()) continue;
+            if (line == "stop") {
+                server->stop();
+                break;
+            }
+
+            CommandHandler::CommandContext ctx;
+            ctx.server = server.get();
+            ctx.senderName = "CONSOLE";
+
+            std::string result = server->getCommandHandler().execute(line, ctx, true);
+            if (!result.empty()) {
+                std::cout << result << std::endl;
+            }
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "[Server] Fatal error: " << e.what() << std::endl;

@@ -43,9 +43,17 @@ const std::vector<ChunkOffset>& getChunkOffsetsForRadius(int radius) {
     return cache.emplace(radius, std::move(offsets)).first->second;
 }
 
+int getEntitySpawnType(EntityType type) {
+    switch (type) {
+        case EntityType::Zombie: return 1;
+        case EntityType::Item: return 2;
+        default: return 0;
+    }
+}
+
 } // namespace
 
-void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players) {
+void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players) {
     auto saveHandler = world.getSaveHandler();
     if (!saveHandler) return;
 
@@ -65,7 +73,7 @@ void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, Integrated
                 pData.x = entity->posX; pData.y = entity->posY; pData.z = entity->posZ;
                 pData.yaw = entity->rotationYaw; pData.pitch = entity->rotationPitch;
                 if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) pData.health = living->health;
-                for (int i = 0; i < 45; ++i) pData.inventory[i] = session.inventory.mainInventory[i];
+                for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) pData.inventory[i] = session.inventory.mainInventory[i];
                 saveHandler->savePlayerData(pData);
                 break;
             }
@@ -91,7 +99,7 @@ void broadcastEntityPositions(World& world, Server& server) {
     }
 }
 
-void handleRespawns(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players) {
+void handleRespawns(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players) {
     for (auto& [peer, session] : players) {
         for (const auto& entity : world.getEntities()) {
             if (entity->entityID == session.entityID) {
@@ -125,7 +133,7 @@ void handleRespawns(World& world, Server& server, std::map<ENetPeer*, Integrated
     }
 }
 
-void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
                        const std::unordered_map<int32_t, Entity*>& entitiesById) {
     struct PendingPickup {
         ENetPeer* peer;
@@ -137,8 +145,9 @@ void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, Integra
     };
     std::vector<PendingPickup> pickups;
     for (const auto& entity : world.getEntities()) {
-        auto* item = dynamic_cast<EntityItem*>(entity.get());
-        if (!item || item->pickupDelay > 0) continue;
+        if (entity->getType() != EntityType::Item) continue;
+        auto* item = static_cast<EntityItem*>(entity.get());
+        if (item->pickupDelay > 0) continue;
 
         for (auto& [peer, session] : players) {
             auto it = entitiesById.find(session.entityID);
@@ -159,12 +168,20 @@ void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, Integra
             session.inventory.addItem(pickup.itemID, pickup.count, pickup.metadata);
             PacketWindowItems packet;
             packet.windowId = 0;
-            for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+            for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
                 packet.items.push_back({session.inventory.mainInventory[i].itemID,
                                       session.inventory.mainInventory[i].count,
                                       session.inventory.mainInventory[i].metadata});
             }
             server.sendPacket(pickup.peer, packet, true);
+
+            PacketSetSlot cursorPacket;
+            cursorPacket.windowId = 0;
+            cursorPacket.slot = -1;
+            cursorPacket.itemID = session.cursorStack.itemID;
+            cursorPacket.count = session.cursorStack.count;
+            cursorPacket.metadata = session.cursorStack.metadata;
+            server.sendPacket(pickup.peer, cursorPacket, true);
         }
         PacketCollectItem collectPacket;
         collectPacket.itemEntityID = pickup.itemEntityID;
@@ -174,24 +191,26 @@ void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, Integra
     }
 }
 
-void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players) {
+void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players) {
     for (auto& [peer, session] : players) {
         for (const auto& entity : world.getEntities()) {
             if (!session.sentEntities.insert(entity->entityID).second) continue;
 
             PacketSpawnEntity spawn;
             spawn.id = entity->entityID;
-            spawn.type = dynamic_cast<EntityZombie*>(entity.get()) ? 1 : (dynamic_cast<EntityItem*>(entity.get()) ? 2 : 0);
+            spawn.type = getEntitySpawnType(entity->getType());
             spawn.x = entity->posX;
             spawn.y = entity->posY;
             spawn.z = entity->posZ;
             spawn.yaw = entity->rotationYaw;
             spawn.pitch = entity->rotationPitch;
-            if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
+            if (entity->getType() == EntityType::Item) {
+                auto* item = static_cast<EntityItem*>(entity.get());
                 spawn.dataA = item->itemID;
                 spawn.dataB = item->count;
                 spawn.dataC = item->metadata;
-            } else if (auto* p = dynamic_cast<EntityPlayer*>(entity.get())) {
+            } else if (entity->getType() == EntityType::Player) {
+                auto* p = static_cast<EntityPlayer*>(entity.get());
                 spawn.username = p->username;
                 spawn.uuid = p->uuid;
             }
@@ -200,7 +219,7 @@ void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, Integrat
     }
 }
 
-void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
                          const std::unordered_map<int32_t, Entity*>& entitiesById) {
     for (auto& [peer, session] : players) {
         auto playerIt = entitiesById.find(session.entityID);
@@ -252,8 +271,8 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Integ
     }
 }
 
-void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
-                     const std::unordered_map<int32_t, Entity*>& entitiesById) {
+void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
+                     const std::unordered_map<int32_t, Entity*>& entitiesById, int keepDistance) {
     std::vector<std::pair<int, int>> toUnload;
     for (const auto& chunk : world.getAllChunks()) {
         bool keep = false;
@@ -264,7 +283,7 @@ void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, Integrate
 
             int dx = std::abs(chunk->getX() - (int)std::floor(player->posX / 16.0));
             int dz = std::abs(chunk->getZ() - (int)std::floor(player->posZ / 16.0));
-            if (dx <= 12 && dz <= 12) {
+            if (dx <= keepDistance && dz <= keepDistance) {
                 keep = true;
                 break;
             }
@@ -284,7 +303,7 @@ void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, Integrate
     }
 }
 
-void spawnMobs(World& world, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+void spawnMobs(World& world, std::map<ENetPeer*, PlayerSession>& players,
                const std::unordered_map<int32_t, Entity*>& entitiesById) {
     for (auto& [peer, session] : players) {
         auto it = entitiesById.find(session.entityID);

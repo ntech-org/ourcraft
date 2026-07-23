@@ -1,19 +1,22 @@
 #pragma once
 
-#include "net/IntegratedServer.hpp"
 #include "net/Server.hpp"
+#include "net/PlayerSession.hpp"
 #include "world/World.hpp"
 #include <map>
 
-void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players);
+struct _ENetPeer;
+typedef struct _ENetPeer ENetPeer;
+
+void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players);
 void broadcastEntityPositions(World& world, Server& server);
-void handleRespawns(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players);
-void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+void handleRespawns(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players);
+void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
                        const std::unordered_map<int32_t, Entity*>& entitiesById);
-void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players);
-void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players);
+void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
                          const std::unordered_map<int32_t, Entity*>& entitiesById);
-void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
-                     const std::unordered_map<int32_t, Entity*>& entitiesById);
-void spawnMobs(World& world, std::map<ENetPeer*, IntegratedServer::PlayerSession>& players,
+void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
+                     const std::unordered_map<int32_t, Entity*>& entitiesById, int keepDistance);
+void spawnMobs(World& world, std::map<ENetPeer*, PlayerSession>& players,
                const std::unordered_map<int32_t, Entity*>& entitiesById);

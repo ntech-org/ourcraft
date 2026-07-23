@@ -93,6 +93,8 @@ void InputHandler::handleEvent(const SDL_Event& event) {
                 if (f3) {
                     m_player.worldObj.setWorldTime(m_player.worldObj.getWorldTime() + 1000.0);
                     std::cout << "[Debug] Advanced time +1000" << std::endl;
+                } else {
+                    m_chatPressed = true;
                 }
                 break;
             case SDL_SCANCODE_Y:

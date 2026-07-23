@@ -174,11 +174,68 @@ void World::update(float dt) {
                 }
             }
         }
+        tickTileEntities();
     }
     for (auto& e : m_entities) {
         e->onUpdate();
     }
     m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [](const auto& e) { return e->isDead; }), m_entities.end());
+}
+
+static std::uint64_t tileKey(int x, int y, int z) {
+    return ((std::uint64_t)(uint32_t)x) | ((std::uint64_t)(uint32_t)y << 32) | ((std::uint64_t)(uint32_t)z << 48);
+}
+
+void World::addTileEntity(std::unique_ptr<TileEntity> tileEntity) {
+    if (!tileEntity) return;
+    int x = tileEntity->x, y = tileEntity->y, z = tileEntity->z;
+    auto key = tileKey(x, y, z);
+
+    // Remove existing at same position
+    auto it = m_tileEntityLookup.find(key);
+    if (it != m_tileEntityLookup.end()) {
+        for (auto& te : m_tileEntities) {
+            if (te.get() == it->second) {
+                te.reset();
+                break;
+            }
+        }
+        m_tileEntityLookup.erase(it);
+    }
+
+    TileEntity* ptr = tileEntity.get();
+    m_tileEntities.push_back(std::move(tileEntity));
+    m_tileEntityLookup[key] = ptr;
+}
+
+void World::removeTileEntity(int x, int y, int z) {
+    auto key = tileKey(x, y, z);
+    auto it = m_tileEntityLookup.find(key);
+    if (it != m_tileEntityLookup.end()) {
+        for (auto& te : m_tileEntities) {
+            if (te.get() == it->second) {
+                te.reset();
+                break;
+            }
+        }
+        m_tileEntityLookup.erase(it);
+    }
+}
+
+TileEntity* World::getTileEntity(int x, int y, int z) {
+    auto key = tileKey(x, y, z);
+    auto it = m_tileEntityLookup.find(key);
+    if (it != m_tileEntityLookup.end()) return it->second;
+    return nullptr;
+}
+
+void World::tickTileEntities() {
+    for (auto& te : m_tileEntities) {
+        if (te) te->updateEntity();
+    }
+    // Clean up null entries
+    m_tileEntities.erase(std::remove_if(m_tileEntities.begin(), m_tileEntities.end(),
+        [](const auto& te) { return te == nullptr; }), m_tileEntities.end());
 }
 
 HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiquids) {

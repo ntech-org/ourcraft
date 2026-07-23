@@ -7,9 +7,9 @@
 GuiMultiplayer::GuiMultiplayer(std::shared_ptr<GuiScreen> parent) : m_parent(parent) {}
 
 void GuiMultiplayer::initGui() {
-    m_serverAddressField = std::make_unique<GuiTextField>(0, width / 2 - 100, height / 4 + 48, 200, 20);
+    m_serverAddressField = std::make_unique<GuiTextField>(0, width / 2 - 100, height / 4 + 48, 200, 20, mc->getWindow());
     m_serverAddressField->setText("127.0.0.1");
-    m_serverAddressField->setFocused(true);
+    m_serverAddressField->setFocused(true, mc->getWindow());
 
     controlList.push_back(std::make_unique<GuiButton>(1, width / 2 - 100, height / 4 + 80, 200, 20, "Connect"));
     controlList.push_back(std::make_unique<GuiButton>(0, width / 2 - 100, height / 4 + 120, 200, 20, "Back"));

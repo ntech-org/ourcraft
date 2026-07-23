@@ -220,5 +220,17 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         player.maxHealth = packet.maxHealth;
         player.fallDistance = 0.0f;
         player.deathTime = 0;
+    } else if (type == PacketType::ChatMessage) {
+        PacketChatMessage packet;
+        packet.deserialize(ptr, size - 1);
+        try {
+            auto& mc = player.getMinecraft();
+            mc.getChatRenderer().addMessage(packet.sender, packet.message, packet.timestamp);
+        } catch (...) {}
+    } else if (type == PacketType::GameModeChange) {
+        PacketGameModeChange packet;
+        packet.deserialize(ptr, size - 1);
+        player.gameMode = (packet.gameMode == 0) ? GameMode::SURVIVAL : GameMode::CREATIVE;
+        if (player.gameMode == GameMode::SURVIVAL) player.isFlying = false;
     }
 }

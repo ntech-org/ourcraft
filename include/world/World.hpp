@@ -4,6 +4,7 @@
 #include "world/IBlockAccess.hpp"
 #include "world/WorldGenerator.hpp"
 #include "world/ChunkLoader.hpp"
+#include "world/TileEntity.hpp"
 #include "world/storage/SaveHandler.hpp"
 #include "physics/AxisAlignedBB.hpp"
 #include <glm/vec3.hpp>
@@ -127,6 +128,7 @@ public:
     void update(float deltaTime);
     float getCelestialAngle(float partialTick = 0.0f) const;
     glm::vec3 getSkyColor(float partialTick = 0.0f) const;
+    glm::vec3 getCloudColor(float partialTick = 0.0f) const;
     glm::vec3 getFogColor(float partialTick = 0.0f) const;
     std::pair<int, int> getLightPair(int x, int y, int z) const override;
     float getStarBrightness(float partialTick = 0.0f) const;
@@ -144,6 +146,12 @@ public:
     void spawnEntity(std::unique_ptr<Entity> entity);
     void removeEntity(int32_t id, bool notify = true);
     const std::vector<std::unique_ptr<Entity>>& getEntities() const { return m_entities; }
+
+    // Tile Entity management
+    void addTileEntity(std::unique_ptr<TileEntity> tileEntity);
+    void removeTileEntity(int x, int y, int z);
+    TileEntity* getTileEntity(int x, int y, int z);
+    void tickTileEntities();
 
     SaveHandler* getSaveHandler() const { return m_saveHandler.get(); }
 
@@ -173,6 +181,9 @@ private:
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> m_chunkLookup;
     std::vector<std::unique_ptr<Entity>> m_entities;
     int32_t m_nextEntityID = 0;
+
+    std::vector<std::unique_ptr<TileEntity>> m_tileEntities;
+    std::unordered_map<std::uint64_t, TileEntity*> m_tileEntityLookup;
 
     double m_worldTime = 6000.0;
     std::uint32_t m_skyColor = 8961023u;

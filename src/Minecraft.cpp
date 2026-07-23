@@ -14,6 +14,10 @@
 #include "items/ItemFood.hpp"
 #include "entities/EntityItem.hpp"
 #include "gui/GuiCrafting.hpp"
+#include "gui/GuiFurnace.hpp"
+#include "gui/GuiChat.hpp"
+#include "world/TileEntityFurnace.hpp"
+#include "net/Packets.hpp"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -44,6 +48,26 @@ Minecraft::~Minecraft() {
     }
 }
 
+void Minecraft::setupPlayerCallbacks() {
+    m_player->setMinecraft(this);
+    m_player->isLocalPlayer = true;
+    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
+        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
+            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
+    };
+    m_player->onOpenCraftingTable = [this]() {
+        displayGuiScreen(std::make_shared<GuiCrafting>());
+    };
+    m_player->onOpenFurnace = [this](int x, int y, int z) {
+        TileEntity* te = m_world->getTileEntity(x, y, z);
+        if (auto* furnace = dynamic_cast<TileEntityFurnace*>(te)) {
+            auto gui = std::make_shared<GuiFurnace>(*furnace);
+            gui->parentScreen = m_currentScreen;
+            displayGuiScreen(gui);
+        }
+    };
+}
+
 void Minecraft::init() {
     Block::init();
     Item::init();
@@ -54,41 +78,24 @@ void Minecraft::init() {
     buildSoundPool(m_soundPool, "assets/resources/music/");
     buildSoundPool(m_soundPool, "assets/resources/menumusic/");
 
-    // Preload common sounds so first play isn't delayed by OGG decode
     auto preload = [this](const std::string& pool) {
         m_soundPool.getRandom(pool, *m_soundSystem);
     };
-    preload("random.click");
-    preload("step.stone");
-    preload("step.grass");
-    preload("step.wood");
-    preload("dig.stone");
-    preload("dig.grass");
-    preload("dig.wood");
 
-    // Collect music pool names for background music playback
     for (const auto& name : m_soundPool.getPoolNames()) {
         if (name.find("menu") == 0)
-            m_menuMusicPools.push_back(name);
+            m_soundMgr.menuMusicPools.push_back(name);
         else if (name.find("calm") == 0 || name.find("hal") == 0 ||
                  name.find("nuance") == 0 || name.find("piano") == 0)
-            m_musicPools.push_back(name);
+            m_soundMgr.musicPools.push_back(name);
     }
 
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
 
     m_player = std::make_unique<EntityPlayer>(*m_world);
-    m_player->setMinecraft(this);
-    m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 66.0, 0.0);
-    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
-        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
-            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
-    };
-    m_player->onOpenCraftingTable = [this]() {
-        displayGuiScreen(std::make_shared<GuiCrafting>());
-    };
+    setupPlayerCallbacks();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -128,16 +135,8 @@ void Minecraft::saveAndQuit() {
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
     m_player = std::make_unique<EntityPlayer>(*m_world);
-    m_player->setMinecraft(this);
-    m_player->isLocalPlayer = true;
     m_player->setPosition(0.0, 66.0, 0.0);
-    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
-        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
-            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
-    };
-    m_player->onOpenCraftingTable = [this]() {
-        displayGuiScreen(std::make_shared<GuiCrafting>());
-    };
+    setupPlayerCallbacks();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -148,6 +147,7 @@ void Minecraft::saveAndQuit() {
 
 void Minecraft::startSingleplayer() {
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
+    m_networkHandler->setRenderDistance(m_settings.renderDistance);
     m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
         if (m_gameState != GameState::MainMenu) {
             displayGuiScreen(std::make_shared<GuiErrorScreen>("Disconnected", reason));
@@ -171,18 +171,10 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
     m_player = std::make_unique<EntityPlayer>(*m_world);
-    m_player->setMinecraft(this);
-    m_player->isLocalPlayer = true;
     m_player->username = m_settings.username;
     m_player->uuid = m_settings.uuid;
-    m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
-        if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
-            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
-    };
     m_player->setPosition(0.0, 66.0, 0.0);
-    m_player->onOpenCraftingTable = [this]() {
-        displayGuiScreen(std::make_shared<GuiCrafting>());
-    };
+    setupPlayerCallbacks();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
@@ -208,9 +200,11 @@ void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
     if (m_currentScreen) m_currentScreen->onGuiClosed();
     m_currentScreen = screen;
     if (m_currentScreen) {
-        resetBlockBreaking(true);
+        m_blockBreaking.resetBlockBreaking(true, *this, m_networkHandler.get(), *m_gameRenderer);
         if (m_inputHandler) m_inputHandler->releaseAllButtons();
-        SDL_SetWindowRelativeMouseMode(m_window, false);
+        if (m_currentScreen->wantsCursor()) {
+            SDL_SetWindowRelativeMouseMode(m_window, false);
+        }
         m_currentScreen->setWorldAndResolution(this, m_gameRenderer->getScaledWidth(), m_gameRenderer->getScaledHeight());
     } else {
         if (m_inputHandler) m_inputHandler->releaseAllButtons();
@@ -248,17 +242,9 @@ void Minecraft::run() {
         for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
         m_gameRenderer->getProfiler().updateTime = ((double)SDL_GetTicksNS() / 1e9 - updateStart) * 1000.0;
 
-        // Music tick — uses dedicated music source so SFX don't block it
         if (m_soundSystem && m_settings.musicVolume > 0.0f) {
-            if (!m_soundSystem->isMusicPlaying() && ++m_musicTimer > 1800) { // ~30s between tracks
-                m_musicTimer = 0;
-                const auto& pools = (m_gameState == GameState::MainMenu) ? m_menuMusicPools : m_musicPools;
-                if (!pools.empty()) {
-                    int idx = std::rand() % (int)pools.size();
-                    if (auto* snd = m_soundPool.getRandom(pools[idx], *m_soundSystem))
-                        m_soundSystem->playMusic(snd, m_settings.musicVolume, 1.0f);
-                }
-            }
+            bool isMainMenu = (m_gameState == GameState::MainMenu);
+            m_soundMgr.tick(*m_soundSystem, m_soundPool, m_settings.musicVolume, isMainMenu);
         }
 
         float renderPartialTicks = m_timer.renderPartialTicks;
@@ -289,6 +275,7 @@ void Minecraft::tick() {
     if (m_networkHandler) {
         m_networkHandler->update();
     }
+    m_chatRenderer.tick();
 
     bool shouldPause = false;
     if (m_currentScreen && m_currentScreen->doesGuiPauseGame()) {
@@ -318,50 +305,55 @@ void Minecraft::tick() {
         } else {
             m_inputHandler->update();
 
-            if (m_hitDelayTimer > 0) m_hitDelayTimer--;
-            if (m_rightClickDelayTimer > 0) m_rightClickDelayTimer--;
-
-            if (m_inputHandler->isEscPressed()) {
+            if (m_inputHandler->shouldOpenChat()) {
+                m_player->moveForward = 0.0f;
+                m_player->moveStrafe = 0.0f;
+                displayGuiScreen(std::make_shared<GuiChat>());
+            } else if (m_inputHandler->isEscPressed()) {
                 displayGuiScreen(std::make_shared<GuiIngameMenu>());
-            }
-            if (m_inputHandler->shouldToggleInventory()) {
+            } else if (m_inputHandler->shouldToggleInventory()) {
                 displayGuiScreen(std::make_shared<GuiInventory>());
-                return;
-            }
+            } else {
+                if (m_blockBreaking.getHitDelayTimer() > 0) m_blockBreaking.setHitDelayTimer(m_blockBreaking.getHitDelayTimer() - 1);
+                if (m_blockBreaking.getRightClickDelayTimer() > 0) m_blockBreaking.setRightClickDelayTimer(m_blockBreaking.getRightClickDelayTimer() - 1);
 
-            m_objectMouseOver = updateMouseOver(*this, *m_player, *m_world);
+                m_blockBreaking.updateMouseOver(*m_player, *m_world);
 
-            const bool leftDown = m_inputHandler->isLeftMouseDown();
-            const bool leftClick = m_inputHandler->isLeftClick();
+                const bool leftDown = m_inputHandler->isLeftMouseDown();
+                const bool leftClick = m_inputHandler->isLeftClick();
 
-            if (leftDown && m_hitDelayTimer <= 0) {
-                if (m_objectMouseOver.type == HitType::ENTITY && m_objectMouseOver.entity) {
-                    m_player->swing();
-                    if (m_networkHandler) {
-                        PacketUseEntity packet;
-                        packet.userEntityID = m_player->entityID;
-                        packet.targetEntityID = m_objectMouseOver.entity->entityID;
-                        packet.leftClick = 1;
-                        m_networkHandler->sendPacket(packet);
+                if (leftDown && m_blockBreaking.getHitDelayTimer() <= 0) {
+                    const HitResult& hit = m_blockBreaking.getObjectMouseOver();
+                    if (hit.type == HitType::ENTITY && hit.entity) {
+                        m_player->swing();
+                        if (m_networkHandler) {
+                            PacketUseEntity packet;
+                            packet.userEntityID = m_player->entityID;
+                            packet.targetEntityID = hit.entity->entityID;
+                            packet.leftClick = 1;
+                            m_networkHandler->sendPacket(packet);
+                        }
+                        m_blockBreaking.setHitDelayTimer(10);
+                    } else if (hit.type == HitType::NONE && leftClick) {
+                        m_player->swing();
+                        m_blockBreaking.setHitDelayTimer(10);
                     }
-                    m_hitDelayTimer = 10;
-                } else if (m_objectMouseOver.type == HitType::NONE && leftClick) {
-                    m_player->swing();
-                    m_hitDelayTimer = 10;
                 }
-            }
 
-            handleBlockBreaking(*this, *m_player, *m_world, m_timer.renderPartialTicks);
-            handleBlockPlacement(*this, *m_player, *m_world);
+                m_blockBreaking.tick(*this, *m_player, *m_world, *m_gameRenderer, *m_inputHandler,
+                                    m_networkHandler.get(), m_soundSystem.get(), m_soundPool,
+                                    m_settings.soundVolume, m_timer.renderPartialTicks, m_player->gameMode);
+                handleBlockPlacement(*this, *m_player, *m_world);
 
-            if (m_inputHandler->shouldReloadChunks()) {
-                m_gameRenderer->getWorldRenderer().rebuildSectionList();
+                if (m_inputHandler->shouldReloadChunks()) {
+                    m_gameRenderer->getWorldRenderer().rebuildSectionList();
+                }
             }
         }
 
         m_player->onUpdate();
 
-        // Void protection: prevent falling through the world
+        // Void protection
         if (m_player->posY < -64.0) {
             m_player->setPosition(m_player->posX, 66.0, m_player->posZ);
             m_player->motionY = 0.0;
@@ -371,8 +363,8 @@ void Minecraft::tick() {
             }
         }
 
-        m_lastHealth = m_player->health;
-        m_lastFallDistance = m_player->fallDistance;
+        m_soundMgr.lastHealth = m_player->health;
+        m_soundMgr.lastFallDistance = m_player->fallDistance;
 
         m_gameRenderer->updateItemEquippedProgress();
         m_gameRenderer->getRenderEngine().updateTextureFX();
@@ -380,74 +372,6 @@ void Minecraft::tick() {
             m_networkHandler->sendPlayerPosition(*m_player);
         }
     }
-}
-
-void Minecraft::resetBlockBreaking(bool sendStopPacket) {
-    if (sendStopPacket && m_isBreakingBlock && m_networkHandler) {
-        m_networkHandler->sendDigging(DiggingAction::STOP, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
-    }
-    m_isBreakingBlock = false;
-    m_breakFace = -1;
-    m_breakProgress = 0.0f;
-    m_breakSwingTick = 0;
-    if (m_gameRenderer) {
-        m_gameRenderer->setBlockBreakingOverlay(false, 0, 0, 0, 0.0f);
-    }
-}
-
-float Minecraft::getBreakDeltaForBlock(uint8_t blockID) const {
-    const float hardness = Block::getHardness(blockID);
-    if (hardness <= 0.0f) {
-        return 1.0f;
-    }
-
-    const Block* block = Block::blocksList[blockID];
-    if (!block) return 1.0f;
-
-    const ItemStack& held = m_player->inventory.getCurrentStack();
-
-    if (!held.isEmpty()) {
-        if (Item* item = Item::itemsList[held.itemID]) {
-            if (item->canHarvestBlock(*block)) {
-                float strength = item->getStrVsBlock(*block);
-                if (m_player->inWater) strength /= 5.0f;
-                if (!m_player->onGround) strength /= 5.0f;
-                return strength / hardness / 30.0f;
-            } else {
-                return 1.0f / hardness / 100.0f;
-            }
-        }
-    }
-
-    return 1.0f / hardness / 30.0f;
-}
-
-bool Minecraft::finishBreakingCurrentBlock() {
-    if (!m_isBreakingBlock) {
-        return false;
-    }
-
-    const uint8_t targetID = m_world->getBlockID(m_breakX, m_breakY, m_breakZ);
-    if (targetID == 0 || Block::getHardness(targetID) < 0.0f) {
-        resetBlockBreaking(false);
-        return false;
-    }
-
-    // In creative, remove block client-side immediately.
-    // In survival, let the server handle removal to prevent dupes and ensure proper item drops.
-    if (m_player->gameMode == GameMode::CREATIVE) {
-        m_world->setBlockWithNotify(m_breakX, m_breakY, m_breakZ, 0);
-    }
-
-    m_objectMouseOver.type = HitType::NONE;
-    m_networkHandler->sendDigging(DiggingAction::FINISH, m_breakX, m_breakY, m_breakZ, m_breakFace >= 0 ? m_breakFace : 1);
-    m_player->swing();
-    if (const Block* b = Block::blocksList[targetID]) {
-        if (auto* snd = m_soundPool.getRandom(b->stepSound->getBreakSound(), *m_soundSystem))
-            m_soundSystem->play3D(snd, (float)m_breakX, (float)m_breakY, (float)m_breakZ, m_settings.soundVolume, 1.0f);
-    }
-    resetBlockBreaking(false);
-    return true;
 }
 
 void Minecraft::resize(int width, int height) {

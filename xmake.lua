@@ -6,6 +6,7 @@ add_requires("openal-soft")
 add_requires("rocksdb", {configs = {zstd = true, zlib = true}})
 add_requires("stb", {system = false})
 add_requires("glad", {system = false, configs = {extensions = "all", api = "gl=3.3"}})
+add_requires("doctest", {system = false})
 
 target("ourcraft")
     set_kind("binary")
@@ -34,7 +35,7 @@ target("ourcraft-server")
         set_strip("all")
         set_policy("build.optimization.lto", true)
     end
-    add_files("src/net/Server.cpp", "src/net/Packet.cpp", "src/net/IntegratedServer.cpp", "src/net/ServerTick.cpp")
+    add_files("src/net/Server.cpp", "src/net/Packet.cpp", "src/net/IntegratedServer.cpp", "src/net/ServerTick.cpp", "src/net/ServerPacketHandler.cpp", "src/net/Permissions.cpp", "src/net/CommandHandler.cpp")
     add_files("src/world/**.cpp")
     add_files("src/entities/**.cpp")
     remove_files("src/entities/PlayerTick.cpp")
@@ -42,10 +43,9 @@ target("ourcraft-server")
     add_files("src/util/**.cpp")
     add_files("src/inventory/**.cpp")
     add_files("src/items/**.cpp")
+    add_files("src/simulation/SimulationTick.cpp")
     add_files("src/server_main.cpp")
-    
-    -- remove_files("src/world/ChunkLoader.cpp") -- Restored as it doesn't depend on GL
-    
+
     add_includedirs("include")
     add_packages("glm", "enet", "zstd", "zlib", "rocksdb")
     add_defines("SERVER_ONLY")
@@ -53,5 +53,29 @@ target("ourcraft-server")
     if is_plat("windows") then
         add_syslinks("user32", "gdi32", "shell32")
     elseif is_plat("linux") then
+        add_syslinks("pthread", "dl", "m")
+    end
+
+target("ourcraft-tests")
+    set_kind("binary")
+    set_languages("c++20")
+    if is_mode("release") then
+        set_optimize("fastest")
+        set_strip("all")
+    end
+    add_files("tests/**.cpp")
+    add_files("src/world/**.cpp")
+    add_files("src/physics/**.cpp")
+    add_files("src/entities/**.cpp")
+    remove_files("src/entities/PlayerTick.cpp")
+    add_files("src/items/**.cpp")
+    add_files("src/inventory/**.cpp")
+    add_files("src/simulation/SimulationTick.cpp")
+    add_files("src/util/Timer.cpp")
+    add_includedirs("include")
+    add_packages("glm", "zstd", "zlib", "rocksdb", "doctest")
+    add_defines("SERVER_ONLY")
+
+    if is_plat("linux") then
         add_syslinks("pthread", "dl", "m")
     end

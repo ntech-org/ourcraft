@@ -9,6 +9,7 @@
 #include "renderer/RenderEngine.hpp"
 #include "renderer/WorldRenderer.hpp"
 #include "renderer/SkyRenderer.hpp"
+#include "renderer/CloudRenderer.hpp"
 #include "renderer/Shader.hpp"
 #include "renderer/Frustum.hpp"
 #include "renderer/ModelBiped.hpp"
@@ -84,6 +85,7 @@ private:
 
     std::unique_ptr<WorldRenderer> m_worldRenderer;
     std::unique_ptr<SkyRenderer> m_skyRenderer;
+    std::unique_ptr<CloudRenderer> m_cloudRenderer;
     std::unique_ptr<Shader> m_basicShader;
     std::unique_ptr<Shader> m_entityShader;
     std::unique_ptr<Shader> m_debugShader;
@@ -107,4 +109,5 @@ private:
     float m_equippedProgress = 0.0f;
     float m_prevEquippedProgress = 0.0f;
     int m_itemToRenderID = -1;
+    int m_cloudTickCounter = 0;
 };

@@ -45,7 +45,13 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
             float fx = (float)x, fy = (float)y, fz = (float)z;
             bool water = (bid == 8 || bid == 9); float liq = water ? 1.0f : 2.0f, d0 = getWaterDepth(n, x, gy, z), d1 = getWaterDepth(n, x, gy + 1, z);
             ChunkMeshData::Pass& pass = water ? md.translucent : md.opaque;
-            if (!shouldCull(bid, n.getBlockID(x, gy + 1, z))) {
+            uint8_t aboveID = n.getBlockID(x, gy + 1, z);
+            bool cullTop = false;
+            if (aboveID) {
+                const Block* above = Block::blocksList[aboveID];
+                if (above && b->blockMaterial == above->blockMaterial) cullTop = true;
+            }
+            if (!cullTop) {
                 float flow = (float)BlockFluid::getFlowDirection(n, x, gy, z, mat); int tex = (flow > -999.0f) ? b->getTexture(2) : b->getTexture(1);
                 auto light = n.getLightPair(bx + x, gy + 1, bz + z); float sl = (float)light.first, bl = (float)light.second;
                 appendVertex(pass, fx, fy + h00, fz, 0, 0, tex, FaceDirection::Up, flow, liq, d1, sl, bl); appendVertex(pass, fx, fy + h01, fz + 1, 0, 1, tex, FaceDirection::Up, flow, liq, d1, sl, bl);

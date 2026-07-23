@@ -24,6 +24,7 @@ public:
     bool isLeftMouseDown() const { return m_leftMousePressed; }
     bool isRightMouseDown() const { return m_rightMousePressed; }
     bool shouldToggleInventory() { bool r = m_inventoryPressed; m_inventoryPressed = false; return r; }
+    bool shouldOpenChat() { bool r = m_chatPressed; m_chatPressed = false; return r; }
     bool isEscPressed() { bool r = m_escPressed; m_escPressed = false; return r; }
 
 private:
@@ -43,6 +44,7 @@ private:
     bool m_rightClick = false;
     bool m_escPressed = false;
     bool m_inventoryPressed = false;
+    bool m_chatPressed = false;
 
     int m_spaceTapTicks = 0;
     bool m_spaceHeld = false;

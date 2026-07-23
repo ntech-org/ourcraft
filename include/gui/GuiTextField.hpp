@@ -10,17 +10,18 @@ class Shader;
 
 class GuiTextField : public Gui {
 public:
-    GuiTextField(int id, int x, int y, int width, int height);
+    GuiTextField(int id, int x, int y, int width, int height, SDL_Window* window = nullptr);
     virtual ~GuiTextField() = default;
 
     void updateCursorCounter();
     void setText(const std::string& text);
     std::string getText() const;
     
-    void setFocused(bool focused);
+    void setFocused(bool focused, SDL_Window* window);
     bool isFocused() const;
 
     void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down);
+    void appendText(const std::string& text);
     void mouseClicked(int mouseX, int mouseY, int button);
     void drawTextField(Minecraft* mc, Font& font, Shader& shader);
 
@@ -34,4 +35,5 @@ private:
     std::string m_text;
     bool m_isFocused = false;
     int m_cursorCounter = 0;
+    SDL_Window* m_window = nullptr;
 };

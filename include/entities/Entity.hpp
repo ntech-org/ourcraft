@@ -6,11 +6,20 @@
 
 class World;
 
+enum class EntityType {
+    Unknown,
+    Player,
+    Living,
+    Zombie,
+    Item
+};
+
 class Entity {
 public:
     Entity(World& world);
     virtual ~Entity();
 
+    virtual EntityType getType() const { return EntityType::Unknown; }
     virtual void onUpdate();
     void moveEntity(double dx, double dy, double dz);
     void setPosition(double x, double y, double z);

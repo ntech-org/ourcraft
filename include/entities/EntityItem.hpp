@@ -6,6 +6,7 @@ class EntityItem : public Entity {
 public:
     EntityItem(World& world, int itemID, int count, uint8_t metadata = 0);
 
+    EntityType getType() const override { return EntityType::Item; }
     void onUpdate() override;
 
     int itemID = 0;

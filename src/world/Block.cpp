@@ -1,5 +1,6 @@
 #include "world/Block.hpp"
 #include "world/BlockRegistry.hpp"
+#include "world/BlockFurnace.hpp"
 #include "world/World.hpp"
 #include "world/BlockFluid.hpp"
 #include "world/IBlockAccess.hpp"
@@ -117,8 +118,8 @@ void Block::init() {
     workbench = new BlockWorkbench(58);
     crops = new BlockCross(59, 88);
     farmland = new BlockFarmland(60);
-    furnaceIdle = new Block(61, 44, Material::rock);
-    furnaceActive = new Block(62, 60, Material::rock);
+    furnaceIdle = new BlockFurnace(61, false, Material::rock);
+    furnaceActive = new BlockFurnace(62, true, Material::rock);
     signStanding = new Block(63, 4, Material::wood);
     doorWood = new Block(64, 97, Material::wood);
     ladder = new Block(65, 83, Material::wood);

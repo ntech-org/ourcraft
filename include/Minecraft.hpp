@@ -13,6 +13,9 @@
 #include "util/GameSettings.hpp"
 #include "sound/SoundSystem.hpp"
 #include "sound/SoundPool.hpp"
+#include "renderer/ChatRenderer.hpp"
+#include "simulation/BlockBreakingSystem.hpp"
+#include "simulation/SoundManager.hpp"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -50,42 +53,20 @@ public:
     GameSettings& getSettings() { return m_settings; }
     Font& getFont() { return *m_font; }
     std::shared_ptr<GuiScreen> getCurrentScreen() { return m_currentScreen; }
-    const HitResult& getObjectMouseOver() const { return m_objectMouseOver; }
-    HitResult& getObjectMouseOverRef() { return m_objectMouseOver; }
     InputHandler& getInputHandler() { return *m_inputHandler; }
 
     SoundSystem& getSoundSystem() { return *m_soundSystem; }
     bool hasSoundSystem() const { return m_soundSystem != nullptr; }
     SoundPool& getSoundPool() { return m_soundPool; }
+    ChatRenderer& getChatRenderer() { return m_chatRenderer; }
 
-    bool isBreakingBlock() const { return m_isBreakingBlock; }
-    void setBreakingBlock(bool v) { m_isBreakingBlock = v; }
-    int getBreakX() const { return m_breakX; }
-    void setBreakX(int v) { m_breakX = v; }
-    int getBreakY() const { return m_breakY; }
-    void setBreakY(int v) { m_breakY = v; }
-    int getBreakZ() const { return m_breakZ; }
-    void setBreakZ(int v) { m_breakZ = v; }
-    int getBreakFace() const { return m_breakFace; }
-    void setBreakFace(int v) { m_breakFace = v; }
-    float getBreakProgress() const { return m_breakProgress; }
-    void setBreakProgress(float v) { m_breakProgress = v; }
-    int getBreakSwingTick() const { return m_breakSwingTick; }
-    int& getBreakSwingTickRef() { return m_breakSwingTick; }
-    void setBreakSwingTick(int v) { m_breakSwingTick = v; }
-    int getHitDelayTimer() const { return m_hitDelayTimer; }
-    void setHitDelayTimer(int v) { m_hitDelayTimer = v; }
-    int getRightClickDelayTimer() const { return m_rightClickDelayTimer; }
-    void setRightClickDelayTimer(int v) { m_rightClickDelayTimer = v; }
-
-    void resetBlockBreaking(bool sendStopPacket);
-    float getBreakDeltaForBlock(uint8_t blockID) const;
-    bool finishBreakingCurrentBlock();
+    BlockBreakingSystem& getBlockBreaking() { return m_blockBreaking; }
+    SoundManager& getSoundMgr() { return m_soundMgr; }
 
 private:
-
     void init();
     void tick();
+    void setupPlayerCallbacks();
 
     SDL_Window* m_window;
     int m_width;
@@ -108,25 +89,10 @@ private:
     float m_fps = 0.0f;
     bool m_running = true;
 
-    bool m_isBreakingBlock = false;
-    int m_breakX = 0;
-    int m_breakY = 0;
-    int m_breakZ = 0;
-    int m_breakFace = -1;
-    float m_breakProgress = 0.0f;
-    int m_breakSwingTick = 0;
-
-    int m_hitDelayTimer = 0;
-    int m_rightClickDelayTimer = 0;
-    HitResult m_objectMouseOver;
+    BlockBreakingSystem m_blockBreaking;
+    SoundManager m_soundMgr;
 
     std::unique_ptr<SoundSystem> m_soundSystem;
     SoundPool m_soundPool;
-    float m_footstepAccum = 0.0f;
-    float m_lastFallDistance = 0.0f;
-    int m_lastHealth = 20;
-    bool m_wasInWater = false;
-    int m_musicTimer = 0;
-    std::vector<std::string> m_musicPools;
-    std::vector<std::string> m_menuMusicPools;
+    ChatRenderer m_chatRenderer;
 };

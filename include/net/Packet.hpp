@@ -29,7 +29,9 @@ enum class PacketType : uint8_t {
     UseEntity = 20,
     CollectItem = 21,
     PlaySound = 22,
-    UpdateHealth = 23
+    UpdateHealth = 23,
+    ChatMessage = 24,
+    GameModeChange = 25
 };
 
 class Packet {

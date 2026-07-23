@@ -689,3 +689,39 @@ public:
         leftClick = readByte(data);
     }
 };
+
+class PacketChatMessage : public AutoPacket<PacketChatMessage> {
+public:
+    std::string sender;
+    std::string message;
+    int64_t timestamp = 0;
+
+    PacketType getType() const override { return PacketType::ChatMessage; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeString(buffer, sender);
+        writeString(buffer, message);
+        writeDouble(buffer, (double)timestamp);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        sender = readString(data);
+        message = readString(data);
+        timestamp = (int64_t)readDouble(data);
+    }
+};
+
+class PacketGameModeChange : public AutoPacket<PacketGameModeChange> {
+public:
+    uint8_t gameMode;
+
+    PacketType getType() const override { return PacketType::GameModeChange; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeByte(buffer, gameMode);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        gameMode = readByte(data);
+    }
+};

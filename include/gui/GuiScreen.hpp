@@ -17,6 +17,7 @@ public:
     virtual void drawScreen(int mouseX, int mouseY, float partialTicks);
     
     virtual bool doesGuiPauseGame() const { return true; }
+    virtual bool wantsCursor() const { return true; }
     
     virtual void handleEvent(const SDL_Event& event);
     virtual void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down);
