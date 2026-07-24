@@ -68,12 +68,14 @@ void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSess
     for (auto& [peer, session] : players) {
         for (const auto& entity : world.getEntities()) {
             if (entity->entityID == session.entityID) {
+                auto* player = dynamic_cast<EntityPlayer*>(entity.get());
+                if (!player) break;
                 PlayerSaveData pData;
                 pData.name = session.username;
                 pData.x = entity->posX; pData.y = entity->posY; pData.z = entity->posZ;
                 pData.yaw = entity->rotationYaw; pData.pitch = entity->rotationPitch;
                 if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) pData.health = living->health;
-                for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) pData.inventory[i] = session.inventory.mainInventory[i];
+                for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) pData.inventory[i] = player->inventory.mainInventory[i];
                 saveHandler->savePlayerData(pData);
                 break;
             }
@@ -100,11 +102,55 @@ void broadcastEntityPositions(World& world, Server& server) {
 }
 
 void handleRespawns(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players) {
+    struct PendingSpawn {
+        int itemID, count;
+        uint8_t metadata;
+        double posX, posY, posZ;
+    };
+    std::vector<PendingSpawn> pendingSpawns;
+
     for (auto& [peer, session] : players) {
         for (const auto& entity : world.getEntities()) {
             if (entity->entityID == session.entityID) {
                 auto* living = dynamic_cast<EntityLiving*>(entity.get());
+                auto* player = dynamic_cast<EntityPlayer*>(entity.get());
                 if (living && living->health <= 0) {
+                    double dropX = entity->posX;
+                    double dropY = entity->posY;
+                    double dropZ = entity->posZ;
+
+                    if (session.gameMode == GameMode::SURVIVAL && player) {
+                        for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+                            ItemStack& slot = player->inventory.mainInventory[i];
+                            if (!slot.isEmpty()) {
+                                pendingSpawns.push_back({slot.itemID, slot.count, slot.metadata,
+                                    dropX + ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.8,
+                                    dropY + ((double)(std::rand() % 1000) / 1000.0) * 0.5 + 0.5,
+                                    dropZ + ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.8
+                                });
+                            }
+                            slot = {0, 0, 0};
+                        }
+                        player->inventory.cursorStack = {0, 0, 0};
+
+                        PacketWindowItems invPacket;
+                        invPacket.windowId = 0;
+                        for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
+                            invPacket.items.push_back({player->inventory.mainInventory[i].itemID,
+                                                      player->inventory.mainInventory[i].count,
+                                                      player->inventory.mainInventory[i].metadata});
+                        }
+                        server.sendPacket(peer, invPacket, true);
+
+                        PacketSetSlot cursorPacket;
+                        cursorPacket.windowId = 0;
+                        cursorPacket.slot = -1;
+                        cursorPacket.itemID = 0;
+                        cursorPacket.count = 0;
+                        cursorPacket.metadata = 0;
+                        server.sendPacket(peer, cursorPacket, true);
+                    }
+
                     LevelData levelData;
                     auto saveHandler = world.getSaveHandler();
                     if (saveHandler && saveHandler->loadLevelData(levelData)) {
@@ -131,6 +177,15 @@ void handleRespawns(World& world, Server& server, std::map<ENetPeer*, PlayerSess
             }
         }
     }
+
+    for (const auto& spawn : pendingSpawns) {
+        auto item = std::make_unique<EntityItem>(world, spawn.itemID, spawn.count, spawn.metadata);
+        item->setPosition(spawn.posX, spawn.posY, spawn.posZ);
+        item->motionX = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.2;
+        item->motionY = 0.2 + (double)(std::rand() % 1000) / 1000.0 * 0.4;
+        item->motionZ = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.2;
+        world.spawnEntity(std::move(item));
+    }
 }
 
 void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
@@ -147,7 +202,7 @@ void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, PlayerS
     for (const auto& entity : world.getEntities()) {
         if (entity->getType() != EntityType::Item) continue;
         auto* item = static_cast<EntityItem*>(entity.get());
-        if (item->pickupDelay > 0) continue;
+        if (item->delayBeforeCanPickup > 0) continue;
 
         for (auto& [peer, session] : players) {
             auto it = entitiesById.find(session.entityID);
@@ -165,23 +220,27 @@ void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, PlayerS
     for (const PendingPickup& pickup : pickups) {
         if (players.count(pickup.peer)) {
             auto& session = players[pickup.peer];
-            session.inventory.addItem(pickup.itemID, pickup.count, pickup.metadata);
-            PacketWindowItems packet;
-            packet.windowId = 0;
-            for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
-                packet.items.push_back({session.inventory.mainInventory[i].itemID,
-                                      session.inventory.mainInventory[i].count,
-                                      session.inventory.mainInventory[i].metadata});
-            }
-            server.sendPacket(pickup.peer, packet, true);
+            auto it = entitiesById.find(session.entityID);
+            EntityPlayer* player = (it != entitiesById.end()) ? dynamic_cast<EntityPlayer*>(it->second) : nullptr;
+            if (player) {
+                player->inventory.addItem(pickup.itemID, pickup.count, pickup.metadata);
+                PacketWindowItems packet;
+                packet.windowId = 0;
+                for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
+                    packet.items.push_back({player->inventory.mainInventory[i].itemID,
+                                          player->inventory.mainInventory[i].count,
+                                          player->inventory.mainInventory[i].metadata});
+                }
+                server.sendPacket(pickup.peer, packet, true);
 
-            PacketSetSlot cursorPacket;
-            cursorPacket.windowId = 0;
-            cursorPacket.slot = -1;
-            cursorPacket.itemID = session.cursorStack.itemID;
-            cursorPacket.count = session.cursorStack.count;
-            cursorPacket.metadata = session.cursorStack.metadata;
-            server.sendPacket(pickup.peer, cursorPacket, true);
+                PacketSetSlot cursorPacket;
+                cursorPacket.windowId = 0;
+                cursorPacket.slot = -1;
+                cursorPacket.itemID = player->inventory.cursorStack.itemID;
+                cursorPacket.count = player->inventory.cursorStack.count;
+                cursorPacket.metadata = player->inventory.cursorStack.metadata;
+                server.sendPacket(pickup.peer, cursorPacket, true);
+            }
         }
         PacketCollectItem collectPacket;
         collectPacket.itemEntityID = pickup.itemEntityID;

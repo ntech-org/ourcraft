@@ -162,20 +162,38 @@ void GuiInventory::mouseClicked(int mouseX, int mouseY, int button) {
 }
 
 void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightClick) {
+    if (slot == -1 && !inv.cursorStack.isEmpty() && mc->getNetworkHandler()) {
+        PacketClickWindow packet;
+        packet.windowId = 0;
+        packet.slot = -1;
+        packet.button = rightClick ? 1 : 0;
+        packet.actionId = 0;
+        packet.shift = false;
+        packet.itemID = inv.cursorStack.itemID;
+        packet.count = inv.cursorStack.count;
+        packet.metadata = inv.cursorStack.metadata;
+        mc->getNetworkHandler()->sendPacket(packet);
+        return;
+    }
+
     inv.handleClick(slot, rightClick);
     
     if (mc->getNetworkHandler()) {
         PacketClickWindow packet;
-        packet.windowId = 0; // Inventory
+        packet.windowId = 0;
         packet.slot = slot;
         packet.button = rightClick ? 1 : 0;
-        packet.actionId = 0; // For now
-        packet.shift = false; // For now
+        packet.actionId = 0;
+        packet.shift = false;
         
-        ItemStack stack = (slot >= 0 && slot < InventoryPlayer::TOTAL_SIZE) ? inv.mainInventory[slot] : ItemStack{0, 0, 0};
-        packet.itemID = stack.itemID;
-        packet.count = stack.count;
-        packet.metadata = stack.metadata;
+        if (slot >= 0 && slot < InventoryPlayer::TOTAL_SIZE) {
+            ItemStack stack = inv.mainInventory[slot];
+            packet.itemID = stack.itemID;
+            packet.count = stack.count;
+            packet.metadata = stack.metadata;
+        } else {
+            packet.itemID = 0; packet.count = 0; packet.metadata = 0;
+        }
         
         mc->getNetworkHandler()->sendPacket(packet);
     }

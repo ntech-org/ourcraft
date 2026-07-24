@@ -21,6 +21,15 @@ ServerPacketHandler::ServerPacketHandler(IntegratedServer& integratedServer, Wor
                                          Permissions& permissions, CommandHandler& commandHandler)
     : m_integratedServer(integratedServer), m_world(world), m_server(server), m_players(players), m_permissions(permissions), m_commandHandler(commandHandler) {}
 
+EntityPlayer* ServerPacketHandler::findPlayer(int32_t entityID) {
+    for (auto& entity : m_world.getEntities()) {
+        if (entity->entityID == entityID) {
+            return dynamic_cast<EntityPlayer*>(entity.get());
+        }
+    }
+    return nullptr;
+}
+
 void ServerPacketHandler::handle(ENetPeer* peer, const uint8_t* data, size_t size) {
     const uint8_t* ptr = data;
     PacketType type = (PacketType)Packet::readByte(ptr);
@@ -51,6 +60,9 @@ void ServerPacketHandler::handle(ENetPeer* peer, const uint8_t* data, size_t siz
             break;
         case PacketType::ChatMessage:
             handleChatMessage(peer, ptr, size - 1);
+            break;
+        case PacketType::HeldItemChange:
+            handleHeldItemChange(peer, ptr, size - 1);
             break;
         default:
             break;
@@ -97,15 +109,11 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
     m_world.spawnEntity(std::move(player));
 
     int32_t eid = pPtr->entityID;
-    m_players[peer] = {eid, packet.username, packet.uuid, {}, {}, GameMode::SURVIVAL, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}};
+    m_players[peer] = {eid, packet.username, packet.uuid, GameMode::SURVIVAL, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}, {}, 0, 0.0f, pPtr->posY};
     PlayerSession& session = m_players[peer];
     session.lastSentY = pPtr->posY;
 
     m_permissions.addOp(packet.username);
-
-    for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
-        session.inventory.mainInventory[i] = pPtr->inventory.mainInventory[i];
-    }
 
     PacketLoginResponse resp;
     resp.entityID = eid;
@@ -114,9 +122,9 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
     PacketWindowItems invPacket;
     invPacket.windowId = 0;
     for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
-        invPacket.items.push_back({session.inventory.mainInventory[i].itemID,
-                                 session.inventory.mainInventory[i].count,
-                                 session.inventory.mainInventory[i].metadata});
+        invPacket.items.push_back({pPtr->inventory.mainInventory[i].itemID,
+                                 pPtr->inventory.mainInventory[i].count,
+                                 pPtr->inventory.mainInventory[i].metadata});
     }
     m_server.sendPacket(peer, invPacket);
 
@@ -210,6 +218,39 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
     PacketPlayerDigging packet;
     packet.deserialize(data, size);
 
+    if (packet.action == DiggingAction::DROP_ITEM) {
+        if (!m_players.count(peer)) return;
+        PlayerSession& session = m_players[peer];
+        if (session.gameMode == GameMode::CREATIVE) return;
+
+        EntityPlayer* player = findPlayer(session.entityID);
+        if (!player) return;
+
+        ItemStack& held = player->inventory.getCurrentStack();
+        if (held.isEmpty()) return;
+
+        auto item = std::make_unique<EntityItem>(m_world, held.itemID, 1, held.metadata);
+        item->setPosition(player->posX, player->posY + 1.0, player->posZ);
+        double yawRad   = (double)player->rotationYaw   * 3.14159265358979323846 / 180.0;
+        double pitchRad = (double)player->rotationPitch * 3.14159265358979323846 / 180.0;
+        item->motionX = -std::sin(yawRad) * std::cos(pitchRad) * 0.3;
+        item->motionY = -std::sin(pitchRad) * 0.3 + 0.1;
+        item->motionZ =  std::cos(yawRad) * std::cos(pitchRad) * 0.3;
+        m_world.spawnEntity(std::move(item));
+
+        held.count -= 1;
+        if (held.count <= 0) held = {0, 0, 0, 0};
+
+        PacketSetSlot setSlot;
+        setSlot.windowId = 0;
+        setSlot.slot = player->inventory.currentSlot;
+        setSlot.itemID = held.itemID;
+        setSlot.count = held.count;
+        setSlot.metadata = held.metadata;
+        m_server.sendPacket(peer, setSlot, true);
+        return;
+    }
+
     if (packet.action == DiggingAction::FINISH) {
         const uint8_t oldID = m_world.getBlockID(packet.x, packet.y, packet.z);
         const uint8_t oldMeta = m_world.getBlockMetadata(packet.x, packet.y, packet.z);
@@ -238,7 +279,7 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
                     packet.y + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5,
                     packet.z + ((double)(std::rand() % 1000) / 1000.0) * spread + (1.0 - spread) * 0.5
                 );
-                item->pickupDelay = 6;
+                item->delayBeforeCanPickup = 6;
                 m_world.spawnEntity(std::move(item));
             }
         }
@@ -246,20 +287,23 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
         if (m_players.count(peer)) {
             PlayerSession& session = m_players[peer];
             if (session.gameMode == GameMode::SURVIVAL) {
-                ItemStack& held = session.inventory.getCurrentStack();
-                if (!held.isEmpty() && Item::itemsList[held.itemID]) {
-                    if (auto* tool = dynamic_cast<ItemTool*>(Item::itemsList[held.itemID])) {
-                        held.damage += 1;
-                        if (held.damage >= tool->maxDamage) {
-                            held = {0, 0, 0, 0};
+                EntityPlayer* player = findPlayer(session.entityID);
+                if (player) {
+                    ItemStack& held = player->inventory.getCurrentStack();
+                    if (!held.isEmpty() && Item::itemsList[held.itemID]) {
+                        if (auto* tool = dynamic_cast<ItemTool*>(Item::itemsList[held.itemID])) {
+                            held.damage += 1;
+                            if (held.damage >= tool->maxDamage) {
+                                held = {0, 0, 0, 0};
+                            }
+                            PacketSetSlot setSlot;
+                            setSlot.windowId = 0;
+                            setSlot.slot = player->inventory.currentSlot;
+                            setSlot.itemID = held.itemID;
+                            setSlot.count = held.count;
+                            setSlot.metadata = held.metadata;
+                            m_server.sendPacket(peer, setSlot, true);
                         }
-                        PacketSetSlot setSlot;
-                        setSlot.windowId = 0;
-                        setSlot.slot = session.inventory.currentSlot;
-                        setSlot.itemID = held.itemID;
-                        setSlot.count = held.count;
-                        setSlot.metadata = held.metadata;
-                        m_server.sendPacket(peer, setSlot, true);
                     }
                 }
             }
@@ -287,14 +331,17 @@ void ServerPacketHandler::handleBlockPlacement(ENetPeer* peer, const uint8_t* da
     if (m_players.count(peer)) {
         PlayerSession& session = m_players[peer];
         if (session.gameMode == GameMode::SURVIVAL && packet.blockID > 0) {
-            session.inventory.consumeCurrentItem(1);
-            PacketSetSlot setSlot;
-            setSlot.windowId = 0;
-            setSlot.slot = session.inventory.currentSlot;
-            setSlot.itemID = session.inventory.mainInventory[session.inventory.currentSlot].itemID;
-            setSlot.count = session.inventory.mainInventory[session.inventory.currentSlot].count;
-            setSlot.metadata = session.inventory.mainInventory[session.inventory.currentSlot].metadata;
-            m_server.sendPacket(peer, setSlot, true);
+            EntityPlayer* player = findPlayer(session.entityID);
+            if (player) {
+                player->inventory.consumeCurrentItem(1);
+                PacketSetSlot setSlot;
+                setSlot.windowId = 0;
+                setSlot.slot = player->inventory.currentSlot;
+                setSlot.itemID = player->inventory.mainInventory[player->inventory.currentSlot].itemID;
+                setSlot.count = player->inventory.mainInventory[player->inventory.currentSlot].count;
+                setSlot.metadata = player->inventory.mainInventory[player->inventory.currentSlot].metadata;
+                m_server.sendPacket(peer, setSlot, true);
+            }
         }
     }
 }
@@ -311,7 +358,46 @@ void ServerPacketHandler::handleClickWindow(ENetPeer* peer, const uint8_t* data,
     if (!m_players.count(peer)) return;
 
     PlayerSession& session = m_players[peer];
-    session.inventory.handleClick(packet.slot, packet.button != 0);
+    EntityPlayer* player = findPlayer(session.entityID);
+    if (!player) return;
+
+    InventoryPlayer& inv = player->inventory;
+
+    if (packet.slot == -1 && !inv.cursorStack.isEmpty()) {
+        if (session.gameMode == GameMode::SURVIVAL) {
+            ItemStack dropped = inv.cursorStack;
+            int dropCount = (packet.button != 0) ? 1 : dropped.count;
+            auto item = std::make_unique<EntityItem>(m_world, dropped.itemID, dropCount, dropped.metadata);
+            item->setPosition(player->posX, player->posY + 1.0, player->posZ);
+            double yawRad = (double)player->rotationYaw * 3.14159265358979323846 / 180.0;
+            item->motionX = -std::sin(yawRad) * 0.1;
+            item->motionZ =  std::cos(yawRad) * 0.1;
+            item->motionY = 0.2;
+            m_world.spawnEntity(std::move(item));
+
+            inv.cursorStack.count -= dropCount;
+            if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+        } else {
+            inv.cursorStack = {0, 0, 0};
+        }
+
+        PacketConfirmTransaction resp;
+        resp.windowId = packet.windowId;
+        resp.actionId = packet.actionId;
+        resp.accepted = true;
+        m_server.sendPacket(peer, resp, true);
+
+        PacketSetSlot cursorPacket;
+        cursorPacket.windowId = 0;
+        cursorPacket.slot = -1;
+        cursorPacket.itemID = inv.cursorStack.itemID;
+        cursorPacket.count = inv.cursorStack.count;
+        cursorPacket.metadata = inv.cursorStack.metadata;
+        m_server.sendPacket(peer, cursorPacket, true);
+        return;
+    }
+
+    inv.handleClick(packet.slot, packet.button != 0);
 
     PacketConfirmTransaction resp;
     resp.windowId = packet.windowId;
@@ -325,11 +411,19 @@ void ServerPacketHandler::handleClickWindow(ENetPeer* peer, const uint8_t* data,
         PacketSetSlot setSlot;
         setSlot.windowId = packet.windowId;
         setSlot.slot = s;
-        setSlot.itemID = session.inventory.mainInventory[s].itemID;
-        setSlot.count = session.inventory.mainInventory[s].count;
-        setSlot.metadata = session.inventory.mainInventory[s].metadata;
+        setSlot.itemID = inv.mainInventory[s].itemID;
+        setSlot.count = inv.mainInventory[s].count;
+        setSlot.metadata = inv.mainInventory[s].metadata;
         m_server.sendPacket(peer, setSlot, true);
     }
+
+    PacketSetSlot cursorPacket;
+    cursorPacket.windowId = 0;
+    cursorPacket.slot = -1;
+    cursorPacket.itemID = inv.cursorStack.itemID;
+    cursorPacket.count = inv.cursorStack.count;
+    cursorPacket.metadata = inv.cursorStack.metadata;
+    m_server.sendPacket(peer, cursorPacket, true);
 }
 
 void ServerPacketHandler::handleUseEntity(ENetPeer* peer, const uint8_t* data, size_t size) {
@@ -349,7 +443,8 @@ void ServerPacketHandler::handleUseEntity(ENetPeer* peer, const uint8_t* data, s
 
     int damage = 1;
     auto& session = m_players[peer];
-    int itemID = session.inventory.getCurrentItemID();
+    EntityPlayer* player = findPlayer(session.entityID);
+    int itemID = player ? player->inventory.getCurrentItemID() : 0;
 
     if (itemID == 268) damage = 4;
     else if (itemID == 272) damage = 5;
@@ -421,5 +516,17 @@ void ServerPacketHandler::handleChatMessage(ENetPeer* peer, const uint8_t* data,
         chat.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         m_server.broadcastPacket(chat, true);
+    }
+}
+
+void ServerPacketHandler::handleHeldItemChange(ENetPeer* peer, const uint8_t* data, size_t size) {
+    PacketHeldItemChange packet;
+    packet.deserialize(data, size);
+    if (!m_players.count(peer)) return;
+
+    PlayerSession& session = m_players[peer];
+    EntityPlayer* player = findPlayer(session.entityID);
+    if (player) {
+        player->inventory.setSlot(packet.slot);
     }
 }

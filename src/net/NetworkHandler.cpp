@@ -52,6 +52,11 @@ void NetworkHandler::setRenderDistance(float dist) {
 void NetworkHandler::update() {
     m_client->poll();
 
+    if (m_player.inventory.currentSlot != m_lastSlot) {
+        m_lastSlot = m_player.inventory.currentSlot;
+        sendHeldItemChange(m_lastSlot);
+    }
+
     if (++m_posUpdateTimer >= 20) {
         PacketPlayerRotation packet;
         packet.yaw = m_player.rotationYaw; packet.pitch = m_player.rotationPitch;
@@ -129,6 +134,12 @@ void NetworkHandler::sendPlacement(int x, int y, int z, int face, int id, int me
     packet.face = (uint8_t)face;
     packet.blockID = (uint8_t)id;
     packet.metadata = (uint8_t)meta;
+    m_client->sendPacket(packet, true);
+}
+
+void NetworkHandler::sendHeldItemChange(int slot) {
+    PacketHeldItemChange packet;
+    packet.slot = slot;
     m_client->sendPacket(packet, true);
 }
 

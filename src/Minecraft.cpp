@@ -16,6 +16,7 @@
 #include "gui/GuiCrafting.hpp"
 #include "gui/GuiFurnace.hpp"
 #include "gui/GuiChat.hpp"
+#include "gui/GuiCreativeInventory.hpp"
 #include "world/TileEntityFurnace.hpp"
 #include "net/Packets.hpp"
 #include <iostream>
@@ -312,7 +313,18 @@ void Minecraft::tick() {
             } else if (m_inputHandler->isEscPressed()) {
                 displayGuiScreen(std::make_shared<GuiIngameMenu>());
             } else if (m_inputHandler->shouldToggleInventory()) {
-                displayGuiScreen(std::make_shared<GuiInventory>());
+                if (m_player->gameMode == GameMode::CREATIVE) {
+                    displayGuiScreen(std::make_shared<GuiCreativeInventory>());
+                } else {
+                    displayGuiScreen(std::make_shared<GuiInventory>());
+                }
+            } else if (m_inputHandler->shouldDropItem()) {
+                if (m_player->gameMode != GameMode::CREATIVE && m_networkHandler) {
+                    PacketPlayerDigging packet;
+                    packet.action = DiggingAction::DROP_ITEM;
+                    packet.x = 0; packet.y = 0; packet.z = 0; packet.face = 0;
+                    m_networkHandler->sendPacket(packet);
+                }
             } else {
                 if (m_blockBreaking.getHitDelayTimer() > 0) m_blockBreaking.setHitDelayTimer(m_blockBreaking.getHitDelayTimer() - 1);
                 if (m_blockBreaking.getRightClickDelayTimer() > 0) m_blockBreaking.setRightClickDelayTimer(m_blockBreaking.getRightClickDelayTimer() - 1);

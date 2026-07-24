@@ -26,6 +26,7 @@ public:
     bool shouldToggleInventory() { bool r = m_inventoryPressed; m_inventoryPressed = false; return r; }
     bool shouldOpenChat() { bool r = m_chatPressed; m_chatPressed = false; return r; }
     bool isEscPressed() { bool r = m_escPressed; m_escPressed = false; return r; }
+    bool shouldDropItem() { bool r = m_dropItemPressed; m_dropItemPressed = false; return r; }
 
 private:
     SDL_Window* m_window;
@@ -45,6 +46,7 @@ private:
     bool m_escPressed = false;
     bool m_inventoryPressed = false;
     bool m_chatPressed = false;
+    bool m_dropItemPressed = false;
 
     int m_spaceTapTicks = 0;
     bool m_spaceHeld = false;

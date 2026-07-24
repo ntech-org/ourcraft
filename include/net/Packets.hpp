@@ -340,7 +340,8 @@ public:
 enum class DiggingAction : uint8_t {
     START = 0,
     STOP = 1,
-    FINISH = 2
+    FINISH = 2,
+    DROP_ITEM = 3
 };
 
 class PacketPlayerDigging : public AutoPacket<PacketPlayerDigging> {
@@ -723,5 +724,20 @@ public:
 
     void readImpl(const uint8_t*& data) {
         gameMode = readByte(data);
+    }
+};
+
+class PacketHeldItemChange : public AutoPacket<PacketHeldItemChange> {
+public:
+    int32_t slot;
+
+    PacketType getType() const override { return PacketType::HeldItemChange; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeInt(buffer, slot);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        slot = readInt(data);
     }
 };

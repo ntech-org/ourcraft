@@ -97,6 +97,11 @@ void InputHandler::handleEvent(const SDL_Event& event) {
                     m_chatPressed = true;
                 }
                 break;
+            case SDL_SCANCODE_Q:
+                if (!f3) {
+                    m_dropItemPressed = true;
+                }
+                break;
             case SDL_SCANCODE_Y:
                 if (f3) {
                     m_player.worldObj.setWorldTime(0.0);

@@ -62,15 +62,6 @@ void EntityPlayer::onUpdate() {
     cameraPitch += (pitchTarget - cameraPitch) * 0.8f;
 
     if (worldObj.isRemote && isLocalPlayer) {
-        for (auto& entity : worldObj.getEntities()) {
-            if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
-                if (item->pickupDelay <= 0 && !item->pickingUp) {
-                    if (boundingBox.expand(1.0, 0.5, 1.0).intersectsWith(item->boundingBox)) {
-                        item->startPickupAnimation(posX, posY + height * 0.3, posZ);
-                    }
-                }
-            }
-        }
     }
 }
 

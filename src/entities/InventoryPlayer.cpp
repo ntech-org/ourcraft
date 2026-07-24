@@ -182,6 +182,14 @@ void InventoryPlayer::handleClick(int slot, bool rightClick) {
     }
 }
 
+void InventoryPlayer::handleCreativeClick(int slot, bool rightClick) {
+    if (slot == -1) {
+        cursorStack = {0, 0, 0};
+        return;
+    }
+    handleClick(slot, rightClick);
+}
+
 void InventoryPlayer::updateCrafting() {
     mainInventory[RESULT_SLOT] = CraftingManager::getInstance().findMatchingRecipe(&mainInventory[CRAFT_START], 2, 2);
     mainInventory[WORKBENCH_RESULT] = CraftingManager::getInstance().findMatchingRecipe(&mainInventory[WORKBENCH_START], 3, 3);

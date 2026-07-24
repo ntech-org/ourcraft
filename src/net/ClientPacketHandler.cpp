@@ -25,8 +25,6 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             entity = std::make_unique<EntityZombie>(world);
         } else if (packet.type == 2) {
             auto item = std::make_unique<EntityItem>(world, packet.dataA, packet.dataB, packet.dataC);
-            item->pickupDelay = 0;
-            item->handlePhysics = false;
             entity = std::move(item);
         } else {
             auto p = std::make_unique<EntityPlayer>(world);
@@ -232,5 +230,9 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         packet.deserialize(ptr, size - 1);
         player.gameMode = (packet.gameMode == 0) ? GameMode::SURVIVAL : GameMode::CREATIVE;
         if (player.gameMode == GameMode::SURVIVAL) player.isFlying = false;
+    } else if (type == PacketType::HeldItemChange) {
+        PacketHeldItemChange packet;
+        packet.deserialize(ptr, size - 1);
+        player.inventory.setSlot(packet.slot);
     }
 }

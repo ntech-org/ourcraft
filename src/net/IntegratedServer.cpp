@@ -159,8 +159,8 @@ void IntegratedServer::tick() {
         unloadFarChunks(*m_world, *m_server, m_players, entitiesById, m_chunkKeepDistance);
     }
 
-    broadcastEntityPositions(*m_world, *m_server);
     m_world->update(0.05f);
+    broadcastEntityPositions(*m_world, *m_server);
 
     // Server-side void protection
     for (auto& entity : m_world->getEntities()) {

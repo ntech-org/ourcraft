@@ -58,6 +58,7 @@ public:
     void prevSlot();
     void setSlot(int slot);
     void handleClick(int slot, bool rightClick);
+    void handleCreativeClick(int slot, bool rightClick);
 
     void updateCrafting();
     void handleCraftingResult(int resultSlot);

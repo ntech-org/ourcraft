@@ -23,6 +23,7 @@ public:
     void sendPlayerPosition(const EntityPlayer& player);
     void sendDigging(DiggingAction action, int x, int y, int z, int face);
     void sendPlacement(int x, int y, int z, int face, int id, int meta);
+    void sendHeldItemChange(int slot);
     void sendPacket(const Packet& packet);
     void sendChatMessage(const std::string& message);
     void setRenderDistance(float dist);
@@ -45,4 +46,5 @@ private:
     double m_lastX = 0, m_lastY = 0, m_lastZ = 0;
     float m_lastYaw = 0, m_lastPitch = 0;
     int m_posUpdateTimer = 0;
+    int m_lastSlot = 0;
 };

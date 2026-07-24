@@ -12,8 +12,6 @@ struct PlayerSession {
     int32_t entityID;
     std::string username;
     std::string uuid;
-    InventoryPlayer inventory;
-    ItemStack cursorStack;
     GameMode gameMode = GameMode::SURVIVAL;
     double lastX = 0, lastY = 0, lastZ = 0;
     float footstepAccum = 0;
