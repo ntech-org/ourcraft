@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderer/BatchedMesh.hpp"
 #include "renderer/Bounds.hpp"
 #include "renderer/ChunkMesh.hpp"
 #include "renderer/Frustum.hpp"
@@ -31,6 +32,12 @@ public:
         double meshBuildMs = 0.0;
     };
 
+    struct SectionGPUData {
+        glm::mat4 model;
+        glm::vec4 aabbMin;
+        glm::vec4 aabbMax;
+    };
+
     explicit WorldRenderer(World& world);
     ~WorldRenderer();
 
@@ -38,10 +45,13 @@ public:
     void addSectionsForChunk(std::shared_ptr<Chunk> chunk);
     void updateDirtyMeshes(int limit = 4);
     void renderOpaque(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos);
+    void renderOpaqueBatched(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos);
     void renderTranslucent(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos);
     void renderDebug(const Frustum& frustum, Shader& shader, bool showChunkBoundaries, const glm::dvec3& cameraPos);
 
     void removeFarSections(int playerCX, int playerCZ, int keepDistance);
+    const Stats& getStats() const { return m_stats; }
+
     void setPlayerChunkPosition(int playerCX, int playerCZ) {
         m_playerCX = playerCX;
         m_playerCZ = playerCZ;
@@ -49,7 +59,10 @@ public:
     void setRenderDistanceChunks(int chunks) { m_renderDistanceChunks = chunks; }
     void updateVisibleSections(const Frustum& frustum, const glm::dvec3& cameraPos);
 
-    const Stats& getStats() const { return m_stats; }
+    void initBatchedRendering();
+    void setBatchedShader(Shader* shader) { m_batchedShader = shader; }
+
+    bool useBatchedRendering() const { return m_batchedOpaque.isInitialized(); }
 
 private:
     struct SectionRenderEntry {
@@ -58,6 +71,7 @@ private:
         std::uint32_t uploadedVersion = 0;
         ChunkMesh mesh;
         ChunkMesh translucentMesh;
+        BatchedMesh::Allocation batchedAlloc;
         AABB bounds {};
         bool isBuilding = false;
     };
@@ -72,7 +86,9 @@ private:
     };
 
     struct MeshTask {
-        ChunkColumn* column = nullptr;
+        std::shared_ptr<Chunk> chunk;
+        int cx = 0;
+        int cz = 0;
         int sectionIndex = 0;
         std::uint32_t requestedVersion = 0;
         int priority = 0;
@@ -107,6 +123,7 @@ private:
     ChunkColumn* findColumn(int cx, int cz);
     const ChunkColumn* findColumn(int cx, int cz) const;
     static std::uint64_t columnKey(int cx, int cz);
+    static std::uint64_t sectionKey(int cx, int cz, int si);
 
     void meshWorkerLoop();
 
@@ -119,4 +136,18 @@ private:
     std::mutex m_resultMutex;
     std::condition_variable m_cv;
     std::atomic<bool> m_running;
+
+// Batched rendering
+    BatchedMesh m_batchedOpaque;
+    Shader* m_batchedShader = nullptr;
+    GLuint m_sectionSSBO = 0;
+    void* m_sectionSSBOPtr = nullptr;
+    GLsync m_ssboFence = nullptr;
+    std::vector<SectionGPUData> m_sectionGPUData;
+    std::vector<BatchedMesh::DrawElementsIndirectCommand> m_opaqueCommands;
+
+    static constexpr std::size_t kMaxQueuedTasks = 512;
+    static constexpr std::size_t kMaxResultQueue = 1024;
+
+    void buildBatchedFrameData(const Frustum& frustum, const glm::dvec3& cameraPos);
 };

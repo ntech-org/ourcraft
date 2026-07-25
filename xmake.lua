@@ -5,7 +5,7 @@ add_requires("libsdl3", "glm", "enet", "zstd", "zlib", "freetype")
 add_requires("openal-soft")
 add_requires("rocksdb", {configs = {zstd = true, zlib = true}})
 add_requires("stb", {system = false})
-add_requires("glad", {system = false, configs = {extensions = "all", api = "gl=3.3"}})
+add_requires("glad", {system = false, configs = {extensions = "all", api = "gl=4.6"}})
 add_requires("doctest", {system = false})
 
 target("ourcraft")

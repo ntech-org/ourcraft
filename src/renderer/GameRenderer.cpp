@@ -15,10 +15,10 @@
 #include "InputHandler.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <cstdio>
 
 GameRenderer::GameRenderer(SDL_Window* window, World& world, EntityPlayer& player)
     : m_window(window), m_world(world), m_player(player)
@@ -40,6 +40,13 @@ GameRenderer::GameRenderer(SDL_Window* window, World& world, EntityPlayer& playe
     m_basicShader->use();
     m_basicShader->setInt("texture1", 0);
     m_terrainTex = m_renderEngine->getTexture(TEX_TERRAIN);
+
+    m_batchedShader = std::make_unique<Shader>("assets/shaders/basic_instanced.vert", "assets/shaders/basic.frag");
+    m_batchedShader->use();
+    m_batchedShader->setInt("texture1", 0);
+    m_worldRenderer->setBatchedShader(m_batchedShader.get());
+    m_worldRenderer->initBatchedRendering();
+    std::cout << "Batched rendering enabled (indirect draw)" << std::endl;
 
     m_entityShader = std::make_unique<Shader>("assets/shaders/entity.vert", "assets/shaders/entity.frag");
     m_debugShader = std::make_unique<Shader>("assets/shaders/debug.vert", "assets/shaders/debug.frag");
@@ -242,6 +249,7 @@ void GameRenderer::updateItemEquippedProgress() {
 }
 
 void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening) {
+    // Set up basic shader (used for translucent, selection box, breaking overlay)
     m_basicShader->use();
     m_basicShader->setMat4("projection", projection);
     m_basicShader->setMat4("view", view);
@@ -253,10 +261,13 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
     m_basicShader->setVec3("sunDirection", m_world.getSunDirection());
     m_basicShader->setFloat("uTime", (float)((double)SDL_GetTicksNS() / 1e9));
 
-    if (m_player.isInsideOfMaterial(Material::water)) {
+    bool inWater = m_player.isInsideOfMaterial(Material::water);
+    bool inLava = m_player.isInsideOfMaterial(Material::lava);
+
+    if (inWater) {
         m_basicShader->setInt("fogMode", 1);
         m_basicShader->setFloat("fogDensity", 0.1f);
-    } else if (m_player.isInsideOfMaterial(Material::lava)) {
+    } else if (inLava) {
         m_basicShader->setInt("fogMode", 1);
         m_basicShader->setFloat("fogDensity", 2.0f);
     } else {
@@ -264,6 +275,31 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
         m_basicShader->setInt("fogMode", 0);
         m_basicShader->setFloat("fogNear", renderDistBlocks * 0.6f);
         m_basicShader->setFloat("fogFar", renderDistBlocks);
+    }
+
+    // Mirror same uniforms to batched shader if available
+    if (m_batchedShader) {
+        m_batchedShader->use();
+        m_batchedShader->setMat4("projection", projection);
+        m_batchedShader->setMat4("view", view);
+        m_batchedShader->setBool("hasTexture", true);
+        m_batchedShader->setVec3("fogColor", fogColor);
+        m_batchedShader->setVec3("cameraPos", glm::vec3(0.0f));
+        m_batchedShader->setFloat("daylightFactor", m_world.getDaylightStrength());
+        m_batchedShader->setVec3("sunDirection", m_world.getSunDirection());
+        m_batchedShader->setFloat("uTime", (float)((double)SDL_GetTicksNS() / 1e9));
+        if (inWater) {
+            m_batchedShader->setInt("fogMode", 1);
+            m_batchedShader->setFloat("fogDensity", 0.1f);
+        } else if (inLava) {
+            m_batchedShader->setInt("fogMode", 1);
+            m_batchedShader->setFloat("fogDensity", 2.0f);
+        } else {
+            float renderDistBlocks = (float)m_player.getMinecraft().getSettings().renderDistanceChunks * 16.0f;
+            m_batchedShader->setInt("fogMode", 0);
+            m_batchedShader->setFloat("fogNear", renderDistBlocks * 0.6f);
+            m_batchedShader->setFloat("fogFar", renderDistBlocks);
+        }
     }
 
     m_renderEngine->bindTexture(m_terrainTex);

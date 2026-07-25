@@ -89,6 +89,7 @@ private:
     std::unique_ptr<SkyRenderer> m_skyRenderer;
     std::unique_ptr<CloudRenderer> m_cloudRenderer;
     std::unique_ptr<Shader> m_basicShader;
+    std::unique_ptr<Shader> m_batchedShader;
     std::unique_ptr<Shader> m_entityShader;
     std::unique_ptr<Shader> m_debugShader;
     std::unique_ptr<Shader> m_uiShader;

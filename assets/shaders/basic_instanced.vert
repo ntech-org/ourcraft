@@ -1,4 +1,5 @@
 #version 460 core
+
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec2 aTileCoord;
 layout (location = 2) in vec4 aColor;
@@ -21,12 +22,22 @@ out float IsUnderwater;
 out float SkyLight;
 out float BlockLight;
 
-uniform mat4 model;
+struct SectionData {
+    mat4 model;
+    vec4 aabbMin;
+    vec4 aabbMax;
+};
+
+layout(std430, binding = 0) readonly buffer SectionBuffer {
+    SectionData sections[];
+};
+
 uniform mat4 view;
 uniform mat4 projection;
 
 void main() {
-    vec4 worldPos = model * vec4(aPos, 1.0);
+    int idx = gl_BaseInstance;
+    vec4 worldPos = sections[idx].model * vec4(aPos, 1.0);
     gl_Position = projection * view * worldPos;
     TileCoord = aTileCoord;
     Color = aColor;
