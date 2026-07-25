@@ -26,7 +26,7 @@ public:
     void sendHeldItemChange(int slot);
     void sendPacket(const Packet& packet);
     void sendChatMessage(const std::string& message);
-    void setRenderDistance(float dist);
+    void setRenderDistance(int chunks);
     CommandHandler* getCommandHandler();
 
     int32_t getPlayerID() const { return m_playerID; }

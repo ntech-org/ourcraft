@@ -251,7 +251,7 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
 
     uint8_t id = getBlockID(x1, y1, z1);
     if (id > 0) {
-        if (!ignoreLiquids || Block::blocksList[id]->blockMaterial.isSolid()) {
+        if (!ignoreLiquids || !Block::blocksList[id]->blockMaterial.isLiquid()) {
             return {HitType::BLOCK, x1, y1, z1, -1, start};
         }
     }
@@ -292,7 +292,7 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
 
         uint8_t hitID = getBlockID(x1, y1, z1);
         if (hitID > 0) {
-            if (!ignoreLiquids || Block::blocksList[hitID]->blockMaterial.isSolid()) {
+            if (!ignoreLiquids || !Block::blocksList[hitID]->blockMaterial.isLiquid()) {
                 return {HitType::BLOCK, x1, y1, z1, side, start};
             }
         }

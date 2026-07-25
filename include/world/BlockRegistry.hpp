@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include "world/Block.hpp"
 #include "world/BlockFluid.hpp"
+#include "world/TileEntityChest.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
@@ -100,4 +101,27 @@ public:
     BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
     BlockRenderShape getRenderShape() const override { return BlockRenderShape::Cross; }
     AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const override { return AxisAlignedBB(0,0,0,0,0,0); }
+};
+
+class BlockChest : public Block {
+public:
+    BlockChest(int id) : Block(id, 26, Material::wood) {
+        setBlockBounds(0.0625f, 0.0f, 0.0625f, 0.9375f, 0.875f, 0.9375f);
+    }
+    bool isOpaqueCube() const override { return false; }
+    BlockRenderLayer getRenderLayer() const override { return BlockRenderLayer::Cutout; }
+    bool onBlockActivated(World& world, int x, int y, int z, EntityPlayer* player) const override {
+        if (world.isRemote) {
+            // TODO: Open chest GUI
+        }
+        return true;
+    }
+    void onBlockAdded(World& world, int x, int y, int z) const override {
+        TileEntityChest* existing = dynamic_cast<TileEntityChest*>(world.getTileEntity(x, y, z));
+        if (!existing) {
+            auto chest = std::make_unique<TileEntityChest>();
+            chest->x = x; chest->y = y; chest->z = z;
+            world.addTileEntity(std::move(chest));
+        }
+    }
 };

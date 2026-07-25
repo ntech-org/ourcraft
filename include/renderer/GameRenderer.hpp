@@ -28,6 +28,8 @@ public:
     void resize(int width, int height);
     void setBlockBreakingOverlay(bool active, int x, int y, int z, float progress);
     void updateItemEquippedProgress();
+    /** Advance cloud scroll once per game tick (not per frame). */
+    void tickClouds() { if (m_cloudRenderer) m_cloudRenderer->tick(); }
 
     struct ProfilerResult {
         double frameTime = 0;
@@ -109,5 +111,4 @@ private:
     float m_equippedProgress = 0.0f;
     float m_prevEquippedProgress = 0.0f;
     int m_itemToRenderID = -1;
-    int m_cloudTickCounter = 0;
 };

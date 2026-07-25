@@ -3,6 +3,7 @@
 #include "net/Packets.hpp"
 #include "net/Permissions.hpp"
 #include "net/CommandHandler.hpp"
+#include "net/RegistrationManager.hpp"
 #include "world/World.hpp"
 #include "world/Block.hpp"
 #include "items/Item.hpp"
@@ -18,8 +19,9 @@
 
 ServerPacketHandler::ServerPacketHandler(IntegratedServer& integratedServer, World& world, Server& server,
                                          std::map<ENetPeer*, PlayerSession>& players,
-                                         Permissions& permissions, CommandHandler& commandHandler)
-    : m_integratedServer(integratedServer), m_world(world), m_server(server), m_players(players), m_permissions(permissions), m_commandHandler(commandHandler) {}
+                                         Permissions& permissions, CommandHandler& commandHandler,
+                                         RegistrationManager& registrationManager)
+    : m_integratedServer(integratedServer), m_world(world), m_server(server), m_players(players), m_permissions(permissions), m_commandHandler(commandHandler), m_registrationManager(registrationManager) {}
 
 EntityPlayer* ServerPacketHandler::findPlayer(int32_t entityID) {
     for (auto& entity : m_world.getEntities()) {
@@ -72,6 +74,26 @@ void ServerPacketHandler::handle(ENetPeer* peer, const uint8_t* data, size_t siz
 void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_t size) {
     PacketLogin packet;
     packet.deserialize(data, size);
+
+    // Registration system
+    if (m_registrationManager.isRegistered(packet.username)) {
+        if (packet.key.empty() || !m_registrationManager.verifyKey(packet.username, packet.key)) {
+            PacketChatMessage resp;
+            resp.sender = "";
+            resp.message = "Invalid key! Please login with your key.";
+            resp.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            m_server.sendPacket(peer, resp, true);
+            return;
+        }
+    } else {
+        std::string newKey = m_registrationManager.registerUser(packet.username);
+        PacketKeyResponse keyResp;
+        keyResp.key = newKey;
+        keyResp.message = "Account registered successfully";
+        m_server.sendPacket(peer, keyResp, true);
+    }
+
     std::cout << "Server: Player " << packet.username << " (" << packet.uuid << ") logged in." << std::endl;
 
     auto player = std::make_unique<EntityPlayer>(m_world);
@@ -87,6 +109,7 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
         player->rotationPitch = pData.pitch;
         player->health = pData.health;
         for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) player->inventory.mainInventory[i] = pData.inventory[i];
+        player->gameMode = (pData.gameMode == 1) ? GameMode::CREATIVE : GameMode::SURVIVAL;
     } else {
         std::cout << "Server: No save data found for " << packet.username << ", using world spawn." << std::endl;
         LevelData levelData;
@@ -109,11 +132,9 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
     m_world.spawnEntity(std::move(player));
 
     int32_t eid = pPtr->entityID;
-    m_players[peer] = {eid, packet.username, packet.uuid, GameMode::SURVIVAL, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}, {}, 0, 0.0f, pPtr->posY};
+    m_players[peer] = {eid, packet.username, packet.uuid, pPtr->gameMode, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}, {}, 0, 0.0f, pPtr->posY};
     PlayerSession& session = m_players[peer];
     session.lastSentY = pPtr->posY;
-
-    m_permissions.addOp(packet.username);
 
     PacketLoginResponse resp;
     resp.entityID = eid;

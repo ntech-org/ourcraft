@@ -51,6 +51,8 @@ public:
     void fall(float distance) override;
 
     std::function<void(const std::string&, float, float)> onPlaySound;
+    std::function<void()> onHurt;
+    int prevHealth = 20;
     float footstepAccum = 0.0f;
     bool wasInWater = false;
 

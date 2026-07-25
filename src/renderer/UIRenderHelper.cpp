@@ -63,12 +63,18 @@ void renderHUD(GameRenderer& renderer, EntityPlayer& player, Shader& uiShader, S
         uiShader.setBool("hasTexture", true);
 
         renderEngine.bindTexture(renderEngine.getTexture(TEX_ICONS));
+        bool hurtFlash = player.hurtTime > 0 && ((player.hurtTime / 2) % 2 == 0);
         for (int i = 0; i < 10; ++i) {
             float x = centerX - 91.0f + (float)i * 8.0f;
             float y = scaledHeight - 32.0f;
             renderer.drawTexturedModalRect(x, y, 16, 0, 9, 9);
-            if (i * 2 + 1 < player.health) renderer.drawTexturedModalRect(x, y, 52, 0, 9, 9);
-            else if (i * 2 + 1 == player.health) renderer.drawTexturedModalRect(x, y, 61, 0, 9, 9);
+            if (hurtFlash && i * 2 + 1 <= player.health) {
+                renderer.drawTexturedModalRect(x, y, 16, 0, 9, 9);
+            } else if (i * 2 + 1 < player.health) {
+                renderer.drawTexturedModalRect(x, y, 52, 0, 9, 9);
+            } else if (i * 2 + 1 == player.health) {
+                renderer.drawTexturedModalRect(x, y, 61, 0, 9, 9);
+            }
         }
 
         if (player.isInsideOfMaterial(Material::water)) {

@@ -234,5 +234,14 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         PacketHeldItemChange packet;
         packet.deserialize(ptr, size - 1);
         player.inventory.setSlot(packet.slot);
+    } else if (type == PacketType::KeyResponse) {
+        PacketKeyResponse packet;
+        packet.deserialize(ptr, size - 1);
+        try {
+            auto& mc = player.getMinecraft();
+            mc.getSettings().playerKey = packet.key;
+            mc.getSettings().saveOptions();
+            mc.getChatRenderer().addMessage("", "[System] " + packet.message + ". Key saved automatically.", 0);
+        } catch (...) {}
     }
 }

@@ -36,6 +36,8 @@ private:
     std::string handleTp(CommandContext& ctx);
     std::string handleTime(CommandContext& ctx);
     std::string handleHelp(CommandContext& ctx);
+    std::string handleRegister(CommandContext& ctx);
+    std::string handleLogin(CommandContext& ctx);
 
     struct RegisteredCommand {
         CommandFunc func;

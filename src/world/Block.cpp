@@ -111,7 +111,7 @@ void Block::init() {
     fire = new Block(51, 31, Material::fire);
     mobSpawner = new Block(52, 65, Material::rock);
     stairCompactWood = new Block(53, 4, Material::wood);
-    chest = new Block(54, 26, Material::wood);
+    chest = new BlockChest(54);
     gear = new Block(55, 62, Material::iron);
     oreDiamond = new BlockOre(56, 50);
     blockDiamond = new Block(57, 40, Material::iron);

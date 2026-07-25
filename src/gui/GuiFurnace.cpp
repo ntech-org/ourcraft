@@ -43,17 +43,20 @@ void GuiFurnace::drawScreen(int mouseX, int mouseY, float partialTicks) {
     // Draw burn indicator
     if (m_furnace.isBurning()) {
         int burnScaled = m_furnace.getBurnTimeRemainingScaled(12);
-        drawTexturedModalRect(uiShader, left + 56.0f, top + 36.0f + 12.0f - (float)burnScaled,
-                              176, 12 - burnScaled, 14, burnScaled + 2);
+        Gui::drawRect(uiShader, left + 56.0f, top + 36.0f + 12.0f - (float)burnScaled,
+                      left + 70.0f, top + 48.0f, 0xFFFF8800);
     }
 
     // Draw cook progress arrow
     int cookScaled = m_furnace.getCookProgressScaled(24);
-    drawTexturedModalRect(uiShader, left + 79.0f, top + 34.0f, 176, 14, cookScaled + 1, 16);
+    if (cookScaled > 0) {
+        Gui::drawRect(uiShader, left + 79.0f, top + 34.0f,
+                      left + 79.0f + (float)(cookScaled + 1), top + 50.0f, 0xFFFFFFFF);
+    }
 
     // Draw text labels
-    drawString(font, textShader, "Furnace", left + 60.0f, top + 6.0f, 0xFF404040);
-    drawString(font, textShader, "Inventory", left + 8.0f, top + 72.0f, 0xFF404040);
+    drawString(font, textShader, "Furnace", left + 60.0f, top + 6.0f, 0xFFA0A0A0);
+    drawString(font, textShader, "Inventory", left + 8.0f, top + 72.0f, 0xFFA0A0A0);
 
     drawCursorStack(mouseX, mouseY);
 }

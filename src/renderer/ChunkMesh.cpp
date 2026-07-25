@@ -33,20 +33,24 @@ void ChunkMesh::upload(const ChunkMeshData::Pass& pass) {
     glBindVertexArray(m_vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
+    glBufferData(GL_ARRAY_BUFFER,
         static_cast<GLsizeiptr>(pass.vertices.size() * sizeof(TerrainVertex)),
-        pass.vertices.data(),
-        GL_STATIC_DRAW
-    );
+        nullptr, GL_DYNAMIC_DRAW);
+    if (!pass.vertices.empty()) {
+        glBufferSubData(GL_ARRAY_BUFFER, 0,
+            static_cast<GLsizeiptr>(pass.vertices.size() * sizeof(TerrainVertex)),
+            pass.vertices.data());
+    }
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
         static_cast<GLsizeiptr>(pass.indices.size() * sizeof(std::uint32_t)),
-        pass.indices.data(),
-        GL_STATIC_DRAW
-    );
+        nullptr, GL_DYNAMIC_DRAW);
+    if (!pass.indices.empty()) {
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
+            static_cast<GLsizeiptr>(pass.indices.size() * sizeof(std::uint32_t)),
+            pass.indices.data());
+    }
 
     glBindVertexArray(0);
 }

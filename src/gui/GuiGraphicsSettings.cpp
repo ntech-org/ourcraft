@@ -12,10 +12,10 @@ void GuiGraphicsSettings::initGui() {
     controlList.push_back(std::make_unique<GuiButton>(0, midX - 155, height / 6 - 12, 310, 12, ""));
     controlList.back()->enabled = false;
 
-    // Render Distance Slider (0.25 to 2.0, mapped to 0-1)
-    float rdVal = (m_pendingSettings.renderDistance - 0.25f) / 1.75f;
+    // Render Distance Slider (2 to 128 chunks, mapped to 0-1)
+    float rdVal = (float)(m_pendingSettings.renderDistanceChunks - 2) / 126.0f;
     auto rdSlider = std::make_unique<GuiSlider>(1, midX - 155, height / 6 + 0, rdVal, "Render Distance: ", [this](float val) {
-        this->m_pendingSettings.renderDistance = 0.25f + val * 1.75f;
+        this->m_pendingSettings.renderDistanceChunks = 2 + (int)(val * 126.0f);
     });
     rdSlider->width = 310;
     controlList.push_back(std::move(rdSlider));

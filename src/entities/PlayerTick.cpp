@@ -46,6 +46,11 @@ void handleBlockPlacement(Minecraft& mc, EntityPlayer& player, World& world) {
             if (!player.boundingBox.intersectsWith(blockBB)) {
                 int itemID = player.inventory.getCurrentItemID();
                 if (itemID > 0 && itemID < 256 && Block::blocksList[itemID]) {
+                    if (itemID == 50) {
+                        if (face != 1) return;
+                        uint8_t belowID = world.getBlockID(x, y - 1, z);
+                        if (belowID == 0 || !Block::blocksList[belowID] || !Block::blocksList[belowID]->blockMaterial.isSolid()) return;
+                    }
                     const bool shouldConsume = player.gameMode == GameMode::SURVIVAL;
                     if (!shouldConsume || player.inventory.consumeCurrentItem(1)) {
                         world.setBlockWithNotify(x, y, z, (uint8_t)itemID);

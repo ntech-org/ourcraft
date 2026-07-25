@@ -2,6 +2,7 @@
 #include "world/World.hpp"
 #include "world/Block.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace {
 struct Neighborhood : public IBlockAccess {
@@ -63,20 +64,67 @@ struct Neighborhood : public IBlockAccess {
         return {sky, block};
     }
 };
+
+static thread_local float tls_waterLevels[16][16];
+
+struct SectionWaterLevels {
+    float levels[16][16];
+};
 }
 
 ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chunk, int si) {
-    ChunkMeshData md; int cx = chunk.getX(), cz = chunk.getZ();
-    md.bounds.min = {0.0f, 0.0f, 0.0f}; md.bounds.max = {16.0f, 16.0f, 16.0f};
-    Neighborhood n(world, cx, cz); 
-    for (int dx = -1; dx <= 1; ++dx) 
-        for (int dz = -1; dz <= 1; ++dz) 
+    ChunkMeshData md;
+    md.bounds.min = glm::vec3(0.0f);
+    md.bounds.max = glm::vec3(16.0f);
+
+    if (!chunk.isSectionNonEmpty(si)) return md;
+
+    int cx = chunk.getX(), cz = chunk.getZ();
+
+    Neighborhood n(world, cx, cz);
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dz = -1; dz <= 1; ++dz)
             n.chunks[dx+1][dz+1] = world.getChunk(cx + dx, cz + dz);
-    
-    greedyMeshTopBottom(md, n, si, cx, cz, false); greedyMeshTopBottom(md, n, si, cx, cz, true);
-    greedyMeshNorthSouth(md, n, si, cx, cz, false); greedyMeshNorthSouth(md, n, si, cx, cz, true);
-    greedyMeshWestEast(md, n, si, cx, cz, false); greedyMeshWestEast(md, n, si, cx, cz, true);
+
+    float waterLevels[16][16];
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            waterLevels[x][z] = chunk.getWaterLevel(x, z);
+        }
+    }
+
+    int prevX = cx, prevZ = cz - 1;
+    int nextX = cx, nextZ = cz + 1;
+    std::shared_ptr<const Chunk> prevChunkSp = world.getChunk(prevX, prevZ);
+    std::shared_ptr<const Chunk> nextChunkSp = world.getChunk(nextX, nextZ);
+    const Chunk* prevChunk = prevChunkSp.get();
+    const Chunk* nextChunk = nextChunkSp.get();
+    if (prevChunk) {
+        for (int x = 0; x < 16; ++x) {
+            waterLevels[x][0] = std::max(waterLevels[x][0], prevChunk->getWaterLevel(x, 15));
+        }
+    }
+    if (nextChunk) {
+        for (int x = 0; x < 16; ++x) {
+            waterLevels[x][15] = std::max(waterLevels[x][15], nextChunk->getWaterLevel(x, 0));
+        }
+    }
+
+    const float* wl = &waterLevels[0][0];
+
+    greedyMeshTopBottom(md, n, si, cx, cz, false, wl);
+    greedyMeshTopBottom(md, n, si, cx, cz, true, wl);
+    greedyMeshNorthSouth(md, n, si, cx, cz, false, wl);
+    greedyMeshNorthSouth(md, n, si, cx, cz, true, wl);
+    greedyMeshWestEast(md, n, si, cx, cz, false, wl);
+    greedyMeshWestEast(md, n, si, cx, cz, true, wl);
     crossMeshPass(md, n, si, cx, cz);
-    fluidMeshPass(md, n, si, cx, cz);
+    fluidMeshPass(md, n, si, cx, cz, wl);
+
+    if (!md.opaque.vertices.empty() || !md.translucent.vertices.empty()) {
+        md.bounds.min = glm::vec3(0.0f, 0.0f, 0.0f);
+        md.bounds.max = glm::vec3(16.0f, 16.0f, 16.0f);
+    }
+
     return md;
 }

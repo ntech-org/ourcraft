@@ -20,4 +20,5 @@ protected:
 private:
     std::shared_ptr<GuiScreen> m_parent;
     std::unique_ptr<GuiTextField> m_serverAddressField;
+    std::unique_ptr<GuiTextField> m_usernameField;
 };

@@ -173,3 +173,31 @@ void Chunk::markSectionDirty(int sectionIndex) {
     m_sectionDirty[sectionIndex] = true;
     ++m_sectionVersions[sectionIndex];
 }
+
+void Chunk::computeWaterLevels() {
+    m_hasAnyWater = false;
+    m_sectionNonEmpty = 0;
+    for (int x = 0; x < WIDTH; ++x) {
+        for (int z = 0; z < DEPTH; ++z) {
+            float wl = -1.0f;
+            for (int y = HEIGHT - 1; y >= 0; --y) {
+                uint8_t bid = m_blocks[getIndex(x, y, z)];
+                if (bid == 8 || bid == 9) {
+                    wl = (float)y;
+                    m_hasAnyWater = true;
+                    break;
+                }
+            }
+            m_waterLevels[x + z * WIDTH] = wl;
+        }
+    }
+    for (int si = 0; si < SECTION_COUNT; ++si) {
+        const uint8_t* sectionBlocks = m_blocks.data() + si * WIDTH * SECTION_HEIGHT * DEPTH;
+        for (int i = 0; i < WIDTH * SECTION_HEIGHT * DEPTH; ++i) {
+            if (sectionBlocks[i] != 0) {
+                m_sectionNonEmpty |= (1u << si);
+                break;
+            }
+        }
+    }
+}

@@ -20,6 +20,7 @@ struct PlayerSaveData {
     double x, y, z;
     float yaw, pitch;
     int health;
+    int gameMode = 0; // 0 = SURVIVAL, 1 = CREATIVE
     ItemStack inventory[InventoryPlayer::TOTAL_SIZE];
 };
 

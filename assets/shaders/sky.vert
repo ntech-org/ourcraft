@@ -7,13 +7,18 @@ out vec2 TexCoord;
 out vec4 Color;
 out float LocalY;
 out float Dist;
+out vec3 WorldPos;
 
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform vec3 uCameraPos;
+uniform float uTime;
 
 void main() {
-    vec4 viewPos = view * model * vec4(aPos, 1.0);
+    vec4 worldPos = model * vec4(aPos, 1.0);
+    WorldPos = worldPos.xyz;
+    vec4 viewPos = view * worldPos;
     gl_Position = projection * viewPos;
     TexCoord = aTexCoord;
     Color = aColor;

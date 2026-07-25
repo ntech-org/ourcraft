@@ -83,11 +83,18 @@ public:
     void generateHeightMap();
     void generateBitmask();
     uint8_t getPrimaryBitmask() const { return m_primaryBitmask; }
-    
+
     bool isSectionDirty(int sectionIndex) const;
     void clearSectionDirty(int sectionIndex);
     uint32_t getSectionVersion(int sectionIndex) const;
     void touchSection(int sectionIndex);
+
+    bool isSectionNonEmpty(int sectionIndex) const { return m_sectionNonEmpty & (1u << sectionIndex); }
+    uint16_t getSectionNonEmptyMask() const { return m_sectionNonEmpty; }
+
+    float getWaterLevel(int x, int z) const { return m_waterLevels[x + z * WIDTH]; }
+    void computeWaterLevels();
+    bool hasAnyWater() const { return m_hasAnyWater; }
 
     ChunkState getState() const { return m_state; }
     void setState(ChunkState state) { m_state = state; }
@@ -115,6 +122,9 @@ private:
     std::vector<uint8_t> m_heightMap;
     std::array<bool, SECTION_COUNT> m_sectionDirty {};
     std::array<uint32_t, SECTION_COUNT> m_sectionVersions {};
+    uint16_t m_sectionNonEmpty = 0;
+    std::array<float, WIDTH * DEPTH> m_waterLevels {};
+    bool m_hasAnyWater = false;
     
     std::mutex m_blockMutex;
     std::mutex m_lightMutex;

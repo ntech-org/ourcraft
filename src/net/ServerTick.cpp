@@ -75,6 +75,7 @@ void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSess
                 pData.x = entity->posX; pData.y = entity->posY; pData.z = entity->posZ;
                 pData.yaw = entity->rotationYaw; pData.pitch = entity->rotationPitch;
                 if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) pData.health = living->health;
+                if (auto* p = dynamic_cast<EntityPlayer*>(entity.get())) pData.gameMode = (p->gameMode == GameMode::CREATIVE) ? 1 : 0;
                 for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) pData.inventory[i] = player->inventory.mainInventory[i];
                 saveHandler->savePlayerData(pData);
                 break;
@@ -279,7 +280,7 @@ void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, PlayerSe
 }
 
 void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
-                         const std::unordered_map<int32_t, Entity*>& entitiesById) {
+                         const std::unordered_map<int32_t, Entity*>& entitiesById, int chunkKeepDistance) {
     for (auto& [peer, session] : players) {
         auto playerIt = entitiesById.find(session.entityID);
         Entity* player = playerIt == entitiesById.end() ? nullptr : playerIt->second;
@@ -287,12 +288,12 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Playe
 
         int px = (int)std::floor(player->posX / 16.0);
         int pz = (int)std::floor(player->posZ / 16.0);
-        int viewRadius = 8;
-        int requestRadius = 10;
+        int viewRadius = chunkKeepDistance;
+        int requestRadius = chunkKeepDistance + 2;
         const auto& offsets = getChunkOffsetsForRadius(requestRadius);
 
         int chunksSentThisTick = 0;
-        constexpr int chunkLimitPerTick = 8;
+        int chunkLimitPerTick = 8 + (chunkKeepDistance / 4);
 
         for (const ChunkOffset& off : offsets) {
             const int cx = px + off.dx;
@@ -311,7 +312,7 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Playe
             if (chunksSentThisTick >= chunkLimitPerTick) break;
 
             ChunkState currentState = chunk->getState();
-            if (currentState < ChunkState::Lighted) continue;
+            if (currentState != ChunkState::Complete) continue;
 
             auto it = session.sentChunks.find(key);
             if (it == session.sentChunks.end()) {

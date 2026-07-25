@@ -8,6 +8,7 @@ class PacketLogin : public AutoPacket<PacketLogin> {
 public:
     std::string username;
     std::string uuid;
+    std::string key;
     int32_t protocolVersion;
 
     PacketType getType() const override { return PacketType::Login; }
@@ -15,12 +16,14 @@ public:
     void writeImpl(std::vector<uint8_t>& buffer) const {
         writeString(buffer, username);
         writeString(buffer, uuid);
+        writeString(buffer, key);
         writeInt(buffer, protocolVersion);
     }
 
     void readImpl(const uint8_t*& data) {
         username = readString(data);
         uuid = readString(data);
+        key = readString(data);
         protocolVersion = readInt(data);
     }
 };
@@ -739,5 +742,23 @@ public:
 
     void readImpl(const uint8_t*& data) {
         slot = readInt(data);
+    }
+};
+
+class PacketKeyResponse : public AutoPacket<PacketKeyResponse> {
+public:
+    std::string key;
+    std::string message;
+
+    PacketType getType() const override { return PacketType::KeyResponse; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeString(buffer, key);
+        writeString(buffer, message);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        key = readString(data);
+        message = readString(data);
     }
 };

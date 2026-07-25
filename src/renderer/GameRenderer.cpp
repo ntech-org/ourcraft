@@ -107,15 +107,27 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     }
     m_camera.updateCameraVectors();
 
+    // Hurt camera shake
+    float hurtAmount = 0.0f;
+    if (m_player.hurtTime > 0) {
+        hurtAmount = (float)m_player.hurtTime / 20.0f;
+    }
+
     glm::mat4 view = glm::mat4(1.0f);
     if (cameraMode == 0) {
         view = computeViewBobMatrix(m_player, partialTicks) * m_camera.getViewMatrix();
     } else {
         view = view * m_camera.getViewMatrix();
     }
+    if (hurtAmount > 0.0f) {
+        float shakeAngle = hurtAmount * 7.0f * std::sin((float)SDL_GetTicksNS() / 1e6f * 0.05f);
+        view = glm::rotate(view, glm::radians(shakeAngle), glm::vec3(0.0f, 0.0f, 1.0f));
+    }
 
     int playerCX = (int)std::floor(px / 16.0);
     int playerCZ = (int)std::floor(pz / 16.0);
+    m_worldRenderer->setRenderDistanceChunks(m_player.getMinecraft().getSettings().renderDistanceChunks);
+    m_worldRenderer->setPlayerChunkPosition(playerCX, playerCZ);
 
     float voidDarkening = std::clamp((float)(py / m_world.getHorizon()), 0.0f, 1.0f);
     voidDarkening *= voidDarkening;
@@ -140,17 +152,13 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     }
 
     const float aspect = m_height > 0 ? (float)m_width / (float)m_height : 1.0f;
-    glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, 0.05f, 1000.0f);
-    glm::mat4 armProjection = glm::perspective(glm::radians(armFov), aspect, 0.05f, 1000.0f);
+    float renderDistBlocks = (float)m_player.getMinecraft().getSettings().renderDistanceChunks * 16.0f;
+    float farPlane = std::max(renderDistBlocks, 1000.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, 0.05f, farPlane);
+    glm::mat4 armProjection = glm::perspective(glm::radians(armFov), aspect, 0.05f, farPlane);
 
     double renderStart = (double)SDL_GetTicksNS() / 1e9;
     m_skyRenderer->render(m_world, m_camera, projection, view, fogColor);
-
-    int cloudLevel = m_player.getMinecraft().getSettings().fancyGraphics ? 2 : 1;
-    if (cloudLevel > 0) {
-        m_cloudRenderer->tick();
-        m_cloudRenderer->render(m_world, m_camera, projection, view, fogColor, partialTicks, cloudLevel);
-    }
 
     double worldStart = (double)SDL_GetTicksNS() / 1e9;
     renderWorld(partialTicks, projection, view, fogColor, voidDarkening);
@@ -170,6 +178,17 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
 
     m_renderEngine->bindTexture(m_terrainTex);
     m_worldRenderer->renderTranslucent(m_frustum, *m_basicShader, m_camera.position);
+
+    int cloudLevel = m_player.getMinecraft().getSettings().cloudLevel;
+    if (cloudLevel > 0) {
+        float cloudFogNear = renderDistBlocks * 0.6f;
+        float cloudFogFar = renderDistBlocks;
+        glDisable(GL_CULL_FACE);
+        m_cloudRenderer->render(m_world, m_camera, projection, view, fogColor, partialTicks, cloudLevel,
+                                cloudFogNear, cloudFogFar, m_player.getMinecraft().getSettings().fancyGraphics,
+                                (int)renderDistBlocks);
+        glEnable(GL_CULL_FACE);
+    }
 
     if (cameraMode == 0) {
         glDisable(GL_CULL_FACE);
@@ -241,14 +260,16 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
         m_basicShader->setInt("fogMode", 1);
         m_basicShader->setFloat("fogDensity", 2.0f);
     } else {
+        float renderDistBlocks = (float)m_player.getMinecraft().getSettings().renderDistanceChunks * 16.0f;
         m_basicShader->setInt("fogMode", 0);
-        m_basicShader->setFloat("fogNear", 64.0f);
-        m_basicShader->setFloat("fogFar", 256.0f);
+        m_basicShader->setFloat("fogNear", renderDistBlocks * 0.6f);
+        m_basicShader->setFloat("fogFar", renderDistBlocks);
     }
 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
     m_worldRenderer->updateDirtyMeshes(64);
+    m_worldRenderer->updateVisibleSections(m_frustum, m_camera.position);
     m_worldRenderer->renderOpaque(m_frustum, *m_basicShader, m_camera.position);
     renderSelectionBox(projection, view);
     renderBreakingOverlay(projection, view);
@@ -383,9 +404,10 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
         m_entityShader->setInt("fogMode", 1);
         m_entityShader->setFloat("fogDensity", 2.0f);
     } else {
+        float renderDistBlocks = (float)m_player.getMinecraft().getSettings().renderDistanceChunks * 16.0f;
         m_entityShader->setInt("fogMode", 0);
-        m_entityShader->setFloat("fogNear", 64.0f);
-        m_entityShader->setFloat("fogFar", 256.0f);
+        m_entityShader->setFloat("fogNear", renderDistBlocks * 0.6f);
+        m_entityShader->setFloat("fogFar", renderDistBlocks);
     }
     m_entityShader->setVec3("fogColor", fogColor);
     m_entityShader->setVec3("cameraPos", glm::vec3(0.0f));

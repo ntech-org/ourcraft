@@ -1,6 +1,7 @@
 #include "net/CommandHandler.hpp"
 #include "net/IntegratedServer.hpp"
 #include "net/Packets.hpp"
+#include "net/RegistrationManager.hpp"
 #include "entities/EntityPlayer.hpp"
 #include "world/World.hpp"
 #include <sstream>
@@ -17,6 +18,8 @@ CommandHandler::CommandHandler() {
     registerCommand("tp", [this](CommandContext& ctx) { return handleTp(ctx); }, true);
     registerCommand("time", [this](CommandContext& ctx) { return handleTime(ctx); }, true);
     registerCommand("help", [this](CommandContext& ctx) { return handleHelp(ctx); }, false);
+    registerCommand("register", [this](CommandContext& ctx) { return handleRegister(ctx); }, false);
+    registerCommand("login", [this](CommandContext& ctx) { return handleLogin(ctx); }, false);
 }
 
 void CommandHandler::registerCommand(const std::string& name, CommandFunc func, bool requiresOp) {
@@ -195,4 +198,27 @@ std::string CommandHandler::handleHelp(CommandContext& ctx) {
         result += "\n/" + name;
     }
     return result;
+}
+
+std::string CommandHandler::handleRegister(CommandContext& ctx) {
+    if (!ctx.server) return "Cannot register in this context";
+    auto& regMgr = ctx.server->getRegistrationManager();
+    if (regMgr.isRegistered(ctx.senderName)) {
+        return "You are already registered!";
+    }
+    std::string key = regMgr.registerUser(ctx.senderName);
+    return "Registered! Your key is: " + key + " (Save this!)";
+}
+
+std::string CommandHandler::handleLogin(CommandContext& ctx) {
+    if (!ctx.server) return "Cannot login in this context";
+    if (ctx.args.empty()) return "Usage: /login <key>";
+    auto& regMgr = ctx.server->getRegistrationManager();
+    if (!regMgr.isRegistered(ctx.senderName)) {
+        return "You are not registered! Use /register first.";
+    }
+    if (regMgr.verifyKey(ctx.senderName, ctx.args[0])) {
+        return "Login successful!";
+    }
+    return "Invalid key!";
 }

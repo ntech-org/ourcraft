@@ -8,7 +8,7 @@
     },
     "program": "$ZED_WORKTREE_ROOT/build/linux/x86_64/debug/ourcraft",
     "request": "launch",
-    "adapter": "CodeLLDB",
+    "adapter": "GDB",
   },
   {
     "label": "Debug OurCraft Server",
@@ -19,6 +19,6 @@
     },
     "program": "$ZED_WORKTREE_ROOT/build/linux/x86_64/debug/ourcraft-server",
     "request": "launch",
-    "adapter": "CodeLLDB",
+    "adapter": "GDB",
   },
 ]

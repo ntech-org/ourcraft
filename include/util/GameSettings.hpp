@@ -11,7 +11,7 @@ public:
 
     float mouseSensitivity = 0.5f;
     bool invertMouse = false;
-    float renderDistance = 1.0f; // 0.0 = Tiny, 1.0 = Normal, 2.0 = Far
+    int renderDistanceChunks = 12; // 2-128 chunk radius
     bool viewBobbing = true;
     bool anaglyph = false;
     bool limitFramerate = false;
@@ -27,6 +27,7 @@ public:
 
     std::string username = "Player";
     std::string uuid = "00000000-0000-0000-0000-000000000000";
+    std::string playerKey = "";
 
     void setDefaults();
 

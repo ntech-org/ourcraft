@@ -32,7 +32,8 @@ enum class PacketType : uint8_t {
     UpdateHealth = 23,
     ChatMessage = 24,
     GameModeChange = 25,
-    HeldItemChange = 26
+    HeldItemChange = 26,
+    KeyResponse = 27
 };
 
 class Packet {

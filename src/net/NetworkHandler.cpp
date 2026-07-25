@@ -4,6 +4,9 @@
 #include "net/Packets.hpp"
 #include "entities/EntityItem.hpp"
 #include "entities/EntityZombie.hpp"
+#ifndef SERVER_ONLY
+#include "Minecraft.hpp"
+#endif
 #include <iostream>
 #include <cstring>
 #include <chrono>
@@ -29,6 +32,7 @@ NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startSer
         PacketLogin loginPacket;
         loginPacket.username = m_player.username;
         loginPacket.uuid = m_player.uuid;
+        loginPacket.key = m_player.getMinecraft().getSettings().playerKey;
         loginPacket.protocolVersion = 1;
         m_client->sendPacket(loginPacket);
     };
@@ -40,11 +44,11 @@ bool NetworkHandler::connect(const std::string& address, int port) {
     return m_client->connect(address, port);
 }
 
-void NetworkHandler::setRenderDistance(float dist) {
+void NetworkHandler::setRenderDistance(int chunks) {
     if (m_server) {
-        int keepDist = 4 + (int)(dist * 8);
-        if (keepDist < 4) keepDist = 4;
-        if (keepDist > 24) keepDist = 24;
+        int keepDist = chunks;
+        if (keepDist < 2) keepDist = 2;
+        if (keepDist > 128) keepDist = 128;
         m_server->setChunkKeepDistance(keepDist);
     }
 }

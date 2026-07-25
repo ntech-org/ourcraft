@@ -9,6 +9,7 @@
 #include "net/Permissions.hpp"
 #include "net/CommandHandler.hpp"
 #include "net/PlayerSession.hpp"
+#include "net/RegistrationManager.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
@@ -32,6 +33,7 @@ public:
     World* getWorld() const { return m_world.get(); }
     Permissions& getPermissions() { return m_permissions; }
     CommandHandler& getCommandHandler() { return m_commandHandler; }
+    RegistrationManager& getRegistrationManager() { return m_registrationManager; }
     std::map<ENetPeer*, PlayerSession>& getPlayers() { return m_players; }
 
     void broadcastSound(const std::string& name, double x, double y, double z, float volume, float pitch, ENetPeer* excludePeer = nullptr);
@@ -58,4 +60,5 @@ private:
 
     Permissions m_permissions;
     CommandHandler m_commandHandler;
+    RegistrationManager m_registrationManager;
 };

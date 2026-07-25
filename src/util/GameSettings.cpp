@@ -10,7 +10,7 @@ GameSettings::GameSettings() {
 void GameSettings::setDefaults() {
     mouseSensitivity = 0.5f;
     invertMouse = false;
-    renderDistance = 1.0f;
+    renderDistanceChunks = 12;
     viewBobbing = true;
     anaglyph = false;
     limitFramerate = false;
@@ -43,7 +43,7 @@ void GameSettings::loadOptions() {
 
         if (key == "mouseSensitivity") mouseSensitivity = std::stof(value);
         if (key == "invertYMouse") invertMouse = (value == "true");
-        if (key == "renderDistance") renderDistance = std::stof(value);
+        if (key == "renderDistance") renderDistanceChunks = std::stoi(value);
         if (key == "viewBobbing") viewBobbing = (value == "true");
         if (key == "anaglyph3d") anaglyph = (value == "true");
         if (key == "limitFramerate") limitFramerate = (value == "true");
@@ -56,6 +56,7 @@ void GameSettings::loadOptions() {
         if (key == "cloudLevel") cloudLevel = std::stoi(value);
         if (key == "maxFps") maxFps = std::stoi(value);
         if (key == "enableVsync") enableVsync = (value == "true");
+        if (key == "playerKey") playerKey = value;
     }
 }
 
@@ -65,7 +66,7 @@ void GameSettings::saveOptions() {
 
     file << "mouseSensitivity:" << mouseSensitivity << "\n";
     file << "invertYMouse:" << (invertMouse ? "true" : "false") << "\n";
-    file << "renderDistance:" << renderDistance << "\n";
+    file << "renderDistance:" << renderDistanceChunks << "\n";
     file << "viewBobbing:" << (viewBobbing ? "true" : "false") << "\n";
     file << "anaglyph3d:" << (anaglyph ? "true" : "false") << "\n";
     file << "limitFramerate:" << (limitFramerate ? "true" : "false") << "\n";
@@ -78,4 +79,5 @@ void GameSettings::saveOptions() {
     file << "cloudLevel:" << cloudLevel << "\n";
     file << "maxFps:" << maxFps << "\n";
     file << "enableVsync:" << (enableVsync ? "true" : "false") << "\n";
+    file << "playerKey:" << playerKey << "\n";
 }

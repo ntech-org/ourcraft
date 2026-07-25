@@ -35,7 +35,7 @@ target("ourcraft-server")
         set_strip("all")
         set_policy("build.optimization.lto", true)
     end
-    add_files("src/net/Server.cpp", "src/net/Packet.cpp", "src/net/IntegratedServer.cpp", "src/net/ServerTick.cpp", "src/net/ServerPacketHandler.cpp", "src/net/Permissions.cpp", "src/net/CommandHandler.cpp")
+    add_files("src/net/Server.cpp", "src/net/Packet.cpp", "src/net/IntegratedServer.cpp", "src/net/ServerTick.cpp", "src/net/ServerPacketHandler.cpp", "src/net/Permissions.cpp", "src/net/CommandHandler.cpp", "src/net/RegistrationManager.cpp")
     add_files("src/world/**.cpp")
     add_files("src/entities/**.cpp")
     remove_files("src/entities/PlayerTick.cpp")

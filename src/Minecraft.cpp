@@ -17,6 +17,7 @@
 #include "gui/GuiFurnace.hpp"
 #include "gui/GuiChat.hpp"
 #include "gui/GuiCreativeInventory.hpp"
+#include "gui/GuiDeathScreen.hpp"
 #include "world/TileEntityFurnace.hpp"
 #include "net/Packets.hpp"
 #include <iostream>
@@ -66,6 +67,10 @@ void Minecraft::setupPlayerCallbacks() {
             gui->parentScreen = m_currentScreen;
             displayGuiScreen(gui);
         }
+    };
+    m_player->onHurt = [this]() {
+        if (auto* snd = m_soundPool.getRandom("damage.hit", *m_soundSystem))
+            m_soundSystem->play(snd, m_settings.soundVolume * 1.0f, 1.0f);
     };
 }
 
@@ -148,7 +153,7 @@ void Minecraft::saveAndQuit() {
 
 void Minecraft::startSingleplayer() {
     m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
-    m_networkHandler->setRenderDistance(m_settings.renderDistance);
+    m_networkHandler->setRenderDistance(m_settings.renderDistanceChunks);
     m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
         if (m_gameState != GameState::MainMenu) {
             displayGuiScreen(std::make_shared<GuiErrorScreen>("Disconnected", reason));
@@ -175,6 +180,8 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
     m_player->username = m_settings.username;
     m_player->uuid = m_settings.uuid;
     m_player->setPosition(0.0, 66.0, 0.0);
+    m_player->setMinecraft(this);
+    m_player->isLocalPlayer = true;
     setupPlayerCallbacks();
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
@@ -277,6 +284,9 @@ void Minecraft::tick() {
         m_networkHandler->update();
     }
     m_chatRenderer.tick();
+    if (m_gameRenderer) {
+        m_gameRenderer->tickClouds();
+    }
 
     bool shouldPause = false;
     if (m_currentScreen && m_currentScreen->doesGuiPauseGame()) {

@@ -4,6 +4,11 @@
 #include "world/World.hpp"
 #include <cmath>
 
+#ifndef SERVER_ONLY
+#include "gui/GuiDeathScreen.hpp"
+#include "Minecraft.hpp"
+#endif
+
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -21,6 +26,7 @@ void EntityPlayer::onUpdate() {
     prevCameraYaw = cameraYaw;
     prevCameraPitch = cameraPitch;
     EntityLiving::onUpdate();
+    prevHealth = health;
 
     if (isInsideOfMaterial(Material::water)) {
         if (air > 0) {
@@ -98,4 +104,9 @@ void EntityPlayer::updateEntityActionState() {
 void EntityPlayer::attackEntityFrom(Entity* source, int amount) {
     if (gameMode == GameMode::CREATIVE) return;
     EntityLiving::attackEntityFrom(source, amount);
+#ifndef SERVER_ONLY
+    if (health <= 0 && mc) {
+        mc->displayGuiScreen(std::make_shared<GuiDeathScreen>());
+    }
+#endif
 }

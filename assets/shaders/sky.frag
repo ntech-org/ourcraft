@@ -5,6 +5,7 @@ in vec2 TexCoord;
 in vec4 Color;
 in float LocalY;
 in float Dist;
+in vec3 WorldPos;
 
 uniform sampler2D texture1;
 uniform bool hasTexture;
@@ -14,6 +15,9 @@ uniform vec3 gradientTopColor;
 uniform vec3 gradientBottomColor;
 uniform float gradientMinY;
 uniform float gradientMaxY;
+
+uniform vec3 uCameraPos;
+uniform float uTime;
 
 uniform bool useFog;
 uniform vec4 fogColor;
@@ -27,6 +31,8 @@ void main() {
         outColor.rgb *= mix(gradientBottomColor, gradientTopColor, t);
     }
     if (hasTexture) {
+        // Use vertex UVs so cloud sides/tops and sun/moon sample correctly.
+        // Cloud scrolling is applied on the CPU when building UVs (matching infdev).
         vec4 texColor = texture(texture1, TexCoord) * outColor;
         if (texColor.a < 0.1) discard;
         outColor = texColor;

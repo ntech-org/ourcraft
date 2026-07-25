@@ -222,6 +222,7 @@ void EntityLiving::attackEntityFrom(Entity* source, int amount) {
     if (amount > 0) {
         health -= amount;
         hurtTime = 20;
+        if (onHurt) onHurt();
     }
 }
 

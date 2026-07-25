@@ -17,10 +17,11 @@
 #include <cstdlib>
 #include <unordered_map>
 
-IntegratedServer::IntegratedServer() : m_permissions("world") {
+IntegratedServer::IntegratedServer() : m_permissions("world"), m_registrationManager("world") {
     m_world = std::make_unique<World>();
     m_world->initSaveHandler("world");
     m_permissions.load();
+    m_registrationManager.load();
 
     LevelData levelData;
     auto saveHandler = m_world->getSaveHandler();
@@ -95,7 +96,7 @@ void IntegratedServer::stop() {
 
 void IntegratedServer::run() {
     m_server = std::make_unique<Server>(25565);
-    m_packetHandler = std::make_unique<ServerPacketHandler>(*this, *m_world, *m_server, m_players, m_permissions, m_commandHandler);
+    m_packetHandler = std::make_unique<ServerPacketHandler>(*this, *m_world, *m_server, m_players, m_permissions, m_commandHandler, m_registrationManager);
 
     m_server->onPacketReceived = [this](ENetPeer* peer, const uint8_t* data, size_t size) {
         m_packetHandler->handle(peer, data, size);
@@ -141,7 +142,7 @@ void IntegratedServer::tick() {
         entitiesById[entity->entityID] = entity.get();
     }
 
-    pushChunksToPlayers(*m_world, *m_server, m_players, entitiesById);
+    pushChunksToPlayers(*m_world, *m_server, m_players, entitiesById, m_chunkKeepDistance);
     m_world->popNewChunks();
 
     auto removedEntities = m_world->popRemovedEntities();

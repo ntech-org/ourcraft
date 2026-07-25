@@ -1,5 +1,7 @@
 #include "gui/GuiOptions.hpp"
 #include "gui/GuiGraphicsSettings.hpp"
+#include "gui/GuiSoundSettings.hpp"
+#include "gui/GuiControls.hpp"
 #include "Minecraft.hpp"
 
 void GuiOptions::initGui() {
@@ -34,11 +36,13 @@ void GuiOptions::actionPerformed(GuiButton* button) {
         mc->displayGuiScreen(graphicsScreen);
     }
     if (button->id == 2) {
-        mc->getSettings().saveOptions();
-        mc->displayGuiScreen(parentScreen);
+        auto soundScreen = std::make_shared<GuiSoundSettings>(shared_from_this());
+        soundScreen->parentScreen = shared_from_this();
+        mc->displayGuiScreen(soundScreen);
     }
     if (button->id == 3) {
-        mc->getSettings().saveOptions();
-        mc->displayGuiScreen(parentScreen);
+        auto controlsScreen = std::make_shared<GuiControls>(shared_from_this());
+        controlsScreen->parentScreen = shared_from_this();
+        mc->displayGuiScreen(controlsScreen);
     }
 }

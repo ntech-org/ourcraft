@@ -15,7 +15,7 @@ void handleItemPickups(World& world, Server& server, std::map<ENetPeer*, PlayerS
                        const std::unordered_map<int32_t, Entity*>& entitiesById);
 void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players);
 void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
-                         const std::unordered_map<int32_t, Entity*>& entitiesById);
+                         const std::unordered_map<int32_t, Entity*>& entitiesById, int chunkKeepDistance);
 void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
                      const std::unordered_map<int32_t, Entity*>& entitiesById, int keepDistance);
 void spawnMobs(World& world, std::map<ENetPeer*, PlayerSession>& players,

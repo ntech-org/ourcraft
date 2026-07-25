@@ -8,7 +8,10 @@ GuiSlider::GuiSlider(int id, int x, int y, float value, const std::string& prefi
 }
 
 void GuiSlider::updateText() {
-    if (id == 1) { // FOV Special Case
+    if (id == 1) { // Render Distance
+        int chunks = 2 + (int)(sliderValue * 126.0f);
+        this->text = prefix + std::to_string(chunks) + " chunks";
+    } else if (id == 6) { // FOV
         this->text = prefix + std::to_string((int)(30.0f + sliderValue * 80.0f));
     } else {
         this->text = prefix + std::to_string((int)(sliderValue * 100)) + "%";
@@ -36,9 +39,14 @@ void GuiSlider::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX
     mc->getGameRenderer().getRenderEngine().bindTexture(mc->getGameRenderer().getRenderEngine().getTexture(TEX_GUI));
     shader.setBool("hasTexture", true);
 
-    // Draw background (disabled state look)
-    drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, width / 2, height);
-    drawTexturedModalRect(shader, (float)x + (float)width / 2.0f, (float)y, 200 - (width - width / 2), 46, width - width / 2, height);
+    if (width <= 200) {
+        drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, width / 2, height);
+        drawTexturedModalRect(shader, (float)x + (float)width / 2.0f, (float)y, 200 - (width / 2), 46, width - width / 2, height);
+    } else {
+        drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, 100, height);
+        drawTexturedModalRect(shader, (float)x + (float)width - 100.0f, (float)y, 100, 46, 100, height);
+        drawTexturedModalRect(shader, (float)x + 100.0f, (float)y, 50, 46, (float)width - 200.0f, height);
+    }
 
     // Draw knob
     float knobX = (float)x + sliderValue * (float)(width - 8);

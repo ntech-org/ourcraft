@@ -32,7 +32,7 @@ float getCornerHeight(const IBlockAccess& n, int x, int y, int z, const Material
 }
 }
 
-void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz) {
+void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, const float* waterLevels) {
     int bx = cx * 16, by = si * 16, bz = cz * 16;
     for (int y = 0; y < 16; ++y) {
         int gy = by + y;
@@ -43,7 +43,16 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
             const Material& mat = b->blockMaterial;
             float h00 = getCornerHeight(n, x, gy, z, mat), h01 = getCornerHeight(n, x, gy, z + 1, mat), h11 = getCornerHeight(n, x + 1, gy, z + 1, mat), h10 = getCornerHeight(n, x + 1, gy, z, mat);
             float fx = (float)x, fy = (float)y, fz = (float)z;
-            bool water = (bid == 8 || bid == 9); float liq = water ? 1.0f : 2.0f, d0 = getWaterDepth(n, x, gy, z), d1 = getWaterDepth(n, x, gy + 1, z);
+            bool water = (bid == 8 || bid == 9); float liq = water ? 1.0f : 2.0f;
+            float d0, d1;
+            if (waterLevels) {
+                float wl = waterLevels[x * 16 + z];
+                d0 = (gy < wl) ? 1.0f : 0.0f;
+                d1 = ((gy + 1) < wl) ? 1.0f : 0.0f;
+            } else {
+                d0 = getUnderwaterDepth(n, x, gy, z);
+                d1 = getUnderwaterDepth(n, x, gy + 1, z);
+            }
             ChunkMeshData::Pass& pass = water ? md.translucent : md.opaque;
             uint8_t aboveID = n.getBlockID(x, gy + 1, z);
             bool cullTop = false;
@@ -82,11 +91,7 @@ void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si
                 else { dir = FaceDirection::East; nx++; h1s = h10; h2s = h11; v33 = fx + 1; v35 = fx + 1; v34 = fz; v36 = fz + 1; }
                 if (!shouldCull(bid, n.getBlockID(nx, gy, nz))) {
                     int tex = b->getTexture(f + 2); 
-                    // Use neighbor light, but fallback to current block if neighbor is likely unloaded (0 light)
-                    auto light = n.getLightPair(bx + nx, gy, bz + nz); 
-                    if (light.first == 0 && light.second == 0) {
-                        light = n.getLightPair(bx + x, gy, bz + z);
-                    }
+                    auto light = n.getLightPair(bx + nx, gy, bz + nz);
                     float sl = (float)light.first, bl = (float)light.second;
                     appendVertex(pass, v33, fy + h1s, v34, 0, 1 - h1s, tex, dir, -1000.0f, liq, d1, sl, bl);
                     appendVertex(pass, v35, fy + h2s, v36, 1, 1 - h2s, tex, dir, -1000.0f, liq, d1, sl, bl); appendVertex(pass, v35, fy, v36, 1, 1, tex, dir, -1000.0f, liq, d0, sl, bl);
