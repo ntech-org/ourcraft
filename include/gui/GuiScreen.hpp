@@ -12,7 +12,7 @@ public:
     virtual ~GuiScreen() = default;
 
     virtual void initGui() {}
-    virtual void onGuiClosed() {}
+    virtual void onGuiClosed();
     virtual void updateScreen() {}
     virtual void drawScreen(int mouseX, int mouseY, float partialTicks);
     
@@ -21,7 +21,9 @@ public:
     
     virtual void handleEvent(const SDL_Event& event);
     virtual void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down);
+    virtual void onTextInput(const char* text);
     virtual void mouseClicked(int mouseX, int mouseY, int button);
+    virtual void mouseReleased(int mouseX, int mouseY, int button);
     
     void setWorldAndResolution(Minecraft* mc, float width, float height);
     
@@ -31,8 +33,6 @@ public:
     void drawString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color);
     void drawCenteredString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color);
 
-    std::shared_ptr<GuiScreen> parentScreen = nullptr;
-
 protected:
     virtual void actionPerformed(GuiButton* button) {}
     
@@ -41,4 +41,7 @@ protected:
     Minecraft* mc = nullptr;
     float width, height;
     std::vector<std::unique_ptr<GuiButton>> controlList;
+
+public:
+    std::shared_ptr<GuiScreen> parentScreen = nullptr;
 };

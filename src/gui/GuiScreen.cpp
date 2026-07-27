@@ -21,7 +21,9 @@ void GuiScreen::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
         keyTyped(event.key.key, event.key.scancode, event.type == SDL_EVENT_KEY_DOWN);
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
-        // Handle text input if needed (e.g. for text fields)
+        // Forward text input to focused text field
+        // The screen should check if it has a focused text field and call appendText
+        onTextInput(event.text.text);
     } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         float mx = (float)event.button.x;
         float my = (float)event.button.y;
@@ -37,7 +39,31 @@ void GuiScreen::handleEvent(const SDL_Event& event) {
         my /= (float)mc->getGameRenderer().getGuiScale();
 
         mouseClicked((int)mx, (int)my, event.button.button);
+    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        float mx = (float)event.button.x;
+        float my = (float)event.button.y;
+
+        int ww, wh, fw, fh;
+        SDL_GetWindowSize(mc->getWindow(), &ww, &wh);
+        SDL_GetWindowSizeInPixels(mc->getWindow(), &fw, &fh);
+
+        mx *= (float)fw / (float)ww;
+        my *= (float)fh / (float)wh;
+
+        mx /= (float)mc->getGameRenderer().getGuiScale();
+        my /= (float)mc->getGameRenderer().getGuiScale();
+
+        mouseReleased((int)mx, (int)my, event.button.button);
     }
+}
+
+void GuiScreen::onGuiClosed() {
+    if (mc && mc->getWindow()) {
+        SDL_StopTextInput(mc->getWindow());
+    }
+}
+
+void GuiScreen::onTextInput(const char* text) {
 }
 
 void GuiScreen::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
@@ -51,6 +77,9 @@ void GuiScreen::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
 }
 
 void GuiScreen::mouseClicked(int mouseX, int mouseY, int button) {
+}
+
+void GuiScreen::mouseReleased(int mouseX, int mouseY, int button) {
     if (button == SDL_BUTTON_LEFT) {
         for (size_t i = 0; i < controlList.size(); ++i) {
             if (controlList[i]->mousePressed(mouseX, mouseY)) {

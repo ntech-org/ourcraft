@@ -21,13 +21,12 @@ std::string GuiTextField::getText() const {
 }
 
 void GuiTextField::setFocused(bool focused, SDL_Window* window) {
+    if (m_isFocused == focused) return;
     m_isFocused = focused;
     SDL_Window* w = window ? window : m_window;
     if (w) {
         if (m_isFocused) {
             SDL_StartTextInput(w);
-        } else {
-            SDL_StopTextInput(w);
         }
     }
 }
