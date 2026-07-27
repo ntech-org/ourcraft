@@ -8,22 +8,14 @@ void GuiGraphicsSettings::initGui() {
 
     int midX = width / 2;
 
-    // -- General Section --
-    controlList.push_back(std::make_unique<GuiButton>(0, midX - 155, height / 6 - 12, 310, 12, ""));
-    controlList.back()->enabled = false;
-
     // Render Distance Slider (2 to 128 chunks, mapped to 0-1)
     float rdVal = (float)(m_pendingSettings.renderDistanceChunks - 2) / 126.0f;
-    auto rdSlider = std::make_unique<GuiSlider>(1, midX - 155, height / 6 + 0, rdVal, "Render Distance: ", [this](float val) {
+    auto rdSlider = std::make_unique<GuiSlider>(1, midX - 155, height / 6 + 4, rdVal, "Render Distance: ", [this](float val) {
         this->m_pendingSettings.renderDistanceChunks = 2 + (int)(val * 126.0f);
     });
     rdSlider->width = 310;
     rdSlider->height = 20;
     controlList.push_back(std::move(rdSlider));
-
-    // -- Quality Section --
-    controlList.push_back(std::make_unique<GuiButton>(0, midX - 155, height / 6 + 30, 310, 12, ""));
-    controlList.back()->enabled = false;
 
     // Graphics: Fast / Fancy
     auto graphicsBtn = std::make_unique<GuiOptionButton>(2, midX - 155, height / 6 + 42, 150, 20,
@@ -57,13 +49,9 @@ void GuiGraphicsSettings::initGui() {
     };
     controlList.push_back(std::move(aoBtn));
 
-    // -- Details Section --
-    controlList.push_back(std::make_unique<GuiButton>(0, midX - 155, height / 6 + 96, 310, 12, ""));
-    controlList.back()->enabled = false;
-
     // FOV Slider (30 to 110)
     float fovVal = (m_pendingSettings.fov - 30.0f) / 80.0f;
-    auto fovSlider = std::make_unique<GuiSlider>(6, midX - 155, height / 6 + 108, fovVal, "FOV: ", [this](float val) {
+    auto fovSlider = std::make_unique<GuiSlider>(6, midX - 155, height / 6 + 104, fovVal, "FOV: ", [this](float val) {
         this->m_pendingSettings.fov = 30.0f + val * 80.0f;
     });
     fovSlider->width = 150;
@@ -74,13 +62,13 @@ void GuiGraphicsSettings::initGui() {
     std::string scaleText = "GUI Scale: ";
     if (m_pendingSettings.guiScale == 0) scaleText += "Auto";
     else scaleText += std::to_string(m_pendingSettings.guiScale);
-    auto scaleBtn = std::make_unique<GuiButton>(7, midX + 5, height / 6 + 108, 150, 20, scaleText);
+    auto scaleBtn = std::make_unique<GuiButton>(7, midX + 5, height / 6 + 104, 150, 20, scaleText);
     controlList.push_back(std::move(scaleBtn));
 
     // Apply / Cancel / Reset buttons
-    controlList.push_back(std::make_unique<GuiButton>(100, midX - 155, height / 6 + 144, 100, 20, "Reset"));
-    controlList.push_back(std::make_unique<GuiButton>(101, midX - 50, height / 6 + 144, 100, 20, "Cancel"));
-    controlList.push_back(std::make_unique<GuiButton>(102, midX + 55, height / 6 + 144, 100, 20, "Apply"));
+    controlList.push_back(std::make_unique<GuiButton>(100, midX - 155, height / 6 + 140, 100, 20, "Reset"));
+    controlList.push_back(std::make_unique<GuiButton>(101, midX - 50, height / 6 + 140, 100, 20, "Cancel"));
+    controlList.push_back(std::make_unique<GuiButton>(102, midX + 55, height / 6 + 140, 100, 20, "Apply"));
 }
 
 void GuiGraphicsSettings::drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -98,9 +86,9 @@ void GuiGraphicsSettings::drawScreen(int mouseX, int mouseY, float partialTicks)
     };
 
     float headerY = (float)height / 6;
-    drawHeader("-- General --", headerY - 12);
-    drawHeader("-- Quality --", headerY + 30);
-    drawHeader("-- Details --", headerY + 96);
+    drawHeader("-- General --", headerY - 10);
+    drawHeader("-- Quality --", headerY + 28);
+    drawHeader("-- Details --", headerY + 90);
 
     GuiScreen::drawScreen(mouseX, mouseY, partialTicks);
     glEnable(GL_DEPTH_TEST);
