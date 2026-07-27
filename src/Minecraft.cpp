@@ -92,7 +92,7 @@ void Minecraft::init() {
         if (name.find("menu") == 0)
             m_soundMgr.menuMusicPools.push_back(name);
         else if (name.find("calm") == 0 || name.find("hal") == 0 ||
-                 name.find("nuance") == 0 || name.find("piano") == 0)
+            name.find("nuance") == 0 || name.find("piano") == 0)
             m_soundMgr.musicPools.push_back(name);
     }
 
@@ -105,6 +105,13 @@ void Minecraft::init() {
 
     m_gameRenderer = std::make_unique<GameRenderer>(m_window, *m_world, *m_player);
     m_inputHandler = std::make_unique<InputHandler>(m_window, *m_player, m_settings);
+
+    // Initialize player from active account
+    if (!m_settings.accounts.empty() && m_settings.activeAccountIndex < m_settings.accounts.size()) {
+        const auto& acc = m_settings.accounts[m_settings.activeAccountIndex];
+        m_player->username = acc.name;
+        m_player->uuid = acc.uuid;
+    }
 
     auto loadFile = [](const std::string& p) -> std::vector<uint8_t> {
         std::string path = "assets/" + p;
@@ -151,8 +158,8 @@ void Minecraft::saveAndQuit() {
     displayGuiScreen(std::make_shared<GuiMainMenu>());
 }
 
-void Minecraft::startSingleplayer() {
-    m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player);
+void Minecraft::startSingleplayer(const std::string& worldName) {
+    m_networkHandler = std::make_unique<NetworkHandler>(*m_world, *m_player, true, worldName);
     m_networkHandler->setRenderDistance(m_settings.renderDistanceChunks);
     m_networkHandler->onDisconnected = [this](bool timeout, const std::string& reason) {
         if (m_gameState != GameState::MainMenu) {
@@ -177,8 +184,14 @@ void Minecraft::startMultiplayer(const std::string& address, int port) {
     m_world = std::make_unique<World>();
     m_world->isRemote = true;
     m_player = std::make_unique<EntityPlayer>(*m_world);
-    m_player->username = m_settings.username;
-    m_player->uuid = m_settings.uuid;
+    
+    // Use active account
+    if (!m_settings.accounts.empty() && m_settings.activeAccountIndex < m_settings.accounts.size()) {
+        const auto& acc = m_settings.accounts[m_settings.activeAccountIndex];
+        m_player->username = acc.name;
+        m_player->uuid = acc.uuid;
+    }
+    
     m_player->setPosition(0.0, 66.0, 0.0);
     m_player->setMinecraft(this);
     m_player->isLocalPlayer = true;

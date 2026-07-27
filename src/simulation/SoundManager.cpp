@@ -4,7 +4,8 @@
 #include <cstdlib>
 
 void SoundManager::tick(SoundSystem& sound, SoundPool& pool, float musicVolume, bool isMainMenu) {
-    if (!sound.isMusicPlaying() && ++musicTimer > 1800) {
+    // Keep a long quiet gap after each track, matching the sparse Infdev soundtrack.
+    if (!sound.isMusicPlaying() && ++musicTimer > 7200) {
         musicTimer = 0;
         const auto& pools = isMainMenu ? menuMusicPools : musicPools;
         if (!pools.empty()) {

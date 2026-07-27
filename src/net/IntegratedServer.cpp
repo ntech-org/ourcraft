@@ -16,10 +16,21 @@
 #include <cmath>
 #include <cstdlib>
 #include <unordered_map>
+#include <filesystem>
 
-IntegratedServer::IntegratedServer() : m_permissions("world"), m_registrationManager("world") {
+namespace fs = std::filesystem;
+
+IntegratedServer::IntegratedServer(const std::string& worldName)
+    : m_config("server.toml"),
+      m_permissions("server_data"),
+      m_registrationManager("server_data")
+{
+    m_config.load();
+
+    if (!fs::exists("server_data")) fs::create_directories("server_data");
+
     m_world = std::make_unique<World>();
-    m_world->initSaveHandler("world");
+    m_world->initSaveHandler("worlds/" + worldName);
     m_permissions.load();
     m_registrationManager.load();
 
@@ -95,14 +106,29 @@ void IntegratedServer::stop() {
 }
 
 void IntegratedServer::run() {
-    m_server = std::make_unique<Server>(25565);
+    int port = m_config.getInt("port", 25565);
+    m_chunkKeepDistance = m_config.getInt("view-distance", 12);
+    m_server = std::make_unique<Server>(port);
+    if (!m_server->isValid()) {
+        std::cerr << "[IntegratedServer] Failed to start server on port " << port << ". Server will not run." << std::endl;
+        m_running = false;
+        return;
+    }
     m_packetHandler = std::make_unique<ServerPacketHandler>(*this, *m_world, *m_server, m_players, m_permissions, m_commandHandler, m_registrationManager);
 
     m_server->onPacketReceived = [this](ENetPeer* peer, const uint8_t* data, size_t size) {
         m_packetHandler->handle(peer, data, size);
     };
     m_server->onClientDisconnected = [this](ENetPeer* peer) {
-        m_players.erase(peer);
+        if (m_players.count(peer)) {
+            int32_t eid = m_players[peer].entityID;
+            m_world->removeEntity(eid, false);
+            PacketDestroyEntity destroy;
+            destroy.id = eid;
+            m_server->broadcastPacket(destroy, true);
+            std::cout << "Server: Player entity " << m_players[peer].username << " (eid " << eid << ") removed." << std::endl;
+            m_players.erase(peer);
+        }
     };
 
     auto lastTick = std::chrono::steady_clock::now();
@@ -160,8 +186,8 @@ void IntegratedServer::tick() {
         unloadFarChunks(*m_world, *m_server, m_players, entitiesById, m_chunkKeepDistance);
     }
 
-    m_world->update(0.05f);
     broadcastEntityPositions(*m_world, *m_server);
+    m_world->update(0.05f);
 
     // Server-side void protection
     for (auto& entity : m_world->getEntities()) {
@@ -198,6 +224,13 @@ void IntegratedServer::tick() {
     handleRespawns(*m_world, *m_server, m_players);
     handleItemPickups(*m_world, *m_server, m_players, entitiesById);
     spawnNewEntities(*m_world, *m_server, m_players);
+
+    if (m_tickCounter % 20 == 0) {
+        PacketTimeUpdate timePacket;
+        timePacket.time = m_world->getWorldTime();
+        timePacket.timeOfDay = std::fmod(m_world->getWorldTime(), 24000.0);
+        m_server->broadcastPacket(timePacket, true);
+    }
 
     if (++m_spawnTimer >= 20 * 20) {
         m_spawnTimer = 0;

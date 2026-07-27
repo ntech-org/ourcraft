@@ -11,7 +11,7 @@
 
 class NetworkHandler {
 public:
-    NetworkHandler(World& world, EntityPlayer& player, bool startServer = true);
+    NetworkHandler(World& world, EntityPlayer& player, bool startServer = true, const std::string& worldName = "world");
     ~NetworkHandler();
 
     bool connect(const std::string& address, int port);

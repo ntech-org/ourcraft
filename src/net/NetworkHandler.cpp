@@ -11,13 +11,13 @@
 #include <cstring>
 #include <chrono>
 
-NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startServer)
+NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startServer, const std::string& worldName)
     : m_world(world), m_player(player)
 {
     NetworkManager::init();
 
     if (startServer) {
-        m_server = std::make_unique<IntegratedServer>();
+        m_server = std::make_unique<IntegratedServer>(worldName);
         m_server->start();
     }
 
@@ -32,7 +32,13 @@ NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startSer
         PacketLogin loginPacket;
         loginPacket.username = m_player.username;
         loginPacket.uuid = m_player.uuid;
-        loginPacket.key = m_player.getMinecraft().getSettings().playerKey;
+        // Get key from active account
+        auto& mc = m_player.getMinecraft();
+        if (!mc.getSettings().accounts.empty() && mc.getSettings().activeAccountIndex < mc.getSettings().accounts.size()) {
+            loginPacket.key = mc.getSettings().accounts[mc.getSettings().activeAccountIndex].key;
+        } else {
+            loginPacket.key = ""; // fallback
+        }
         loginPacket.protocolVersion = 1;
         m_client->sendPacket(loginPacket);
     };

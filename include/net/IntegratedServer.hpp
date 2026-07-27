@@ -10,6 +10,7 @@
 #include "net/CommandHandler.hpp"
 #include "net/PlayerSession.hpp"
 #include "net/RegistrationManager.hpp"
+#include "net/ServerConfig.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
@@ -17,7 +18,7 @@ class ServerPacketHandler;
 
 class IntegratedServer {
 public:
-    IntegratedServer();
+    explicit IntegratedServer(const std::string& worldName = "world");
     ~IntegratedServer();
 
     void start();
@@ -34,6 +35,7 @@ public:
     Permissions& getPermissions() { return m_permissions; }
     CommandHandler& getCommandHandler() { return m_commandHandler; }
     RegistrationManager& getRegistrationManager() { return m_registrationManager; }
+    ServerConfig& getConfig() { return m_config; }
     std::map<ENetPeer*, PlayerSession>& getPlayers() { return m_players; }
 
     void broadcastSound(const std::string& name, double x, double y, double z, float volume, float pitch, ENetPeer* excludePeer = nullptr);
@@ -58,6 +60,7 @@ private:
     int m_unloadTimer = 0;
     int m_spawnTimer = 0;
 
+    ServerConfig m_config;
     Permissions m_permissions;
     CommandHandler m_commandHandler;
     RegistrationManager m_registrationManager;

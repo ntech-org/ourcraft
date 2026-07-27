@@ -38,7 +38,7 @@ public:
 
     void displayGuiScreen(std::shared_ptr<GuiScreen> screen);
     void saveAndQuit();
-    void startSingleplayer();
+    void startSingleplayer(const std::string& worldName = "world");
     void startMultiplayer(const std::string& address, int port);
     void setGameState(GameState state) { m_gameState = state; }
     GameState getGameState() const { return m_gameState; }

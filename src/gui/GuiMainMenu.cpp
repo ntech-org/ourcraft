@@ -1,8 +1,11 @@
 #include "gui/GuiMainMenu.hpp"
 #include "gui/GuiOptions.hpp"
-#include "gui/GuiMultiplayer.hpp"
+#include "gui/GuiServerList.hpp"
 #include "gui/GuiConnecting.hpp"
+#include "gui/GuiMultiplayerWelcome.hpp"
+#include "gui/GuiWorldList.hpp"
 #include "Minecraft.hpp"
+#include <filesystem>
 
 void GuiMainMenu::initGui() {
     controlList.push_back(std::make_unique<GuiButton>(1, width / 2 - 100, height / 4 + 48, 200, 20, "Singleplayer"));
@@ -26,10 +29,16 @@ void GuiMainMenu::drawScreen(int mouseX, int mouseY, float partialTicks) {
 
 void GuiMainMenu::actionPerformed(GuiButton* button) {
     if (button->id == 1) {
-        mc->displayGuiScreen(std::make_shared<GuiConnecting>(shared_from_this(), "127.0.0.1", 25565, true));
+        mc->displayGuiScreen(std::make_shared<GuiWorldList>(shared_from_this()));
     }
     if (button->id == 2) {
-        mc->displayGuiScreen(std::make_shared<GuiMultiplayer>(shared_from_this()));
+        // Check if first time opening multiplayer (no accounts.json)
+        std::filesystem::path keyPath = std::filesystem::current_path() / "accounts.json";
+        if (!std::filesystem::exists(keyPath)) {
+            mc->displayGuiScreen(std::make_shared<GuiMultiplayerWelcome>(shared_from_this()));
+        } else {
+            mc->displayGuiScreen(std::make_shared<GuiServerList>(shared_from_this()));
+        }
     }
     if (button->id == 0) {
         mc->displayGuiScreen(std::make_shared<GuiOptions>(shared_from_this()));

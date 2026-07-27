@@ -37,6 +37,11 @@ void GuiSoundSettings::actionPerformed(GuiButton* button) {
     if (button->id == 100) {
         mc->getSettings() = m_pendingSettings;
         mc->getSettings().saveOptions();
+        if (mc->hasSoundSystem()) {
+            mc->getSoundSystem().update(0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                        mc->getSettings().soundVolume,
+                                        mc->getSettings().musicVolume);
+        }
         mc->displayGuiScreen(parentScreen);
     }
 }
