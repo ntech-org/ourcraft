@@ -114,21 +114,25 @@ void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bo
     }
     m_camera.updateCameraVectors();
 
-    // Hurt camera shake
-    float hurtAmount = 0.0f;
-    if (m_player.hurtTime > 0) {
-        hurtAmount = (float)m_player.hurtTime / 20.0f;
-    }
-
     glm::mat4 view = glm::mat4(1.0f);
     if (cameraMode == 0) {
         view = computeViewBobMatrix(m_player, partialTicks) * m_camera.getViewMatrix();
     } else {
         view = view * m_camera.getViewMatrix();
     }
-    if (hurtAmount > 0.0f) {
-        float shakeAngle = hurtAmount * 7.0f * std::sin((float)SDL_GetTicksNS() / 1e6f * 0.05f);
-        view = glm::rotate(view, glm::radians(shakeAngle), glm::vec3(0.0f, 0.0f, 1.0f));
+    if (m_player.health <= 0) {
+        const float deathProgress = (float)m_player.deathTime + partialTicks;
+        const float angle = 40.0f - 8000.0f / (deathProgress + 200.0f);
+        view = glm::rotate(view, glm::radians(angle), glm::vec3(0.0f, 0.0f, 1.0f));
+    }
+    float hurtProgress = (float)m_player.hurtTime - partialTicks;
+    if (hurtProgress >= 0.0f && m_player.maxHurtTime > 0) {
+        hurtProgress /= (float)m_player.maxHurtTime;
+        hurtProgress = std::sin(hurtProgress * hurtProgress * hurtProgress * hurtProgress * 3.14159265358979323846f);
+        const float attackYaw = m_player.attackedAtYaw;
+        view = glm::rotate(view, glm::radians(-attackYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+        view = glm::rotate(view, glm::radians(-hurtProgress * 14.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        view = glm::rotate(view, glm::radians(attackYaw), glm::vec3(0.0f, 1.0f, 0.0f));
     }
 
     int playerCX = (int)std::floor(px / 16.0);

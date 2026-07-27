@@ -121,6 +121,7 @@ void IntegratedServer::run() {
     };
     m_server->onClientDisconnected = [this](ENetPeer* peer) {
         if (m_players.count(peer)) {
+            saveAllPlayers(*m_world, *m_server, m_players);
             int32_t eid = m_players[peer].entityID;
             m_world->removeEntity(eid, false);
             PacketDestroyEntity destroy;

@@ -221,7 +221,14 @@ void EntityLiving::updateEntityActionState() {
 void EntityLiving::attackEntityFrom(Entity* source, int amount) {
     if (amount > 0) {
         health -= amount;
-        hurtTime = 20;
+        hurtTime = maxHurtTime = 10;
+        if (source) {
+            const double dx = source->posX - posX;
+            const double dz = source->posZ - posZ;
+            attackedAtYaw = (float)(std::atan2(dz, dx) * 180.0 / 3.14159265358979323846) - rotationYaw;
+        } else {
+            attackedAtYaw = 0.0f;
+        }
         if (onHurt) onHurt();
     }
 }

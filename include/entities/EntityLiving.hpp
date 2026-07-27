@@ -33,6 +33,8 @@ public:
     int health = 20;
     int maxHealth = 20;
     int hurtTime = 0;
+    int maxHurtTime = 10;
+    float attackedAtYaw = 0.0f;
     bool isFlying = false;
 
     int air = 300;
