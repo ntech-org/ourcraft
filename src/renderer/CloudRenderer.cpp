@@ -124,7 +124,6 @@ static void uploadAndDraw(GLuint vao, GLuint vbo, const std::vector<CloudVertex>
 void CloudRenderer::renderSimpleClouds(const World& world, const Camera& camera, const glm::mat4& projection,
                                        float partialTicks, int renderDistance) {
     (void)projection;
-    (void)renderDistance;
 
     float py = (float)camera.position.y;
     float cloudY = 120.0f - py + 0.33f;
@@ -150,7 +149,8 @@ void CloudRenderer::renderSimpleClouds(const World& world, const Camera& camera,
     const uint8_t ca = 204;
 
     const int tileSize = 32;
-    const int halfTiles = 8;
+    const int renderRadius = std::max(32, renderDistance * 16);
+    const int halfTiles = (int)std::ceil((float)renderRadius / (float)tileSize) + 1;
 
     std::vector<CloudVertex> verts;
     verts.reserve((size_t)(halfTiles * 2) * (size_t)(halfTiles * 2) * 6);
@@ -183,7 +183,6 @@ void CloudRenderer::renderFancyClouds(const World& world, const Camera& camera, 
                                        float partialTicks, int cloudLevel, int renderDistance) {
     (void)projection;
     (void)cloudLevel;
-    (void)renderDistance;
 
     float py = (float)camera.position.y;
     const float cloudScale = 12.0f;
@@ -212,7 +211,9 @@ void CloudRenderer::renderFancyClouds(const World& world, const Camera& camera, 
     const uint8_t ca = 204;
 
     const int columnSize = 8;
-    const int sectionRadius = 3;
+    const float sectionSize = (float)columnSize * cloudScale;
+    const int renderRadius = std::max(32, renderDistance * 16);
+    const int sectionRadius = (int)std::ceil((float)renderRadius / sectionSize) + 1;
     const float faceEps = 1.0f / 1024.0f;
 
     std::vector<CloudVertex> verts;
