@@ -30,6 +30,8 @@ public:
     static bool isCtrlKeyDown();
     static bool isShiftKeyDown();
 
+    void drawPanel(Shader& shader, float x1, float y1, float x2, float y2, uint32_t color = 0xD0101010);
+
     void drawString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color);
     void drawCenteredString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color);
 

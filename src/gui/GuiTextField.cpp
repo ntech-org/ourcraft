@@ -63,8 +63,9 @@ void GuiTextField::drawTextField(Minecraft* mc, Font& font, Shader& shader) {
     if (!visible) return;
 
     Shader& uiShader = mc->getGameRenderer().getUIShader();
-    drawRect(uiShader, (float)x - 1, (float)y - 1, (float)x + (float)width + 1, (float)y + (float)height + 1, 0xFFA0A0A0);
-    drawRect(uiShader, (float)x, (float)y, (float)x + (float)width, (float)y + (float)height, 0xFF000000);
+    drawRect(uiShader, (float)x - 1, (float)y - 1, (float)x + (float)width + 1, (float)y + (float)height + 1,
+             m_isFocused ? 0xFF9DB9D5 : 0xFF555555);
+    drawRect(uiShader, (float)x, (float)y, (float)x + (float)width, (float)y + (float)height, 0xFF202124);
 
     int color = 0xFFE0E0E0;
     std::string display = m_text;
@@ -72,5 +73,5 @@ void GuiTextField::drawTextField(Minecraft* mc, Font& font, Shader& shader) {
         display += "_";
     }
 
-    font.drawString(mc->getGameRenderer().getTextShader(), display, (float)x + 4, (float)y + ((float)height - 8) / 2.0f, color, false);
+    font.drawString(mc->getGameRenderer().getTextShader(), display, (float)x + 6, (float)y + ((float)height - 8) / 2.0f, color, false);
 }

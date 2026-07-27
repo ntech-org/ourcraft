@@ -1,4 +1,5 @@
 #include "gui/GuiScreen.hpp"
+#include "gui/GuiSlider.hpp"
 #include "Minecraft.hpp"
 #include "renderer/Tessellator.hpp"
 
@@ -15,6 +16,12 @@ void GuiScreen::drawString(Font& font, Shader& shader, const std::string& text, 
 
 void GuiScreen::drawCenteredString(Font& font, Shader& shader, const std::string& text, float x, float y, uint32_t color) {
     Gui::drawCenteredString(font, mc->getGameRenderer().getTextShader(), text, x, y, color);
+}
+
+void GuiScreen::drawPanel(Shader& shader, float x1, float y1, float x2, float y2, uint32_t color) {
+    drawRect(shader, x1 + 2.0f, y1 + 2.0f, x2 + 2.0f, y2 + 2.0f, 0x70000000);
+    drawRect(shader, x1, y1, x2, y2, color);
+    drawRect(shader, x1, y1, x2, y1 + 1.0f, 0x30FFFFFF);
 }
 
 void GuiScreen::handleEvent(const SDL_Event& event) {
@@ -77,6 +84,13 @@ void GuiScreen::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
 }
 
 void GuiScreen::mouseClicked(int mouseX, int mouseY, int button) {
+    if (button != SDL_BUTTON_LEFT) return;
+
+    for (auto& control : controlList) {
+        if (auto* slider = dynamic_cast<GuiSlider*>(control.get())) {
+            if (slider->mousePressed(mouseX, mouseY)) break;
+        }
+    }
 }
 
 void GuiScreen::mouseReleased(int mouseX, int mouseY, int button) {
