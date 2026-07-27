@@ -32,7 +32,7 @@ void GuiOptions::actionPerformed(GuiButton* button) {
     }
     if (button->id == 1) {
         auto graphicsScreen = std::make_shared<GuiGraphicsSettings>();
-        graphicsScreen->parentScreen = shared_from_this();
+        graphicsScreen->parentScreen = std::static_pointer_cast<GuiScreen>(shared_from_this());
         mc->displayGuiScreen(graphicsScreen);
     }
     if (button->id == 2) {

@@ -1,6 +1,7 @@
 #include "gui/GuiGraphicsSettings.hpp"
 #include "gui/GuiSlider.hpp"
 #include "gui/GuiOptionButton.hpp"
+#include "gui/GuiOptions.hpp"
 #include "Minecraft.hpp"
 
 void GuiGraphicsSettings::initGui() {
@@ -98,13 +99,20 @@ void GuiGraphicsSettings::actionPerformed(GuiButton* button) {
     if (button->id == 100) {
         resetDefaults();
         mc->displayGuiScreen(std::make_shared<GuiGraphicsSettings>());
+        return;
     }
     if (button->id == 101) {
-        mc->displayGuiScreen(parentScreen);
+        // Cancel must only replace this screen; never fall through into gameplay.
+        auto destination = parentScreen;
+        if (destination) mc->displayGuiScreen(destination);
+        else mc->displayGuiScreen(std::make_shared<GuiOptions>());
+        return;
     }
     if (button->id == 102) {
         applySettings();
-        mc->displayGuiScreen(parentScreen);
+        if (parentScreen) mc->displayGuiScreen(parentScreen);
+        else mc->displayGuiScreen(std::make_shared<GuiOptions>());
+        return;
     }
     if (button->id == 7) {
         m_pendingSettings.guiScale = (m_pendingSettings.guiScale + 1) % 9;
