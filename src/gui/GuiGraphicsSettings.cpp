@@ -18,6 +18,7 @@ void GuiGraphicsSettings::initGui() {
         this->m_pendingSettings.renderDistanceChunks = 2 + (int)(val * 126.0f);
     });
     rdSlider->width = 310;
+    rdSlider->height = 20;
     controlList.push_back(std::move(rdSlider));
 
     // -- Quality Section --
@@ -66,6 +67,7 @@ void GuiGraphicsSettings::initGui() {
         this->m_pendingSettings.fov = 30.0f + val * 80.0f;
     });
     fovSlider->width = 150;
+    fovSlider->height = 20;
     controlList.push_back(std::move(fovSlider));
 
     // GUI Scale Button

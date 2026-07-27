@@ -21,6 +21,8 @@ void GuiSlider::updateText() {
 void GuiSlider::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX, int mouseY) {
     if (!visible) return;
 
+    constexpr int textureHeight = 20;
+
     if (dragging) {
         float mx, my;
         const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&mx, &my);
@@ -40,19 +42,20 @@ void GuiSlider::drawButton(Minecraft* mc, Font& font, Shader& shader, int mouseX
     shader.setBool("hasTexture", true);
 
     if (width <= 200) {
-        drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, width / 2, height);
-        drawTexturedModalRect(shader, (float)x + (float)width / 2.0f, (float)y, 200 - (width / 2), 46, width - width / 2, height);
+        drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, width / 2, textureHeight);
+        drawTexturedModalRect(shader, (float)x + (float)width / 2.0f - 1.0f, (float)y,
+                              200 - (width - width / 2) - 1, 46, width - width / 2 + 1, textureHeight);
     } else {
-        drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, 100, height);
-        drawTexturedModalRect(shader, (float)x + (float)width - 100.0f, (float)y, 100, 46, 100, height);
-        drawTexturedModalRect(shader, (float)x + 100.0f, (float)y, 50, 46, (float)width - 200.0f, height);
+        drawTexturedModalRect(shader, (float)x, (float)y, 0, 46, 100, textureHeight);
+        drawTexturedModalRect(shader, (float)x + (float)width - 100.0f, (float)y, 100, 46, 100, textureHeight);
+        drawTexturedModalRect(shader, (float)x + 100.0f, (float)y, 50, 46, (float)width - 200.0f, textureHeight);
     }
 
     // Draw knob
     float knobX = (float)x + sliderValue * (float)(width - 8);
     int knobState = dragging || isMouseOver(mouseX, mouseY) ? 2 : 1;
-    drawTexturedModalRect(shader, knobX, (float)y, 0, 46 + knobState * 20, 4, 20);
-    drawTexturedModalRect(shader, knobX + 4.0f, (float)y, 196, 46 + knobState * 20, 4, 20);
+    drawTexturedModalRect(shader, knobX, (float)y, 0, 46 + knobState * 20, 4, textureHeight);
+    drawTexturedModalRect(shader, knobX + 4.0f, (float)y, 196, 46 + knobState * 20, 4, textureHeight);
 
     drawCenteredString(font, mc->getGameRenderer().getTextShader(), text, (float)x + (float)width / 2.0f, (float)y + (float)(height - 8) / 2.0f, 0xFFE0E0E0);
 }
