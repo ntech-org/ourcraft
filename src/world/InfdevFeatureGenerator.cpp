@@ -29,7 +29,9 @@ void InfdevWorldGenerator::replaceSurface(Chunk& chunk) {
 
             for (int y = 127; y >= 0; --y) {
                 int idx = (x << 11) | (z << 7) | y;
-                if (y <= rand.nextInt(6)) blocks[idx] = (uint8_t)Block::bedrock->blockID;
+                // Infdev bedrock: rand.nextInt(6) can return 0, making the condition y <= -1 (never true)
+                // which creates the famous bedrock holes.
+                if (y <= rand.nextInt(6) - 1) blocks[idx] = (uint8_t)Block::bedrock->blockID;
                 else {
                     uint8_t b = blocks[idx];
                     if (b == 0) cnt = -1;
@@ -96,7 +98,10 @@ void InfdevWorldGenerator::decorateChunk(Chunk& chunk, Chunk* cE, Chunk* cS, Chu
 
     generateOre(Block::dirt->blockID, 20, 32, 0, 128); generateOre(Block::gravel->blockID, 10, 32, 0, 128);
     generateOre(Block::oreCoal->blockID, 20, 16, 0, 128); generateOre(Block::oreIron->blockID, 20, 8, 0, 64);
-    generateOre(Block::oreGold->blockID, 2, 8, 0, 32); generateOre(Block::oreDiamond->blockID, 1, 8, 0, 16);
+    // Gold: Infdev uses if(rand.nextInt(1) == 0) which is always true → 1 blob per chunk
+    if (dr.nextInt(1) == 0) generateOre(Block::oreGold->blockID, 1, 8, 0, 32);
+    // Diamond: Infdev uses if(rand.nextInt(4) == 0) → 25% chance per chunk
+    if (dr.nextInt(4) == 0) generateOre(Block::oreDiamond->blockID, 1, 8, 0, 16);
 
     auto getHeight = [&](int x, int z) -> int {
         for (int y = 127; y >= 0; --y) {
@@ -106,8 +111,11 @@ void InfdevWorldGenerator::decorateChunk(Chunk& chunk, Chunk* cE, Chunk* cS, Chu
         return 0;
     };
 
-    int treeCount = (int)((m_mobSpawnerNoise->generateNoise(cx * 16 * 0.1, cz * 16 * 0.1) * 3.0 + dr.nextDouble() * 2.0 + 2.0));
-    if (dr.nextInt(10) == 0) treeCount = 1; else if (dr.nextInt(10) > 8) treeCount = 0; // Adjust density
+    // Infdev tree count: uses mobSpawnerNoise at 0.5 scale (not 0.1)
+    // Formula: (noise / 8.0 + rand.nextDouble() * 4.0 + 4.0) / 3.0
+    int treeCount = (int)((m_mobSpawnerNoise->generateNoise(cx * 16 * 0.5, cz * 16 * 0.5) / 8.0 + dr.nextDouble() * 4.0 + 4.0) / 3.0);
+    if (treeCount < 0) treeCount = 0;
+    if (dr.nextInt(10) == 0) ++treeCount;
 
     for (int i = 0; i < treeCount; ++i) {
         int x = cx * 16 + dr.nextInt(16) + 8;

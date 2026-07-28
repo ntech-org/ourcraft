@@ -36,5 +36,5 @@
 # Xmake cache
 .xmake/
 build/
-world/
+/world/
 options.txt
