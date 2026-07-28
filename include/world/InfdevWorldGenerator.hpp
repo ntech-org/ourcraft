@@ -14,7 +14,17 @@ public:
     // Stage 2: Decoration
     void decorateChunk(Chunk& chunk, Chunk* chunkE, Chunk* chunkS, Chunk* chunkSE) override;
 
-    void setFarLands(bool enabled) override { m_farLands = enabled; }
+    void setFarLands(bool enabled) override {
+        m_farLands = enabled;
+        int32_t off = enabled ? FARLANDS_OFFSET : 0;
+        m_noiseGen1->setFarLandsOffset(off);
+        m_noiseGen2->setFarLandsOffset(off);
+        m_noiseGen3->setFarLandsOffset(off);
+        m_noiseGen4->setFarLandsOffset(off);
+        m_noiseGen5->setFarLandsOffset(off);
+        m_noiseGen6->setFarLandsOffset(off);
+        m_noiseGen7->setFarLandsOffset(off);
+    }
 
 private:
     void generateTerrain(Chunk& chunk);

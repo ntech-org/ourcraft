@@ -31,12 +31,22 @@ double NoiseGeneratorPerlin::grad(int hash, double x, double y, double z) {
     return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
 }
 
+// Emulate Java's (int) double cast: truncate toward zero, keep low 32 bits.
+int32_t NoiseGeneratorPerlin::javaIntCast(double d) {
+    int64_t v = static_cast<int64_t>(d);
+    uint32_t low = static_cast<uint32_t>(v);
+    // Reinterpret bits as signed int32 (same as Java's wrap)
+    union { uint32_t u; int32_t i; } c;
+    c.u = low;
+    return c.i;
+}
+
 double NoiseGeneratorPerlin::generateNoise(double x, double y, double z) const {
-    double x_p = x + m_xCoord;
+    double x_p = x + m_xCoord + m_farLandsOffset;
     double y_p = y + m_yCoord;
     double z_p = z + m_zCoord;
     
-    int X = (int)std::floor(x_p);
+    int X = m_farLandsOffset ? javaIntCast(x_p) : (int)std::floor(x_p);
     int Y = (int)std::floor(y_p);
     int Z = (int)std::floor(z_p);
 
@@ -78,15 +88,15 @@ void NoiseGeneratorPerlin::populateNoiseArray(double* noiseArray, int x, int y, 
     double lerp_x000 = 0, lerp_x010 = 0, lerp_x001 = 0, lerp_x011 = 0;
 
     for (int i = 0; i < xSize; ++i) {
-        double worldX = (double)(x + i) * xScale + m_xCoord;
-        int X = (int)std::floor(worldX);
+        double worldX = (double)(x + i) * xScale + m_xCoord + m_farLandsOffset;
+        int X = m_farLandsOffset ? javaIntCast(worldX) : (int)std::floor(worldX);
         int var38 = X & 255;
         double x_f = worldX - std::floor(worldX);
         double u = x_f * x_f * x_f * (x_f * (x_f * 6.0 - 15.0) + 10.0);
 
         for (int k = 0; k < zSize; ++k) {
-            double worldZ = (double)(z + k) * zScale + m_zCoord;
-            int Z = (int)std::floor(worldZ);
+            double worldZ = (double)(z + k) * zScale + m_zCoord + m_farLandsOffset;
+            int Z = m_farLandsOffset ? javaIntCast(worldZ) : (int)std::floor(worldZ);
             int var45 = Z & 255;
             double z_f = worldZ - std::floor(worldZ);
             double w = z_f * z_f * z_f * (z_f * (z_f * 6.0 - 15.0) + 10.0);

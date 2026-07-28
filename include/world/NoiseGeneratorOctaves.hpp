@@ -14,6 +14,10 @@ public:
     void populateNoiseArray(double* noiseArray, int x, int y, int z, int xSize, int ySize, int zSize, 
                             double xScale, double yScale, double zScale) const;
 
+    void setFarLandsOffset(int32_t offset) {
+        for (auto& gen : m_generators) gen->setFarLandsOffset(offset);
+    }
+
 private:
     int m_octaves;
     std::vector<std::unique_ptr<NoiseGeneratorPerlin>> m_generators;

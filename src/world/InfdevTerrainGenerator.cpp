@@ -36,7 +36,6 @@ void InfdevWorldGenerator::generateTerrain(Chunk& chunk) {
 }
 
 double* InfdevWorldGenerator::initializeNoiseField(double* v1, int v2, int v3, int v4, int v5, int v6, int v7, std::vector<double>& n1, std::vector<double>& n2, std::vector<double>& n3, std::vector<double>& n6, std::vector<double>& n7) {
-    if (m_farLands) { v2 += FARLANDS_OFFSET / 4; v4 += FARLANDS_OFFSET / 4; }
     n6.resize(v5 * v7); m_noiseGen6->populateNoiseArray(n6.data(), v2, 0, v4, v5, 1, v7, 1.0, 0.0, 1.0);
     n7.resize(v5 * v7); m_noiseGen7->populateNoiseArray(n7.data(), v2, 0, v4, v5, 1, v7, 100.0, 0.0, 100.0);
     n3.resize(v5 * v6 * v7); m_noiseGen3->populateNoiseArray(n3.data(), v2, v3, v4, v5, v6, v7, 8.555, 4.277, 8.555);
