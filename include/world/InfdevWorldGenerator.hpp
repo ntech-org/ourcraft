@@ -14,6 +14,8 @@ public:
     // Stage 2: Decoration
     void decorateChunk(Chunk& chunk, Chunk* chunkE, Chunk* chunkS, Chunk* chunkSE) override;
 
+    void setFarLands(bool enabled) override { m_farLands = enabled; }
+
 private:
     void generateTerrain(Chunk& chunk);
     void replaceSurface(Chunk& chunk);
@@ -27,6 +29,8 @@ private:
                                  std::vector<double>& n6, std::vector<double>& n7);
 
     int64_t m_seed;
+    bool m_farLands = false;
+    static constexpr int32_t FARLANDS_OFFSET = 12550824;
     
     std::unique_ptr<NoiseGeneratorOctaves> m_noiseGen1;
     std::unique_ptr<NoiseGeneratorOctaves> m_noiseGen2;

@@ -136,6 +136,8 @@ bool SaveHandler::loadLevelData(LevelData& data) {
     getNbtInt(level, "SpawnY", data.spawnY);
     getNbtInt(level, "SpawnZ", data.spawnZ);
     getNbtLong(level, "Time", data.time);
+    int8_t farLandsByte = 0;
+    if (getNbtByte(level, "FarLands", farLandsByte)) data.farLands = (farLandsByte != 0);
 
     return true;
 }
@@ -151,6 +153,7 @@ void SaveHandler::saveLevelData(const LevelData& data) {
     setNbtInt(levelMap, "SpawnY", data.spawnY);
     setNbtInt(levelMap, "SpawnZ", data.spawnZ);
     setNbtLong(levelMap, "Time", data.time);
+    setNbtByte(levelMap, "FarLands", data.farLands ? 1 : 0);
 
     auto root = makeNbtCompound();
     std::get<nbt::Compound>(root->value)["Data"] = level;
@@ -188,6 +191,10 @@ bool SaveHandler::loadPlayerData(const std::string& name, PlayerSaveData& data) 
     }
     if (root.count("Health") && root["Health"]->type == nbt::TagType::Int) {
         data.health = std::get<int32_t>(root["Health"]->value);
+    }
+
+    if (root.count("GameType") && root["GameType"]->type == nbt::TagType::Int) {
+        data.gameMode = std::get<int32_t>(root["GameType"]->value);
     }
 
     if (root.count("Inventory") && root["Inventory"]->type == nbt::TagType::List) {
@@ -235,6 +242,7 @@ void SaveHandler::savePlayerData(const PlayerSaveData& data) {
     map["Rotation"] = rot;
 
     setNbtInt(map, "Health", (int32_t)data.health);
+    setNbtInt(map, "GameType", (int32_t)data.gameMode);
 
     auto invTag = makeNbtList("Inventory", nbt::TagType::Compound);
     auto& invList = std::get<nbt::List>(invTag->value);

@@ -37,12 +37,15 @@ IntegratedServer::IntegratedServer(const std::string& worldName)
     LevelData levelData;
     auto saveHandler = m_world->getSaveHandler();
     if (saveHandler && saveHandler->loadLevelData(levelData)) {
-        m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(levelData.seed));
+        auto generator = std::make_unique<InfdevWorldGenerator>(levelData.seed);
+        generator->setFarLands(levelData.farLands);
+        m_world->setGenerator(std::move(generator));
         m_world->setWorldTime(levelData.time);
         if (levelData.spawnY > 100 || levelData.spawnY < 5) levelData.spawnY = 66;
     } else {
         int64_t seed = 1772835215;
-        m_world->setGenerator(std::make_unique<InfdevWorldGenerator>(seed));
+        auto generator = std::make_unique<InfdevWorldGenerator>(seed);
+        m_world->setGenerator(std::move(generator));
         if (saveHandler) {
             levelData.seed = seed;
             levelData.spawnX = 0; levelData.spawnY = 66; levelData.spawnZ = 0;

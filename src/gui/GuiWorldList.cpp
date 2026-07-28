@@ -1,4 +1,5 @@
 #include "gui/GuiWorldList.hpp"
+#include "gui/GuiWorldSettings.hpp"
 #include "Minecraft.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -104,9 +105,7 @@ void GuiWorldList::createWorld() {
     do {
         name = "New World " + std::to_string(number++);
     } while (fs::exists(fs::path("worlds") / name));
-    fs::create_directories(fs::path("worlds") / name);
-    refreshWorlds();
-    m_selectedWorld = (int)(std::find(m_worlds.begin(), m_worlds.end(), name) - m_worlds.begin());
+    mc->displayGuiScreen(std::make_shared<GuiWorldSettings>(shared_from_this(), name));
 }
 
 void GuiWorldList::deleteSelectedWorld() {

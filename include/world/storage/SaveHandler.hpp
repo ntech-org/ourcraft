@@ -13,6 +13,7 @@ struct LevelData {
     int64_t seed;
     int32_t spawnX, spawnY, spawnZ;
     int64_t time;
+    bool farLands = false;
 };
 
 struct PlayerSaveData {
