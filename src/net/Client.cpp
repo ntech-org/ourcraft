@@ -127,28 +127,33 @@ void Client::networkLoop() {
                     const uint8_t* ptr = event.packet->data;
                     PacketType type = (PacketType)Packet::readByte(ptr);
 
-                    if (type == PacketType::Disconnect) {
-                        PacketDisconnect p;
-                        p.deserialize(ptr, event.packet->dataLength - 1);
-                        std::cout << "[Client] Server kicked us: " << p.reason << std::endl;
-                        m_disconnectEvents.push({false, p.reason});
-                    } else {
+        if (type == PacketType::Disconnect) {
+            PacketDisconnect p;
+            p.deserialize(ptr, event.packet->dataLength - 1);
+            std::cout << "[Client] Server kicked us: " << p.reason << std::endl;
+            m_disconnectPacketReceived.store(true, std::memory_order_release);
+            m_disconnectEvents.push({false, p.reason});
+        } else {
                         std::vector<uint8_t> data(event.packet->data, event.packet->data + event.packet->dataLength);
                         m_incomingPackets.push(std::move(data));
                     }
                     enet_packet_destroy(event.packet);
                     break;
                 }
-                case ENET_EVENT_TYPE_DISCONNECT: {
-                    bool timeout = event.data != 0;
-                    std::string reason = timeout ? "Connection timed out" : "Disconnected by server";
-                    std::cout << "[Client] " << reason << std::endl;
-                    m_peer = nullptr;
-                    m_connected = false;
-                    m_connecting = false;
-                    m_disconnectEvents.push({timeout, reason});
-                    break;
-                }
+case ENET_EVENT_TYPE_DISCONNECT: {
+    if (m_disconnectPacketReceived.load(std::memory_order_acquire)) {
+        m_disconnectPacketReceived.store(false, std::memory_order_release);
+        break;
+    }
+    bool timeout = event.data != 0;
+    std::string reason = timeout ? "Connection timed out" : "Disconnected by server";
+    std::cout << "[Client] " << reason << std::endl;
+    m_peer = nullptr;
+    m_connected = false;
+    m_connecting = false;
+    m_disconnectEvents.push({timeout, reason});
+    break;
+}
                 default:
                     break;
             }

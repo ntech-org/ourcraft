@@ -1,14 +1,20 @@
 #include "world/InfdevWorldGenerator.hpp"
 #include "world/Chunk.hpp"
 #include "world/Block.hpp"
+#include "util/Profiler.hpp"
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
 
 void InfdevWorldGenerator::generateTerrain(Chunk& chunk) {
+    OC_ZONE_SCOPED;
     int cx = chunk.getX(), cz = chunk.getZ();
     uint8_t* blocks = const_cast<uint8_t*>(chunk.getBlocks());
     std::vector<double> noiseArray(5 * 17 * 5), n1, n2, n3, n6, n7;
-    initializeNoiseField(noiseArray.data(), cx * 4, 0, cz * 4, 5, 17, 5, n1, n2, n3, n6, n7);
+    {
+        OC_ZONE_SCOPED_N("NoiseField");
+        initializeNoiseField(noiseArray.data(), cx * 4, 0, cz * 4, 5, 17, 5, n1, n2, n3, n6, n7);
+    }
 
     for (int x = 0; x < 4; ++x) {
         for (int z = 0; z < 4; ++z) {
@@ -36,11 +42,15 @@ void InfdevWorldGenerator::generateTerrain(Chunk& chunk) {
 }
 
 double* InfdevWorldGenerator::initializeNoiseField(double* v1, int v2, int v3, int v4, int v5, int v6, int v7, std::vector<double>& n1, std::vector<double>& n2, std::vector<double>& n3, std::vector<double>& n6, std::vector<double>& n7) {
-    n6.resize(v5 * v7); m_noiseGen6->populateNoiseArray(n6.data(), v2, 0, v4, v5, 1, v7, 1.0, 0.0, 1.0);
-    n7.resize(v5 * v7); m_noiseGen7->populateNoiseArray(n7.data(), v2, 0, v4, v5, 1, v7, 100.0, 0.0, 100.0);
-    n3.resize(v5 * v6 * v7); m_noiseGen3->populateNoiseArray(n3.data(), v2, v3, v4, v5, v6, v7, 8.555, 4.277, 8.555);
-    n1.resize(v5 * v6 * v7); m_noiseGen1->populateNoiseArray(n1.data(), v2, v3, v4, v5, v6, v7, 684.412, 684.412, 684.412);
-    n2.resize(v5 * v6 * v7); m_noiseGen2->populateNoiseArray(n2.data(), v2, v3, v4, v5, v6, v7, 684.412, 684.412, 684.412);
+    OC_ZONE_SCOPED;
+    {
+        OC_ZONE_SCOPED_N("OctaveNoise");
+        n6.resize(v5 * v7); m_noiseGen6->populateNoiseArray(n6.data(), v2, 0, v4, v5, 1, v7, 1.0, 0.0, 1.0);
+        n7.resize(v5 * v7); m_noiseGen7->populateNoiseArray(n7.data(), v2, 0, v4, v5, 1, v7, 100.0, 0.0, 100.0);
+        n3.resize(v5 * v6 * v7); m_noiseGen3->populateNoiseArray(n3.data(), v2, v3, v4, v5, v6, v7, 8.555, 4.277, 8.555);
+        n1.resize(v5 * v6 * v7); m_noiseGen1->populateNoiseArray(n1.data(), v2, v3, v4, v5, v6, v7, 684.412, 684.412, 684.412);
+        n2.resize(v5 * v6 * v7); m_noiseGen2->populateNoiseArray(n2.data(), v2, v3, v4, v5, v6, v7, 684.412, 684.412, 684.412);
+    }
     
     int i12 = 0, i13 = 0;
     for (int x = 0; x < v5; ++x) {

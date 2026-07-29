@@ -1,6 +1,7 @@
 #include "net/IntegratedServer.hpp"
 #include "net/CommandHandler.hpp"
 #include "net/NetworkManager.hpp"
+#include "net/ServerConfig.hpp"
 #include "world/Block.hpp"
 #include <iostream>
 #include <csignal>
@@ -33,7 +34,10 @@ int main(int argc, char* argv[]) {
         server->setDedicated(true);
         server->start();
         
-        std::cout << "[Server] Server is now running. Type 'help' for commands. Press Ctrl+C to stop." << std::endl;
+        int port = server->getConfig().getInt("port", 25565);
+        std::cout << "[Server] Server is now running on port " << port << "." << std::endl;
+        std::cout << "[Server] Type 'help' for commands. Press Ctrl+C to stop." << std::endl;
+        std::cout << "[Server] Use 'op <player>' from console to grant operator status." << std::endl;
 
         std::string line;
         while (server->isRunning() && std::getline(std::cin, line)) {

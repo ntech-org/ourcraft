@@ -1,4 +1,5 @@
 #include "world/InfdevWorldGenerator.hpp"
+#include "util/Profiler.hpp"
 #include "world/Chunk.hpp"
 #include "world/Block.hpp"
 #include <cmath>
@@ -54,6 +55,7 @@ void InfdevWorldGenerator::replaceSurface(Chunk& chunk) {
 }
 
 void InfdevWorldGenerator::decorateChunk(Chunk& chunk, Chunk* cE, Chunk* cS, Chunk* cSE) {
+    OC_ZONE_SCOPED;
     int cx = chunk.getX(), cz = chunk.getZ();
     JavaRandom rand(m_seed);
     int64_t v6 = rand.nextLong() / 2 * 2 + 1, v8 = rand.nextLong() / 2 * 2 + 1;

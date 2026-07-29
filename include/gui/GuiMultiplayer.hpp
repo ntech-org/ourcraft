@@ -13,6 +13,7 @@ public:
     void drawScreen(int mouseX, int mouseY, float partialTicks) override;
     void keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) override;
     void mouseClicked(int mouseX, int mouseY, int button) override;
+    void onTextInput(const char* text) override;
 
 protected:
     void actionPerformed(GuiButton* button) override;

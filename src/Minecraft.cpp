@@ -1,5 +1,6 @@
 #include <glm/geometric.hpp>
 #include "Minecraft.hpp"
+#include "util/Profiler.hpp"
 #include "PlayerTick.hpp"
 #include "world/Block.hpp"
 #include "items/Item.hpp"
@@ -234,14 +235,20 @@ void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
 }
 
 void Minecraft::run() {
+    OC_THREAD_NAME("Main");
     m_lastFrameTime = (double)SDL_GetTicksNS() / 1e9;
     while (m_running) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
-                m_running = false;
+        OC_ZONE_SCOPED_N("Frame");
+
+        {
+            OC_ZONE_SCOPED_N("PollEvents");
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT) {
+                    m_running = false;
+                }
+                handleEvent(event);
             }
-            handleEvent(event);
         }
 
         std::shared_ptr<GuiScreen> currentScreen = m_currentScreen;
@@ -254,13 +261,17 @@ void Minecraft::run() {
         m_timer.updateTimer();
 
         if (m_soundSystem && m_player) {
+            OC_ZONE_SCOPED_N("SoundUpdate");
             m_soundSystem->update((float)m_player->posX, (float)m_player->posY + 1.6f, (float)m_player->posZ,
                                   m_player->rotationYaw, m_player->rotationPitch,
                                   m_settings.soundVolume, m_settings.musicVolume);
         }
 
         double updateStart = (double)SDL_GetTicksNS() / 1e9;
-        for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
+        {
+            OC_ZONE_SCOPED_N("ClientTicks");
+            for (int i = 0; i < m_timer.elapsedTicks; ++i) tick();
+        }
         m_gameRenderer->getProfiler().updateTime = ((double)SDL_GetTicksNS() / 1e9 - updateStart) * 1000.0;
 
         if (m_soundSystem && m_settings.musicVolume > 0.0f) {
@@ -273,19 +284,28 @@ void Minecraft::run() {
             renderPartialTicks = 1.0f;
         }
 
-        m_gameRenderer->render(renderPartialTicks,
-                               m_inputHandler->getCameraMode(),
-                               m_inputHandler->isDebugVisible(),
-                               m_inputHandler->isChunkBoundariesVisible(),
-                               m_inputHandler->isProfilerVisible(),
-                               m_fps,
-                               currentScreen);
+        {
+            OC_ZONE_SCOPED_N("Render");
+            m_gameRenderer->render(renderPartialTicks,
+                                   m_inputHandler->getCameraMode(),
+                                   m_inputHandler->isDebugVisible(),
+                                   m_inputHandler->isChunkBoundariesVisible(),
+                                   m_inputHandler->isProfilerVisible(),
+                                   m_fps,
+                                   currentScreen);
+        }
 
-        SDL_GL_SwapWindow(m_window);
+        {
+            OC_ZONE_SCOPED_N("SwapBuffers");
+            SDL_GL_SwapWindow(m_window);
+        }
+
+        OC_FRAME_MARK;
     }
 }
 
 void Minecraft::tick() {
+    OC_ZONE_SCOPED;
     if (m_gameState == GameState::MainMenu) {
         if (m_currentScreen) {
             m_currentScreen->updateScreen();
@@ -342,7 +362,7 @@ void Minecraft::tick() {
                     displayGuiScreen(std::make_shared<GuiInventory>());
                 }
             } else if (m_inputHandler->shouldDropItem()) {
-                if (m_player->gameMode != GameMode::CREATIVE && m_networkHandler) {
+                if (m_networkHandler) {
                     PacketPlayerDigging packet;
                     packet.action = DiggingAction::DROP_ITEM;
                     packet.x = 0; packet.y = 0; packet.z = 0; packet.face = 0;

@@ -69,6 +69,8 @@ public:
     void initSaveHandler(const std::string& worldDir);
 
     void addChunk(std::shared_ptr<Chunk> chunk);
+    // Notify renderer that an already-loaded chunk's data changed (e.g. network rewrite)
+    void notifyChunkUpdated(std::shared_ptr<Chunk> chunk);
     void removeChunk(int chunkX, int chunkZ);
     void requestChunk(int chunkX, int chunkZ);
     void saveChunk(std::shared_ptr<Chunk> chunk);

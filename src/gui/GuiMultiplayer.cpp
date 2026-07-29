@@ -7,8 +7,14 @@
 GuiMultiplayer::GuiMultiplayer(std::shared_ptr<GuiScreen> parent) : m_parent(parent) {}
 
 void GuiMultiplayer::initGui() {
-    m_usernameField = std::make_unique<GuiTextField>(1, width / 2 - 100, height / 4 + 24, 200, 20, mc->getWindow());
-    m_usernameField->setText(mc->getSettings().username);
+    // Use active account name
+    if (!mc->getSettings().accounts.empty() && mc->getSettings().activeAccountIndex < mc->getSettings().accounts.size()) {
+        m_usernameField = std::make_unique<GuiTextField>(1, width / 2 - 100, height / 4 + 24, 200, 20, mc->getWindow());
+        m_usernameField->setText(mc->getSettings().accounts[mc->getSettings().activeAccountIndex].name);
+    } else {
+        m_usernameField = std::make_unique<GuiTextField>(1, width / 2 - 100, height / 4 + 24, 200, 20, mc->getWindow());
+        m_usernameField->setText("Player");
+    }
     m_usernameField->setFocused(false, mc->getWindow());
 
     m_serverAddressField = std::make_unique<GuiTextField>(0, width / 2 - 100, height / 4 + 48, 200, 20, mc->getWindow());
@@ -47,8 +53,9 @@ void GuiMultiplayer::drawScreen(int mouseX, int mouseY, float partialTicks) {
 
 void GuiMultiplayer::actionPerformed(GuiButton* button) {
     if (button->id == 1) {
-        if (m_usernameField) {
-            mc->getSettings().username = m_usernameField->getText();
+        // Update active account name
+        if (!mc->getSettings().accounts.empty() && mc->getSettings().activeAccountIndex < mc->getSettings().accounts.size()) {
+            mc->getSettings().accounts[mc->getSettings().activeAccountIndex].name = m_usernameField->getText();
         }
         std::string address = m_serverAddressField->getText();
         size_t colonPos = address.find(':');
@@ -93,4 +100,12 @@ void GuiMultiplayer::mouseClicked(int mouseX, int mouseY, int button) {
     if (m_usernameField) m_usernameField->mouseClicked(mouseX, mouseY, button);
     if (m_serverAddressField) m_serverAddressField->mouseClicked(mouseX, mouseY, button);
     GuiScreen::mouseClicked(mouseX, mouseY, button);
+}
+
+void GuiMultiplayer::onTextInput(const char* text) {
+    if (m_usernameField && m_usernameField->isFocused()) {
+        m_usernameField->appendText(text);
+    } else if (m_serverAddressField && m_serverAddressField->isFocused()) {
+        m_serverAddressField->appendText(text);
+    }
 }

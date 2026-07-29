@@ -1,5 +1,8 @@
 #include "world/InfdevWorldGenerator.hpp"
 #include "world/Chunk.hpp"
+#include "util/Profiler.hpp"
+
+bool InfdevWorldGenerator::s_farLands = false;
 
 InfdevWorldGenerator::InfdevWorldGenerator(int64_t seed) : m_seed(seed) {
     JavaRandom rand(seed);
@@ -14,8 +17,18 @@ InfdevWorldGenerator::InfdevWorldGenerator(int64_t seed) : m_seed(seed) {
 }
 
 void InfdevWorldGenerator::generateChunk(Chunk& chunk) {
-    generateTerrain(chunk);
-    replaceSurface(chunk);
-    generateCaves(chunk);
+    OC_ZONE_SCOPED;
+    {
+        OC_ZONE_SCOPED_N("GenerateTerrain");
+        generateTerrain(chunk);
+    }
+    {
+        OC_ZONE_SCOPED_N("ReplaceSurface");
+        replaceSurface(chunk);
+    }
+    {
+        OC_ZONE_SCOPED_N("GenerateCaves");
+        generateCaves(chunk);
+    }
     for (int i = 0; i < Chunk::SECTION_COUNT; ++i) chunk.touchSection(i);
 }

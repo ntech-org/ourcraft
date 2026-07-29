@@ -2,6 +2,7 @@
 #include "renderer/Tessellator.hpp"
 #include "renderer/ChunkMesher.hpp"
 #include "renderer/Shader.hpp"
+#include "util/Profiler.hpp"
 #include "world/Chunk.hpp"
 #include "world/World.hpp"
 #include <glm/gtc/matrix_transform.hpp>
@@ -43,13 +44,11 @@ WorldRenderer::~WorldRenderer() {
 
 std::uint64_t WorldRenderer::columnKey(int cx, int cz) {
     return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(cx)) << 32) |
-           (static_cast<std::uint64_t>(static_cast<std::uint32_t>(cz)) & 0xFFFFFFFFu);
+           static_cast<std::uint64_t>(static_cast<std::uint32_t>(cz));
 }
 
-std::uint64_t WorldRenderer::sectionKey(int cx, int cz, int si) {
-    return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(cx)) << 40) |
-           (static_cast<std::uint64_t>(static_cast<std::uint32_t>(cz)) << 8) |
-           (static_cast<std::uint64_t>(si));
+WorldRenderer::SectionKey WorldRenderer::makeSectionKey(int cx, int cz, int si) {
+    return SectionKey{cx, cz, si};
 }
 
 WorldRenderer::ChunkColumn* WorldRenderer::findColumn(int cx, int cz) {
@@ -60,6 +59,40 @@ WorldRenderer::ChunkColumn* WorldRenderer::findColumn(int cx, int cz) {
 const WorldRenderer::ChunkColumn* WorldRenderer::findColumn(int cx, int cz) const {
     auto it = m_columnIndex.find(columnKey(cx, cz));
     return it != m_columnIndex.end() ? &m_columns[it->second] : nullptr;
+}
+
+void WorldRenderer::freeSectionMesh(SectionRenderEntry& entry) {
+    if (m_batchedOpaque.isInitialized() && entry.batchedAlloc.valid) {
+        m_batchedOpaque.free(entry.batchedAlloc);
+        entry.batchedAlloc = {};
+    }
+    entry.mesh.clear();
+    entry.translucentMesh.clear();
+    entry.uploadedVersion = 0;
+    entry.hasMesh = false;
+}
+
+bool WorldRenderer::isSectionMeshReady(const Chunk& chunk) const {
+    ChunkState state = chunk.getState();
+    return state == ChunkState::Complete
+        || state == ChunkState::Decorated
+        || state == ChunkState::Lighted
+        || state == ChunkState::LightingFinal;
+}
+
+bool WorldRenderer::sectionHasRenderableMesh(const SectionRenderEntry& entry) const {
+    if (entry.hasMesh) return true;
+    if (m_batchedOpaque.isInitialized()) return entry.batchedAlloc.valid;
+    return entry.mesh.hasGeometry() || entry.translucentMesh.hasGeometry();
+}
+
+void WorldRenderer::requestSectionMesh(SectionRenderEntry& entry) {
+    if (!entry.chunk) return;
+    entry.isBuilding = false;
+    entry.buildingVersion = 0;
+    if (!entry.chunk->isSectionDirty(entry.sectionIndex)) {
+        entry.chunk->touchSection(entry.sectionIndex);
+    }
 }
 
 void WorldRenderer::initBatchedRendering() {
@@ -88,6 +121,7 @@ void WorldRenderer::initBatchedRendering() {
 }
 
 void WorldRenderer::meshWorkerLoop() {
+    OC_THREAD_NAME("MeshWorker");
     using clock = std::chrono::steady_clock;
     while (m_running) {
         MeshTask task;
@@ -100,6 +134,9 @@ void WorldRenderer::meshWorkerLoop() {
         }
 
         std::shared_ptr<Chunk> chunk = task.chunk;
+        if (!chunk) continue;
+
+        OC_ZONE_SCOPED_N("MeshSection");
         const auto buildStart = clock::now();
         ChunkMeshData meshData = ChunkMesher::buildSectionMesh(m_world, *chunk, task.sectionIndex);
         const auto buildEnd = clock::now();
@@ -108,27 +145,40 @@ void WorldRenderer::meshWorkerLoop() {
         result.cx = task.cx;
         result.cz = task.cz;
         result.sectionIndex = task.sectionIndex;
+        result.chunkPtr = chunk.get();
         result.meshData = std::move(meshData);
         result.requestedVersion = task.requestedVersion;
         result.version = chunk->getSectionVersion(task.sectionIndex);
+        result.generation = task.generation;
         result.buildMs = std::chrono::duration<double, std::milli>(buildEnd - buildStart).count();
 
         {
-            std::lock_guard<std::mutex> lock(m_resultMutex);
+            std::lock_guard<std::mutex> rlock(m_resultMutex);
+            if (m_resultQueue.size() >= kMaxResultQueue) {
+                // Drop oldest; do NOT touch m_inFlight here — only matching
+                // live results or enqueue recovery may clear it.
+                m_resultQueue.pop();
+            }
             m_resultQueue.push(std::move(result));
         }
     }
 }
 
 void WorldRenderer::rebuildSectionList() {
-    if (m_batchedOpaque.isInitialized()) {
-        for (auto& col : m_columns) {
-            for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
-                if (col.sections[si].batchedAlloc.valid) {
-                    m_batchedOpaque.free(col.sections[si].batchedAlloc);
-                    col.sections[si].batchedAlloc = {};
-                }
-            }
+    ++m_meshGeneration;
+    {
+        std::lock_guard<std::mutex> lock(m_taskMutex);
+        while (!m_taskQueue.empty()) m_taskQueue.pop();
+        m_inFlight.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_resultMutex);
+        while (!m_resultQueue.empty()) m_resultQueue.pop();
+    }
+
+    for (auto& col : m_columns) {
+        for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
+            freeSectionMesh(col.sections[si]);
         }
     }
     m_columns.clear();
@@ -145,97 +195,140 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
 
     int cx = chunk->getX(), cz = chunk->getZ();
     ChunkColumn* col = findColumn(cx, cz);
+    const bool chunkReplaced = col && col->chunk && col->chunk.get() != chunk.get();
     if (!col) {
         std::size_t idx = m_columns.size();
         m_columns.emplace_back();
         col = &m_columns.back();
         col->cx = cx;
         col->cz = cz;
-        col->columnBounds.min = {0.0f, 0.0f, 0.0f};
-        col->columnBounds.max = {16.0f, 128.0f, 16.0f};
+        col->columnBounds = { glm::vec3(0.0f), glm::vec3(16.0f, 128.0f, 16.0f) };
         m_columnIndex[columnKey(cx, cz)] = idx;
     }
 
     col->chunk = chunk;
+    col->needsCleanup = false;
+
     for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
         auto& entry = col->sections[si];
         entry.chunk = chunk;
         entry.sectionIndex = si;
+        entry.bounds = { glm::vec3(0.0f), glm::vec3(16.0f) };
 
-        uint32_t newVersion = chunk->getSectionVersion(si);
-        if (entry.uploadedVersion != newVersion) {
-            if (m_batchedOpaque.isInitialized() && entry.batchedAlloc.valid) {
-                m_batchedOpaque.free(entry.batchedAlloc);
-                entry.batchedAlloc = {};
+        const uint32_t newVersion = chunk->getSectionVersion(si);
+        const bool missingMesh = !sectionHasRenderableMesh(entry) && chunk->isSectionNonEmpty(si);
+        const bool versionMismatch = entry.hasMesh && entry.uploadedVersion != newVersion;
+        const bool needsMesh = chunkReplaced || missingMesh || versionMismatch || chunk->isSectionDirty(si);
+
+        if (chunkReplaced) {
+            freeSectionMesh(entry);
+        }
+
+        if (needsMesh) {
+            // Invalidate any prior in-flight bookkeeping for this section.
+            {
+                std::lock_guard<std::mutex> lock(m_taskMutex);
+                m_inFlight.erase(makeSectionKey(cx, cz, si));
             }
-            entry.uploadedVersion = 0;
+            requestSectionMesh(entry);
+        } else {
             entry.isBuilding = false;
-            entry.bounds.min = {0.0f, 0.0f, 0.0f};
-            entry.bounds.max = {16.0f, 16.0f, 16.0f};
-            chunk->touchSection(si);
+            entry.buildingVersion = 0;
         }
     }
     m_stats.sectionCount = m_columns.size() * Chunk::SECTION_COUNT;
 }
 
-void WorldRenderer::updateDirtyMeshes(int limit) {
+void WorldRenderer::processMeshResults(int maxResults) {
+    OC_ZONE_SCOPED;
     int resultsProcessed = 0;
-    while (resultsProcessed < 64) {
+    while (resultsProcessed < maxResults) {
         MeshResult result;
-        std::uint64_t resultKey = 0;
-        bool hasResultKey = false;
         {
             std::lock_guard<std::mutex> lock(m_resultMutex);
             if (m_resultQueue.empty()) break;
-            if (m_resultQueue.size() > kMaxResultQueue) {
-                std::uint64_t dropKey = sectionKey(m_resultQueue.front().cx, m_resultQueue.front().cz, m_resultQueue.front().sectionIndex);
-                m_queuedTasks.erase(dropKey);
-                m_resultQueue.pop();
-                resultsProcessed++;
-                continue;
-            }
             result = std::move(m_resultQueue.front());
             m_resultQueue.pop();
-            resultKey = sectionKey(result.cx, result.cz, result.sectionIndex);
-            hasResultKey = true;
+        }
+
+        ++m_stats.meshBuilds;
+        m_stats.meshBuildMs += result.buildMs;
+        resultsProcessed++;
+
+        const SectionKey key = makeSectionKey(result.cx, result.cz, result.sectionIndex);
+
+        // Always drop matching in-flight entry for THIS exact build only.
+        auto clearMatchingInFlight = [&]() {
+            std::lock_guard<std::mutex> lock(m_taskMutex);
+            auto it = m_inFlight.find(key);
+            if (it == m_inFlight.end()) return;
+            if (it->second.chunkPtr == result.chunkPtr
+                && it->second.version == result.requestedVersion
+                && it->second.generation == result.generation) {
+                m_inFlight.erase(it);
+            }
+        };
+
+        if (result.generation != m_meshGeneration) {
+            clearMatchingInFlight();
+            continue;
         }
 
         ChunkColumn* col = findColumn(result.cx, result.cz);
-        if (!col) {
-            if (hasResultKey) {
-                m_queuedTasks.erase(resultKey);
-            }
-            ++m_stats.meshBuilds;
-            m_stats.meshBuildMs += result.buildMs;
-            resultsProcessed++;
+        if (!col || !col->chunk || col->chunk.get() != result.chunkPtr) {
+            clearMatchingInFlight();
             continue;
         }
 
         auto& entry = col->sections[result.sectionIndex];
-        if (result.version != result.requestedVersion) {
-            if (m_batchedOpaque.isInitialized() && entry.batchedAlloc.valid) {
-                m_batchedOpaque.free(entry.batchedAlloc);
-                entry.batchedAlloc = {};
-            }
-            entry.isBuilding = false;
-            entry.chunk->touchSection(entry.sectionIndex);
-            ++m_stats.meshBuilds;
-            m_stats.meshBuildMs += result.buildMs;
-            m_queuedTasks.erase(resultKey);
-            resultsProcessed++;
+        if (!entry.chunk || entry.chunk.get() != result.chunkPtr) {
+            clearMatchingInFlight();
             continue;
         }
+
+        clearMatchingInFlight();
+
+        if (entry.isBuilding
+            && entry.buildingVersion == result.requestedVersion
+            && entry.chunk.get() == result.chunkPtr) {
+            entry.isBuilding = false;
+            entry.buildingVersion = 0;
+        }
+
+        const uint32_t liveVersion = entry.chunk->getSectionVersion(result.sectionIndex);
+        if (result.version != result.requestedVersion || result.requestedVersion != liveVersion) {
+            // Stale mesh data — keep existing GPU mesh, force rebuild
+            requestSectionMesh(entry);
+            continue;
+        }
+
+        if (!isSectionMeshReady(*entry.chunk)) {
+            requestSectionMesh(entry);
+            continue;
+        }
+
         entry.bounds = result.meshData.bounds;
+        if (entry.bounds.max.x <= entry.bounds.min.x) {
+            entry.bounds = { glm::vec3(0.0f), glm::vec3(16.0f) };
+        }
 
         if (m_batchedOpaque.isInitialized()) {
-            if (entry.batchedAlloc.valid) {
-                m_batchedOpaque.free(entry.batchedAlloc);
-            }
+            OC_ZONE_SCOPED_N("UploadOpaqueMesh");
+            BatchedMesh::Allocation oldAlloc = entry.batchedAlloc;
             if (!result.meshData.opaque.indices.empty()) {
                 entry.batchedAlloc = m_batchedOpaque.upload(
                     result.meshData.opaque.vertices, result.meshData.opaque.indices);
+                if (!entry.batchedAlloc.valid) {
+                    // Allocator full — keep old mesh and retry
+                    entry.batchedAlloc = oldAlloc;
+                    requestSectionMesh(entry);
+                    continue;
+                }
             } else {
                 entry.batchedAlloc = {};
+            }
+            if (oldAlloc.valid) {
+                m_batchedOpaque.free(oldAlloc);
             }
         } else {
             entry.mesh.upload(result.meshData.opaque);
@@ -243,16 +336,29 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
 
         entry.translucentMesh.upload(result.meshData.translucent);
         entry.uploadedVersion = result.version;
+        entry.hasMesh = true;
         entry.isBuilding = false;
-        m_queuedTasks.erase(resultKey);
-        ++m_stats.meshBuilds;
-        m_stats.meshBuildMs += result.buildMs;
-        resultsProcessed++;
+        entry.buildingVersion = 0;
     }
+}
 
+void WorldRenderer::enqueueDirtyMeshes(int limit) {
+    OC_ZONE_SCOPED;
     if (limit <= 0) return;
 
-    int buildsStarted = 0;
+    struct DirtyCandidate {
+        int cx = 0;
+        int cz = 0;
+        int si = 0;
+        int priority = 0;
+        std::shared_ptr<Chunk> chunk;
+        SectionRenderEntry* entry = nullptr;
+    };
+    std::vector<DirtyCandidate> candidates;
+    candidates.reserve(512);
+
+    const int keepDist = m_renderDistanceChunks + 2;
+
     for (auto& col : m_columns) {
         if (!col.chunk) continue;
 
@@ -261,66 +367,163 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
             continue;
         }
 
-        if (std::abs(col.cx - m_playerCX) > m_renderDistanceChunks + 2 ||
-            std::abs(col.cz - m_playerCZ) > m_renderDistanceChunks + 2) {
+        // Keep column pointer in sync with world's current chunk instance
+        auto live = m_world.getChunk(col.cx, col.cz);
+        if (live && live.get() != col.chunk.get()) {
+            addSectionsForChunk(live);
             continue;
         }
+
+        const int distX = std::abs(col.cx - m_playerCX);
+        const int distZ = std::abs(col.cz - m_playerCZ);
+        if (distX > keepDist || distZ > keepDist) continue;
+        if (!isSectionMeshReady(*col.chunk)) continue;
+
+        const int colPriority = std::max(distX, distZ);
 
         for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
             auto& entry = col.sections[si];
             if (!entry.chunk) continue;
-            if (!entry.chunk->isSectionDirty(si) || entry.isBuilding) continue;
 
-            uint32_t currentVersion = entry.chunk->getSectionVersion(si);
-            ChunkState state = entry.chunk->getState();
-            if (state != ChunkState::Complete && state != ChunkState::Decorated && state != ChunkState::Lighted) {
-                entry.chunk->clearSectionDirty(si);
-                continue;
-            }
+            const SectionKey key = makeSectionKey(col.cx, col.cz, si);
+            const uint32_t version = entry.chunk->getSectionVersion(si);
+            const bool nonEmpty = entry.chunk->isSectionNonEmpty(si);
+            const bool hasMesh = sectionHasRenderableMesh(entry);
 
-            entry.isBuilding = true;
-            bool enqueued = false;
+            bool inFlight = false;
             {
                 std::lock_guard<std::mutex> lock(m_taskMutex);
-                if (m_queuedTasks.size() < kMaxQueuedTasks) {
-                    MeshTask task;
-                    task.chunk = col.chunk;
-                    task.cx = col.cx;
-                    task.cz = col.cz;
-                    task.sectionIndex = si;
-                    task.requestedVersion = currentVersion;
-                    int distX = std::abs(col.cx - m_playerCX);
-                    int distZ = std::abs(col.cz - m_playerCZ);
-                    task.priority = std::max(distX, distZ);
-                    m_taskQueue.push(std::move(task));
-                    m_queuedTasks.insert(sectionKey(col.cx, col.cz, si));
-                    enqueued = true;
+                auto it = m_inFlight.find(key);
+                if (it != m_inFlight.end()) {
+                    // Drop stale in-flight records (chunk replaced / version advanced)
+                    if (it->second.chunkPtr != entry.chunk.get()
+                        || it->second.generation != m_meshGeneration
+                        || it->second.version != version) {
+                        m_inFlight.erase(it);
+                    } else {
+                        inFlight = true;
+                    }
                 }
             }
-            if (!enqueued) {
-                entry.isBuilding = false;
+
+            if (inFlight) {
+                entry.isBuilding = true;
+                entry.buildingVersion = version;
                 continue;
             }
-            entry.chunk->clearSectionDirty(si);
-            m_cv.notify_one();
-            if (++buildsStarted >= limit) break;
+
+            // Not in flight — clear stuck building flag
+            if (entry.isBuilding) {
+                entry.isBuilding = false;
+                entry.buildingVersion = 0;
+            }
+
+            // Force dirty if:
+            //  - chunk says dirty
+            //  - non-empty section has no mesh
+            //  - mesh version is behind
+            bool needsBuild = entry.chunk->isSectionDirty(si);
+            if (!needsBuild && nonEmpty && !hasMesh) {
+                entry.chunk->touchSection(si);
+                needsBuild = true;
+            }
+            if (!needsBuild && hasMesh && entry.uploadedVersion != version) {
+                entry.chunk->touchSection(si);
+                needsBuild = true;
+            }
+            if (!needsBuild) continue;
+
+            candidates.push_back({col.cx, col.cz, si, colPriority, col.chunk, &entry});
         }
-        if (buildsStarted >= limit) break;
     }
 
-    // Mark far columns for cleanup (removeFarSections was never called)
+    std::sort(candidates.begin(), candidates.end(),
+        [](const DirtyCandidate& a, const DirtyCandidate& b) {
+            return a.priority < b.priority;
+        });
+
+    int buildsStarted = 0;
+    for (const auto& c : candidates) {
+        if (buildsStarted >= limit) break;
+        auto& entry = *c.entry;
+        if (!entry.chunk) continue;
+
+        const SectionKey key = makeSectionKey(c.cx, c.cz, c.si);
+        const uint32_t version = entry.chunk->getSectionVersion(c.si);
+
+        bool enqueued = false;
+        {
+            std::lock_guard<std::mutex> lock(m_taskMutex);
+            if (m_inFlight.size() >= kMaxQueuedTasks) break;
+            if (m_inFlight.count(key) > 0) continue;
+
+            MeshTask task;
+            task.chunk = c.chunk;
+            task.cx = c.cx;
+            task.cz = c.cz;
+            task.sectionIndex = c.si;
+            task.requestedVersion = version;
+            task.generation = m_meshGeneration;
+            task.priority = c.priority;
+            m_taskQueue.push(std::move(task));
+            m_inFlight[key] = InFlightInfo{ entry.chunk.get(), version, m_meshGeneration };
+            enqueued = true;
+        }
+
+        if (!enqueued) break;
+
+        entry.isBuilding = true;
+        entry.buildingVersion = version;
+        entry.chunk->clearSectionDirty(c.si);
+        ++buildsStarted;
+    }
+
+    if (buildsStarted > 0) m_cv.notify_all();
+}
+
+void WorldRenderer::reconcileMissingColumns() {
+    OC_ZONE_SCOPED;
+    // Ensure every loaded chunk near the player has a render column.
+    // Fixes cases where popNewChunks was consumed elsewhere or a reload was missed.
+    const int keepDist = m_renderDistanceChunks + 2;
+    for (const auto& chunk : m_world.getAllChunks()) {
+        if (!chunk) continue;
+        const int cx = chunk->getX();
+        const int cz = chunk->getZ();
+        if (std::abs(cx - m_playerCX) > keepDist || std::abs(cz - m_playerCZ) > keepDist) continue;
+
+        ChunkColumn* col = findColumn(cx, cz);
+        if (!col || col->chunk.get() != chunk.get()) {
+            addSectionsForChunk(chunk);
+            continue;
+        }
+
+        // Existing column: ensure non-empty sections without meshes get dirtied
+        if (!isSectionMeshReady(*chunk)) continue;
+        for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
+            auto& entry = col->sections[si];
+            if (!entry.chunk) {
+                entry.chunk = chunk;
+                entry.sectionIndex = si;
+            }
+            if (chunk->isSectionNonEmpty(si) && !sectionHasRenderableMesh(entry) && !entry.isBuilding) {
+                requestSectionMesh(entry);
+            }
+        }
+    }
+}
+
+void WorldRenderer::cleanupRemovedColumns() {
     removeFarSections(m_playerCX, m_playerCZ, m_renderDistanceChunks + 2);
 
-    // Cleanup columns whose chunks were unloaded
+    const std::size_t sizeBefore = m_columns.size();
     auto newEnd = std::remove_if(m_columns.begin(), m_columns.end(),
         [this](ChunkColumn& col) {
             if (col.needsCleanup || !col.chunk || !m_world.isChunkLoaded(col.cx, col.cz)) {
-                if (m_batchedOpaque.isInitialized()) {
-                    for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
-                        if (col.sections[si].batchedAlloc.valid) {
-                            m_batchedOpaque.free(col.sections[si].batchedAlloc);
-                        }
-                    }
+                for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
+                    freeSectionMesh(col.sections[si]);
+                    std::lock_guard<std::mutex> lock(m_taskMutex);
+                    m_inFlight.erase(makeSectionKey(col.cx, col.cz, si));
                 }
                 return true;
             }
@@ -328,13 +531,28 @@ void WorldRenderer::updateDirtyMeshes(int limit) {
         });
     m_columns.erase(newEnd, m_columns.end());
 
-    m_columnIndex.clear();
-    for (std::size_t i = 0; i < m_columns.size(); ++i) {
-        m_columnIndex[columnKey(m_columns[i].cx, m_columns[i].cz)] = i;
+    if (m_columns.size() != sizeBefore || m_columnIndex.size() != m_columns.size()) {
+        m_columnIndex.clear();
+        m_columnIndex.reserve(m_columns.size() * 2);
+        for (std::size_t i = 0; i < m_columns.size(); ++i) {
+            m_columnIndex[columnKey(m_columns[i].cx, m_columns[i].cz)] = i;
+        }
+        m_stats.sectionCount = m_columns.size() * Chunk::SECTION_COUNT;
     }
 }
 
+void WorldRenderer::updateDirtyMeshes(int limit) {
+    OC_ZONE_SCOPED;
+    processMeshResults(128);
+    reconcileMissingColumns();
+    enqueueDirtyMeshes(limit);
+    cleanupRemovedColumns();
+    OC_PLOT("MeshInFlight", m_inFlight.size());
+    OC_PLOT("MeshColumns", m_columns.size());
+}
+
 void WorldRenderer::updateVisibleSections(const Frustum& frustum, const glm::dvec3& cameraPos) {
+    OC_ZONE_SCOPED;
     m_visibleOpaque.clear();
     m_visibleTranslucent.clear();
     m_stats.visibleSections = 0;
@@ -358,11 +576,22 @@ void WorldRenderer::updateVisibleSections(const Frustum& frustum, const glm::dve
             auto& entry = col.sections[si];
             if (!entry.chunk) continue;
 
+            // Skip known-empty sections that already finished meshing as empty
+            if (entry.hasMesh && !sectionHasRenderableMesh(entry)
+                && !entry.chunk->isSectionNonEmpty(si)) {
+                continue;
+            }
+
             glm::vec3 relativePos = glm::vec3(
                 glm::dvec3(col.cx * 16, si * 16, col.cz * 16) - cameraPos
             );
 
-            if (!frustum.intersects(entry.bounds, relativePos)) continue;
+            // Use full section AABB if bounds are degenerate
+            AABB bounds = entry.bounds;
+            if (bounds.max.x <= bounds.min.x || bounds.max.y <= bounds.min.y || bounds.max.z <= bounds.min.z) {
+                bounds = { glm::vec3(0.0f), glm::vec3(16.0f) };
+            }
+            if (!frustum.intersects(bounds, relativePos)) continue;
 
             bool hasOpaque = m_batchedOpaque.isInitialized()
                 ? entry.batchedAlloc.valid
@@ -394,12 +623,15 @@ void WorldRenderer::updateVisibleSections(const Frustum& frustum, const glm::dve
 }
 
 void WorldRenderer::buildBatchedFrameData(const Frustum& frustum, const glm::dvec3& cameraPos) {
+    (void)frustum;
     m_sectionGPUData.clear();
     m_opaqueCommands.clear();
 
     for (const auto* entry : m_visibleOpaque) {
-        const glm::dvec3 sectionCenterD(entry->chunk->getX() * 16, entry->sectionIndex * 16, entry->chunk->getZ() * 16);
-        glm::vec3 relativeCenter = glm::vec3(sectionCenterD - cameraPos);
+        if (!entry->batchedAlloc.valid) continue;
+
+        const glm::dvec3 sectionOriginD(entry->chunk->getX() * 16, entry->sectionIndex * 16, entry->chunk->getZ() * 16);
+        glm::vec3 relativeCenter = glm::vec3(sectionOriginD - cameraPos);
         SectionGPUData gpuData;
         gpuData.model = glm::translate(glm::mat4(1.0f), relativeCenter);
         gpuData.aabbMin = glm::vec4(entry->bounds.min + relativeCenter, 1.0f);
@@ -441,6 +673,8 @@ void WorldRenderer::renderOpaque(const Frustum& frustum, Shader& shader, const g
 }
 
 void WorldRenderer::renderOpaqueBatched(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos) {
+    OC_ZONE_SCOPED;
+    (void)shader;
     m_stats.drawCalls = 0;
     m_stats.triangles = 0;
 
@@ -453,36 +687,44 @@ void WorldRenderer::renderOpaqueBatched(const Frustum& frustum, Shader& shader, 
     m_batchedShader->use();
     glDisable(GL_BLEND);
 
-    // Wait for GPU to finish reading SSBO from previous frame
+    constexpr std::size_t maxSections = 100000;
+    const std::size_t uploadCount = std::min(m_sectionGPUData.size(), maxSections);
+    const std::size_t drawCount = std::min(m_opaqueCommands.size(), uploadCount);
+
+    // Hard wait: GPU must finish reading last frame's SSBO before we overwrite it.
+    // Soft/timeout waits allowed partial overwrites → glitchy transposed faces.
     if (m_ssboFence) {
         GLenum waitResult = GL_TIMEOUT_EXPIRED;
         while (waitResult != GL_ALREADY_SIGNALED && waitResult != GL_CONDITION_SATISFIED) {
             waitResult = glClientWaitSync(m_ssboFence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000);
+            if (waitResult == GL_WAIT_FAILED) break;
         }
         glDeleteSync(m_ssboFence);
         m_ssboFence = nullptr;
     }
 
-    // Upload section model matrices to SSBO (persistent mapped, write directly)
-    if (m_sectionSSBOPtr) {
+    if (m_sectionSSBOPtr && uploadCount > 0) {
         std::memcpy(m_sectionSSBOPtr, m_sectionGPUData.data(),
-                      static_cast<std::size_t>(m_sectionGPUData.size() * sizeof(SectionGPUData)));
+                      uploadCount * sizeof(SectionGPUData));
     }
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_sectionSSBO);
 
     m_batchedOpaque.bind();
-    m_batchedOpaque.drawIndirect(m_opaqueCommands.data(), m_opaqueCommands.size());
+    m_batchedOpaque.drawIndirect(m_opaqueCommands.data(), drawCount);
 
-    // Insert fence so next frame waits for GPU to finish reading SSBO
+    // Fence covers SSBO read for next frame. BatchedMesh inserts its own VBO/IBO fence.
     m_ssboFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
     m_stats.drawCalls = 1;
     for (const auto* entry : m_visibleOpaque) {
-        m_stats.triangles += entry->batchedAlloc.indexCount / 3;
+        if (entry->batchedAlloc.valid) {
+            m_stats.triangles += entry->batchedAlloc.indexCount / 3;
+        }
     }
 }
 
 void WorldRenderer::renderTranslucent(const Frustum& frustum, Shader& shader, const glm::dvec3& cameraPos) {
+    (void)frustum;
     shader.use();
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

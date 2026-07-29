@@ -30,6 +30,11 @@ public:
 
     void startPickupAnimation(double targetX, double targetY, double targetZ);
 
+    static constexpr double MERGE_RADIUS = 0.5;
+    static constexpr int MAX_MERGE_COUNT = 64;
+
+    bool tryMergeWithNearby();
+
 private:
     void pushOutOfBlocks();
     int m_health = 5;

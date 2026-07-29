@@ -4,6 +4,7 @@
 #include "renderer/RenderEngine.hpp"
 #include "world/Block.hpp"
 #include "items/Item.hpp"
+#include "net/Packets.hpp"
 #include <SDL3/SDL.h>
 
 GuiCreativeInventory::GuiCreativeInventory() {
@@ -181,32 +182,82 @@ void GuiCreativeInventory::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool
 void GuiCreativeInventory::mouseClicked(int mouseX, int mouseY, int button) {
     float invLeft = getInvLeft();
     float invTop = getInvTop();
+    InventoryPlayer& inv = mc->getPlayer().inventory;
+    const bool rightClick = (button == SDL_BUTTON_RIGHT);
 
     int creativeSlot = getCreativeSlotFromMouse(invLeft, invTop, mouseX, mouseY);
     if (creativeSlot >= 0 && creativeSlot < (int)m_creativeItems.size()) {
         const CreativeItem& ci = m_creativeItems[creativeSlot];
-        mc->getPlayer().inventory.cursorStack = {ci.itemID, ci.count, ci.metadata};
+        if (rightClick && !inv.cursorStack.isEmpty() &&
+            inv.cursorStack.itemID == ci.itemID && inv.cursorStack.metadata == ci.metadata) {
+            if (inv.cursorStack.count < InventoryPlayer::MAX_STACK_SIZE)
+                inv.cursorStack.count += 1;
+        } else {
+            inv.cursorStack = {ci.itemID, rightClick ? 1 : ci.count, ci.metadata};
+        }
         return;
     }
 
     int invSlot = getInventorySlotFromMouse(invLeft, invTop, mouseX, mouseY);
     if (invSlot >= 0) {
-        InventoryPlayer& inv = mc->getPlayer().inventory;
-        if (button == SDL_BUTTON_RIGHT) {
+        if (rightClick) {
             if (inv.cursorStack.isEmpty() && !inv.mainInventory[invSlot].isEmpty()) {
                 int take = (inv.mainInventory[invSlot].count + 1) / 2;
                 inv.cursorStack = inv.mainInventory[invSlot];
                 inv.cursorStack.count = take;
                 inv.mainInventory[invSlot].count -= take;
                 if (inv.mainInventory[invSlot].count <= 0) inv.mainInventory[invSlot] = {0, 0, 0};
-            } else if (!inv.cursorStack.isEmpty() && inv.mainInventory[invSlot].isEmpty()) {
-                inv.mainInventory[invSlot] = inv.cursorStack;
-                inv.mainInventory[invSlot].count = 1;
-                inv.cursorStack.count -= 1;
-                if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+            } else if (!inv.cursorStack.isEmpty()) {
+                if (inv.mainInventory[invSlot].isEmpty()) {
+                    inv.mainInventory[invSlot] = inv.cursorStack;
+                    inv.mainInventory[invSlot].count = 1;
+                    inv.cursorStack.count -= 1;
+                    if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+                } else if (inv.mainInventory[invSlot].itemID == inv.cursorStack.itemID &&
+                           inv.mainInventory[invSlot].metadata == inv.cursorStack.metadata &&
+                           inv.mainInventory[invSlot].count < InventoryPlayer::MAX_STACK_SIZE) {
+                    inv.mainInventory[invSlot].count += 1;
+                    inv.cursorStack.count -= 1;
+                    if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+                }
             }
         } else {
             std::swap(inv.cursorStack, inv.mainInventory[invSlot]);
+        }
+
+        if (mc->getNetworkHandler()) {
+            PacketClickWindow packet;
+            packet.windowId = 0;
+            packet.slot = invSlot;
+            packet.button = rightClick ? 1 : 0;
+            packet.actionId = 0;
+            packet.shift = false;
+            packet.itemID = inv.mainInventory[invSlot].itemID;
+            packet.count = inv.mainInventory[invSlot].count;
+            packet.metadata = inv.mainInventory[invSlot].metadata;
+            mc->getNetworkHandler()->sendPacket(packet);
+        }
+        return;
+    }
+
+    // Click outside inventory: drop cursor stack
+    if (!inv.cursorStack.isEmpty() && mc->getNetworkHandler()) {
+        PacketClickWindow packet;
+        packet.windowId = 0;
+        packet.slot = -1;
+        packet.button = rightClick ? 1 : 0;
+        packet.actionId = 0;
+        packet.shift = false;
+        packet.itemID = inv.cursorStack.itemID;
+        packet.count = inv.cursorStack.count;
+        packet.metadata = inv.cursorStack.metadata;
+        mc->getNetworkHandler()->sendPacket(packet);
+
+        if (rightClick) {
+            inv.cursorStack.count -= 1;
+            if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+        } else {
+            inv.cursorStack = {0, 0, 0};
         }
     }
 }

@@ -748,17 +748,38 @@ public:
 class PacketKeyResponse : public AutoPacket<PacketKeyResponse> {
 public:
     std::string key;
+    std::string uuid;
     std::string message;
 
     PacketType getType() const override { return PacketType::KeyResponse; }
 
     void writeImpl(std::vector<uint8_t>& buffer) const {
         writeString(buffer, key);
+        writeString(buffer, uuid);
         writeString(buffer, message);
     }
 
     void readImpl(const uint8_t*& data) {
         key = readString(data);
+        uuid = readString(data);
         message = readString(data);
+    }
+};
+
+class PacketTimeUpdate : public AutoPacket<PacketTimeUpdate> {
+public:
+    double time;
+    double timeOfDay;
+
+    PacketType getType() const override { return PacketType::TimeUpdate; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeDouble(buffer, time);
+        writeDouble(buffer, timeOfDay);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        time = readDouble(data);
+        timeOfDay = readDouble(data);
     }
 };

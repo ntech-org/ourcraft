@@ -1,5 +1,6 @@
 #include "world/World.hpp"
 #include "world/Block.hpp"
+#include "util/Profiler.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -16,10 +17,13 @@ void World::addChunk(std::shared_ptr<Chunk> chunk) {
         m_chunkLookup[key] = chunk;
         m_chunks.push_back(chunk);
     }
-    {
-        std::lock_guard<std::mutex> lock(m_newChunksMutex);
-        m_newChunks.push_back(chunk);
-    }
+    notifyChunkUpdated(chunk);
+}
+
+void World::notifyChunkUpdated(std::shared_ptr<Chunk> chunk) {
+    if (!chunk) return;
+    std::lock_guard<std::mutex> lock(m_newChunksMutex);
+    m_newChunks.push_back(std::move(chunk));
 }
 
 void World::removeChunk(int chunkX, int chunkZ) {
@@ -64,6 +68,7 @@ void World::saveAllChunks() {
 }
 
 bool World::pollGeneratedChunks() {
+    OC_ZONE_SCOPED;
     if (isRemote || !m_loader) return false;
     bool worldChanged = false;
     std::shared_ptr<Chunk> chunk;
@@ -74,6 +79,7 @@ bool World::pollGeneratedChunks() {
         ChunkState state = chunk->getState();
 
         if (state == ChunkState::Generated) {
+            OC_ZONE_SCOPED_N("HandleGenerated");
             {
                 std::lock_guard<std::mutex> lock(m_pendingMutex);
                 m_pendingChunks.erase(chunkKey(cx, cz));
@@ -83,6 +89,7 @@ bool World::pollGeneratedChunks() {
             worldChanged = true;
             m_loader->requestLighting(chunk);
         } else if (state == ChunkState::Complete) {
+            OC_ZONE_SCOPED_N("HandleComplete");
             // This chunk was likely loaded from disk already complete
             {
                 std::lock_guard<std::mutex> lock(m_pendingMutex);
@@ -138,6 +145,7 @@ bool World::pollGeneratedChunks() {
 }
 
 void World::checkChunkProgression(int cx, int cz) {
+    OC_ZONE_SCOPED;
     // Check for decoration (2x2 area)
     for (int dx = -1; dx <= 0; ++dx) {
         for (int dz = -1; dz <= 0; ++dz) {

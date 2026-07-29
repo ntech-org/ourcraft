@@ -7,6 +7,7 @@
 #include "entities/EntityPlayer.hpp"
 #include "Minecraft.hpp"
 #include <cstring>
+#include <mutex>
 
 void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& player, int32_t& playerID,
                         const uint8_t* ptr, size_t size, PacketType type) {
@@ -15,6 +16,17 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         packet.deserialize(ptr, size - 1);
         playerID = packet.entityID;
         player.entityID = playerID;
+        if (!packet.uuid.empty()) {
+            player.uuid = packet.uuid;
+            try {
+                auto& mc = player.getMinecraft();
+                auto& settings = mc.getSettings();
+                if (!settings.accounts.empty() && settings.activeAccountIndex < settings.accounts.size()) {
+                    settings.accounts[settings.activeAccountIndex].uuid = packet.uuid;
+                    settings.saveOptions();
+                }
+            } catch (...) {}
+        }
     } else if (type == PacketType::SpawnEntity) {
         PacketSpawnEntity packet;
         packet.deserialize(ptr, size - 1);
@@ -76,10 +88,16 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             isNew = true;
         }
 
-        std::memcpy(chunk->getBlocks(), packet.blocks.data(), packet.blocks.size());
-        std::memcpy(chunk->getMetadata(), packet.metadata.data(), packet.metadata.size());
-        std::memcpy(chunk->getSkylight(), packet.skylight.data(), packet.skylight.size());
-        std::memcpy(chunk->getBlocklight(), packet.blocklight.data(), packet.blocklight.size());
+        {
+            std::lock_guard<std::mutex> blockLock(chunk->getBlockMutex());
+            std::memcpy(chunk->getBlocks(), packet.blocks.data(), packet.blocks.size());
+            std::memcpy(chunk->getMetadata(), packet.metadata.data(), packet.metadata.size());
+        }
+        {
+            std::lock_guard<std::mutex> lightLock(chunk->getLightMutex());
+            std::memcpy(chunk->getSkylight(), packet.skylight.data(), packet.skylight.size());
+            std::memcpy(chunk->getBlocklight(), packet.blocklight.data(), packet.blocklight.size());
+        }
 
         bool hasLight = false;
         for (uint8_t b : packet.skylight) if (b != 0) { hasLight = true; break; }
@@ -99,6 +117,12 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
 
         if (isNew) {
             world.addChunk(chunk);
+        } else {
+            // Existing client chunk was overwritten — recompute emptiness and
+            // re-notify renderer so meshes rebuild.
+            chunk->recomputeSectionNonEmpty();
+            chunk->computeWaterLevels();
+            world.notifyChunkUpdated(chunk);
         }
 
         auto nW = world.getChunk(packet.x - 1, packet.z);
@@ -142,8 +166,6 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             targetZ = entity->posZ;
             break;
         }
-        targetX *= 0.995;
-        targetZ *= 0.995;
         for (auto& entity : world.getEntities()) {
             if (entity->entityID == packet.itemEntityID) {
                 if (auto* item = dynamic_cast<EntityItem*>(entity.get())) {
@@ -239,9 +261,19 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         packet.deserialize(ptr, size - 1);
         try {
             auto& mc = player.getMinecraft();
-            mc.getSettings().playerKey = packet.key;
-            mc.getSettings().saveOptions();
+            auto& settings = mc.getSettings();
+            if (!settings.accounts.empty() && settings.activeAccountIndex < settings.accounts.size()) {
+                settings.accounts[settings.activeAccountIndex].key = packet.key;
+                if (!packet.uuid.empty()) {
+                    settings.accounts[settings.activeAccountIndex].uuid = packet.uuid;
+                }
+                settings.saveOptions();
+            }
             mc.getChatRenderer().addMessage("", "[System] " + packet.message + ". Key saved automatically.", 0);
         } catch (...) {}
+    } else if (type == PacketType::TimeUpdate) {
+        PacketTimeUpdate packet;
+        packet.deserialize(ptr, size - 1);
+        world.setWorldTime(packet.time);
     }
 }

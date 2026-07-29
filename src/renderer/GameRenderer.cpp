@@ -1,4 +1,5 @@
 #include "renderer/GameRenderer.hpp"
+#include "util/Profiler.hpp"
 #include "renderer/ItemRenderer.hpp"
 #include "renderer/EntityRenderHelper.hpp"
 #include "renderer/UIRenderHelper.hpp"
@@ -89,10 +90,18 @@ void GameRenderer::resize(int width, int height) {
 }
 
 void GameRenderer::render(float partialTicks, int cameraMode, bool showDebug, bool showBoundaries, bool showProfiler, float fps, std::shared_ptr<GuiScreen> currentScreen) {
+    OC_ZONE_SCOPED;
     double frameStart = (double)SDL_GetTicksNS() / 1e9;
-    m_world.pollGeneratedChunks();
-    for (auto& newChunk : m_world.popNewChunks()) {
-        m_worldRenderer->addSectionsForChunk(newChunk);
+    {
+        OC_ZONE_SCOPED_N("PollChunks");
+        m_world.pollGeneratedChunks();
+        for (auto& newChunk : m_world.popNewChunks()) {
+            m_worldRenderer->addSectionsForChunk(newChunk);
+        }
+        // Completed chunks (lighting/decoration finished) need a remesh pass too
+        for (auto& doneChunk : m_world.popCompleteChunks()) {
+            m_worldRenderer->addSectionsForChunk(doneChunk);
+        }
     }
 
     double px = m_player.prevPosX + (m_player.posX - m_player.prevPosX) * (double)partialTicks;
@@ -253,6 +262,7 @@ void GameRenderer::updateItemEquippedProgress() {
 }
 
 void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& fogColor, float voidDarkening) {
+    OC_ZONE_SCOPED;
     // Set up basic shader (used for translucent, selection box, breaking overlay)
     m_basicShader->use();
     m_basicShader->setMat4("projection", projection);
@@ -308,9 +318,18 @@ void GameRenderer::renderWorld(float partialTicks, const glm::mat4& projection, 
 
     m_renderEngine->bindTexture(m_terrainTex);
     m_frustum.update(projection * view);
-    m_worldRenderer->updateDirtyMeshes(64);
-    m_worldRenderer->updateVisibleSections(m_frustum, m_camera.position);
-    m_worldRenderer->renderOpaque(m_frustum, *m_basicShader, m_camera.position);
+    {
+        OC_ZONE_SCOPED_N("UpdateDirtyMeshes");
+        m_worldRenderer->updateDirtyMeshes(64);
+    }
+    {
+        OC_ZONE_SCOPED_N("UpdateVisibleSections");
+        m_worldRenderer->updateVisibleSections(m_frustum, m_camera.position);
+    }
+    {
+        OC_ZONE_SCOPED_N("RenderOpaque");
+        m_worldRenderer->renderOpaque(m_frustum, *m_basicShader, m_camera.position);
+    }
     renderSelectionBox(projection, view);
     renderBreakingOverlay(projection, view);
 }

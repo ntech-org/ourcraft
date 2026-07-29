@@ -149,7 +149,8 @@ void CloudRenderer::renderSimpleClouds(const World& world, const Camera& camera,
     const uint8_t ca = 204;
 
     const int tileSize = 32;
-    const int renderRadius = std::max(32, renderDistance * 16);
+    // renderDistance is already in blocks (chunks * 16 from caller)
+    const int renderRadius = std::max(32, renderDistance);
     const int halfTiles = (int)std::ceil((float)renderRadius / (float)tileSize) + 1;
 
     std::vector<CloudVertex> verts;
@@ -212,7 +213,8 @@ void CloudRenderer::renderFancyClouds(const World& world, const Camera& camera, 
 
     const int columnSize = 8;
     const float sectionSize = (float)columnSize * cloudScale;
-    const int renderRadius = std::max(32, renderDistance * 16);
+    // renderDistance is already in blocks (chunks * 16 from caller)
+    const int renderRadius = std::max(32, renderDistance);
     const int sectionRadius = (int)std::ceil((float)renderRadius / sectionSize) + 1;
     const float faceEps = 1.0f / 1024.0f;
 

@@ -83,3 +83,46 @@ TEST_CASE("InventoryPlayer slot navigation") {
     inv.setSlot(5);
     CHECK(inv.currentSlot == 5);
 }
+
+TEST_CASE("InventoryPlayer addItemReturningRemainder") {
+    InventoryPlayer inv;
+    // Fill inventory almost completely with stone (id 1)
+    for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+        inv.mainInventory[i] = {1, 64, 0, 0};
+    }
+    inv.mainInventory[0] = {1, 60, 0, 0};
+    int rem = inv.addItemReturningRemainder(1, 10, 0);
+    CHECK(rem == 6);
+    CHECK(inv.mainInventory[0].count == 64);
+}
+
+TEST_CASE("InventoryPlayer crafting consumes ingredients") {
+    InventoryPlayer inv;
+    // One log in 2x2 craft grid -> 4 planks
+    inv.mainInventory[InventoryPlayer::CRAFT_START] = {17, 2, 0, 0}; // log
+    inv.updateCrafting();
+    CHECK_FALSE(inv.mainInventory[InventoryPlayer::RESULT_SLOT].isEmpty());
+    CHECK(inv.mainInventory[InventoryPlayer::RESULT_SLOT].itemID == 5);
+    CHECK(inv.mainInventory[InventoryPlayer::RESULT_SLOT].count == 4);
+
+    inv.handleClick(InventoryPlayer::RESULT_SLOT, false);
+    CHECK(inv.cursorStack.itemID == 5);
+    CHECK(inv.cursorStack.count == 4);
+    // After taking result, one log consumed
+    CHECK(inv.mainInventory[InventoryPlayer::CRAFT_START].count == 1);
+}
+
+TEST_CASE("InventoryPlayer crafting rejects full incompatible cursor") {
+    InventoryPlayer inv;
+    inv.mainInventory[InventoryPlayer::CRAFT_START] = {17, 1, 0, 0};
+    inv.updateCrafting();
+    ItemStack result = inv.mainInventory[InventoryPlayer::RESULT_SLOT];
+    REQUIRE_FALSE(result.isEmpty());
+
+    inv.cursorStack = {1, 64, 0, 0}; // full stone stack
+    inv.handleClick(InventoryPlayer::RESULT_SLOT, false);
+    // Ingredients must not be consumed
+    CHECK(inv.mainInventory[InventoryPlayer::CRAFT_START].count == 1);
+    CHECK(inv.cursorStack.itemID == 1);
+    CHECK(inv.cursorStack.count == 64);
+}

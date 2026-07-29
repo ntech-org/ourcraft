@@ -5,8 +5,10 @@
 GuiLoading::GuiLoading() {}
 
 void GuiLoading::updateScreen() {
-    if (mc->getWorld()->getAllChunks().size() > 10) { // Wait for at least 10 chunks
-        mc->displayGuiScreen(nullptr);
+    if (mc->getCurrentScreen().get() == this) {
+        if (mc->getWorld()->getAllChunks().size() > 10) {
+            mc->displayGuiScreen(nullptr);
+        }
     }
 }
 

@@ -2,10 +2,23 @@
 #include <string>
 #include <vector>
 
+struct Account {
+    std::string name;
+    std::string uuid;
+    std::string key;
+};
+
+struct ServerEntry {
+    std::string name;
+    std::string address;
+    int port;
+    std::string alias; // which account to use for this server
+};
+
 class GameSettings {
 public:
     GameSettings();
-    
+
     void loadOptions();
     void saveOptions();
 
@@ -25,12 +38,13 @@ public:
     int maxFps = 60;
     bool enableVsync = true;
 
-    std::string username = "Player";
-    std::string uuid = "00000000-0000-0000-0000-000000000000";
-    std::string playerKey = "";
+    std::vector<Account> accounts;
+    std::vector<ServerEntry> serverList;
+    int activeAccountIndex = 0;
 
     void setDefaults();
 
 private:
     std::string getOptionsFile();
+    std::string getAccountsFile();
 };

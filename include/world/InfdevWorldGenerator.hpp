@@ -5,25 +5,22 @@
 #include "world/JavaRandom.hpp"
 #include <memory>
 #include <vector>
+#include <cstdio>
+#include <cstdint>
 
 class InfdevWorldGenerator : public WorldGenerator {
 public:
     InfdevWorldGenerator(int64_t seed);
     void generateChunk(Chunk& chunk) override;
     
-    // Stage 2: Decoration
+    static bool isFarLandsEnabledStatic() { return s_farLands; }
+    
     void decorateChunk(Chunk& chunk, Chunk* chunkE, Chunk* chunkS, Chunk* chunkSE) override;
 
     void setFarLands(bool enabled) override {
         m_farLands = enabled;
-        int32_t off = enabled ? FARLANDS_OFFSET : 0;
-        m_noiseGen1->setFarLandsOffset(off);
-        m_noiseGen2->setFarLandsOffset(off);
-        m_noiseGen3->setFarLandsOffset(off);
-        m_noiseGen4->setFarLandsOffset(off);
-        m_noiseGen5->setFarLandsOffset(off);
-        m_noiseGen6->setFarLandsOffset(off);
-        m_noiseGen7->setFarLandsOffset(off);
+        s_farLands = enabled;
+        printf("[FARLANDS] setFarLands(%d)\n", enabled);
     }
 
 private:
@@ -40,6 +37,7 @@ private:
 
     int64_t m_seed;
     bool m_farLands = false;
+    static bool s_farLands;
     static constexpr int32_t FARLANDS_OFFSET = 12550824;
     
     std::unique_ptr<NoiseGeneratorOctaves> m_noiseGen1;

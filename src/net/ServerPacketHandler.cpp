@@ -16,6 +16,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
+#include <vector>
 
 ServerPacketHandler::ServerPacketHandler(IntegratedServer& integratedServer, World& world, Server& server,
                                          std::map<ENetPeer*, PlayerSession>& players,
@@ -75,30 +77,54 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
     PacketLogin packet;
     packet.deserialize(data, size);
 
-    // Registration system
+    // Check for duplicate username - kick existing connection
+    for (auto& [existingPeer, session] : m_players) {
+        if (session.username == packet.username && existingPeer != peer) {
+            m_server.kick(existingPeer, "Duplicate connection from another location.");
+            m_players.erase(existingPeer);
+            break;
+        }
+    }
+
+    // Registration system — server is authoritative for UUID
+    std::string serverUUID;
+    bool isLocal = m_server.isLocalhost(peer);
     if (m_registrationManager.isRegistered(packet.username)) {
-        if (packet.key.empty() || !m_registrationManager.verifyKey(packet.username, packet.key)) {
-            PacketChatMessage resp;
-            resp.sender = "";
-            resp.message = "Invalid key! Please login with your key.";
-            resp.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            m_server.sendPacket(peer, resp, true);
+        if (isLocal) {
+            const UserRecord* user = m_registrationManager.getUser(packet.username);
+            serverUUID = user ? user->uuid : "";
+        } else if (!packet.key.empty() && m_registrationManager.verifyKey(packet.username, packet.key)) {
+            const UserRecord* user = m_registrationManager.getUser(packet.username);
+            serverUUID = user ? user->uuid : "";
+        } else if (packet.key.empty()) {
+            std::string newKey = m_registrationManager.reissueKey(packet.username);
+            const UserRecord* user = m_registrationManager.getUser(packet.username);
+            serverUUID = user ? user->uuid : "";
+            PacketKeyResponse keyResp;
+            keyResp.key = newKey;
+            keyResp.uuid = serverUUID;
+            keyResp.message = "Key recovered. Your key was reissued.";
+            m_server.sendPacket(peer, keyResp, true);
+        } else {
+            m_server.kick(peer, "Username already taken on this server. Please join with a different username.");
             return;
         }
     } else {
         std::string newKey = m_registrationManager.registerUser(packet.username);
+        const UserRecord* user = m_registrationManager.getUser(packet.username);
+        serverUUID = user ? user->uuid : "";
         PacketKeyResponse keyResp;
         keyResp.key = newKey;
+        keyResp.uuid = serverUUID;
         keyResp.message = "Account registered successfully";
         m_server.sendPacket(peer, keyResp, true);
     }
 
-    std::cout << "Server: Player " << packet.username << " (" << packet.uuid << ") logged in." << std::endl;
+    std::cout << "Server: Player " << packet.username << " (" << serverUUID << ") logged in." << std::endl;
 
     auto player = std::make_unique<EntityPlayer>(m_world);
     player->username = packet.username;
-    player->uuid = packet.uuid;
+    player->uuid = serverUUID;
 
     PlayerSaveData pData;
     auto saveHandler = m_world.getSaveHandler();
@@ -132,13 +158,19 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
     m_world.spawnEntity(std::move(player));
 
     int32_t eid = pPtr->entityID;
-    m_players[peer] = {eid, packet.username, packet.uuid, pPtr->gameMode, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}, {}, 0, 0.0f, pPtr->posY};
+    m_players[peer] = {eid, packet.username, serverUUID, pPtr->gameMode, pPtr->posX, pPtr->posY, pPtr->posZ, 0.0f, false, {}, {}, 0, 0.0f, pPtr->posY};
     PlayerSession& session = m_players[peer];
     session.lastSentY = pPtr->posY;
 
     PacketLoginResponse resp;
     resp.entityID = eid;
+    resp.username = packet.username;
+    resp.uuid = serverUUID;
     m_server.sendPacket(peer, resp);
+
+    PacketGameModeChange gmPacket;
+    gmPacket.gameMode = (pPtr->gameMode == GameMode::CREATIVE) ? 1 : 0;
+    m_server.sendPacket(peer, gmPacket, true);
 
     PacketWindowItems invPacket;
     invPacket.windowId = 0;
@@ -242,7 +274,6 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
     if (packet.action == DiggingAction::DROP_ITEM) {
         if (!m_players.count(peer)) return;
         PlayerSession& session = m_players[peer];
-        if (session.gameMode == GameMode::CREATIVE) return;
 
         EntityPlayer* player = findPlayer(session.entityID);
         if (!player) return;
@@ -273,6 +304,9 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
     }
 
     if (packet.action == DiggingAction::FINISH) {
+        if (!m_players.count(peer)) return;
+        PlayerSession& session = m_players[peer];
+
         const uint8_t oldID = m_world.getBlockID(packet.x, packet.y, packet.z);
         const uint8_t oldMeta = m_world.getBlockMetadata(packet.x, packet.y, packet.z);
         m_world.setBlockWithNotify(packet.x, packet.y, packet.z, 0);
@@ -285,7 +319,9 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
             m_server.broadcastPacket(ps, false, peer);
         }
 
-        if (oldID > 0 && Block::getHardness(oldID) >= 0.0f) {
+        // Only survival drops blocks when broken
+        if (session.gameMode == GameMode::SURVIVAL &&
+            oldID > 0 && Block::getHardness(oldID) >= 0.0f) {
             int dropID = oldID;
             int dropCount = 1;
             if (const Block* b = Block::blocksList[oldID]) {
@@ -305,26 +341,23 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
             }
         }
 
-        if (m_players.count(peer)) {
-            PlayerSession& session = m_players[peer];
-            if (session.gameMode == GameMode::SURVIVAL) {
-                EntityPlayer* player = findPlayer(session.entityID);
-                if (player) {
-                    ItemStack& held = player->inventory.getCurrentStack();
-                    if (!held.isEmpty() && Item::itemsList[held.itemID]) {
-                        if (auto* tool = dynamic_cast<ItemTool*>(Item::itemsList[held.itemID])) {
-                            held.damage += 1;
-                            if (held.damage >= tool->maxDamage) {
-                                held = {0, 0, 0, 0};
-                            }
-                            PacketSetSlot setSlot;
-                            setSlot.windowId = 0;
-                            setSlot.slot = player->inventory.currentSlot;
-                            setSlot.itemID = held.itemID;
-                            setSlot.count = held.count;
-                            setSlot.metadata = held.metadata;
-                            m_server.sendPacket(peer, setSlot, true);
+        if (session.gameMode == GameMode::SURVIVAL) {
+            EntityPlayer* player = findPlayer(session.entityID);
+            if (player) {
+                ItemStack& held = player->inventory.getCurrentStack();
+                if (!held.isEmpty() && Item::itemsList[held.itemID]) {
+                    if (auto* tool = dynamic_cast<ItemTool*>(Item::itemsList[held.itemID])) {
+                        held.damage += 1;
+                        if (held.damage >= tool->maxDamage) {
+                            held = {0, 0, 0, 0};
                         }
+                        PacketSetSlot setSlot;
+                        setSlot.windowId = 0;
+                        setSlot.slot = player->inventory.currentSlot;
+                        setSlot.itemID = held.itemID;
+                        setSlot.count = held.count;
+                        setSlot.metadata = held.metadata;
+                        m_server.sendPacket(peer, setSlot, true);
                     }
                 }
             }
@@ -384,23 +417,52 @@ void ServerPacketHandler::handleClickWindow(ENetPeer* peer, const uint8_t* data,
 
     InventoryPlayer& inv = player->inventory;
 
-    if (packet.slot == -1 && !inv.cursorStack.isEmpty()) {
-        if (session.gameMode == GameMode::SURVIVAL) {
-            ItemStack dropped = inv.cursorStack;
-            int dropCount = (packet.button != 0) ? 1 : dropped.count;
-            auto item = std::make_unique<EntityItem>(m_world, dropped.itemID, dropCount, dropped.metadata);
-            item->setPosition(player->posX, player->posY + 1.0, player->posZ);
-            double yawRad = (double)player->rotationYaw * 3.14159265358979323846 / 180.0;
-            item->motionX = -std::sin(yawRad) * 0.1;
-            item->motionZ =  std::cos(yawRad) * 0.1;
-            item->motionY = 0.2;
-            m_world.spawnEntity(std::move(item));
-
-            inv.cursorStack.count -= dropCount;
-            if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+    auto sendSlot = [&](int s) {
+        PacketSetSlot setSlot;
+        setSlot.windowId = packet.windowId;
+        setSlot.slot = s;
+        if (s == -1) {
+            setSlot.itemID = inv.cursorStack.itemID;
+            setSlot.count = inv.cursorStack.count;
+            setSlot.metadata = inv.cursorStack.metadata;
+        } else if (s >= 0 && s < InventoryPlayer::TOTAL_SIZE) {
+            setSlot.itemID = inv.mainInventory[s].itemID;
+            setSlot.count = inv.mainInventory[s].count;
+            setSlot.metadata = inv.mainInventory[s].metadata;
         } else {
-            inv.cursorStack = {0, 0, 0};
+            return;
         }
+        m_server.sendPacket(peer, setSlot, true);
+    };
+
+    auto dropStack = [&](int itemID, int count, uint8_t metadata) {
+        if (itemID <= 0 || count <= 0) return;
+        auto item = std::make_unique<EntityItem>(m_world, itemID, count, metadata);
+        item->setPosition(player->posX, player->posY + 1.0, player->posZ);
+        double yawRad = (double)player->rotationYaw * 3.14159265358979323846 / 180.0;
+        item->motionX = -std::sin(yawRad) * 0.1;
+        item->motionZ =  std::cos(yawRad) * 0.1;
+        item->motionY = 0.2;
+        m_world.spawnEntity(std::move(item));
+    };
+
+    // slot == -2: close crafting UI — return craft/workbench ingredients
+    if (packet.slot == -2) {
+        auto returnRange = [&](int start, int count) {
+            for (int i = 0; i < count; ++i) {
+                int s = start + i;
+                if (inv.mainInventory[s].isEmpty()) continue;
+                ItemStack stack = inv.mainInventory[s];
+                inv.mainInventory[s] = {0, 0, 0};
+                int remainder = inv.addItemReturningRemainder(stack.itemID, stack.count, stack.metadata);
+                if (remainder > 0) dropStack(stack.itemID, remainder, stack.metadata);
+            }
+        };
+        returnRange(InventoryPlayer::CRAFT_START, 4);
+        returnRange(InventoryPlayer::WORKBENCH_START, 9);
+        inv.mainInventory[InventoryPlayer::RESULT_SLOT] = {0, 0, 0};
+        inv.mainInventory[InventoryPlayer::WORKBENCH_RESULT] = {0, 0, 0};
+        inv.updateCrafting();
 
         PacketConfirmTransaction resp;
         resp.windowId = packet.windowId;
@@ -408,17 +470,55 @@ void ServerPacketHandler::handleClickWindow(ENetPeer* peer, const uint8_t* data,
         resp.accepted = true;
         m_server.sendPacket(peer, resp, true);
 
-        PacketSetSlot cursorPacket;
-        cursorPacket.windowId = 0;
-        cursorPacket.slot = -1;
-        cursorPacket.itemID = inv.cursorStack.itemID;
-        cursorPacket.count = inv.cursorStack.count;
-        cursorPacket.metadata = inv.cursorStack.metadata;
-        m_server.sendPacket(peer, cursorPacket, true);
+        PacketWindowItems invPacket;
+        invPacket.windowId = 0;
+        for (int i = 0; i < InventoryPlayer::TOTAL_SIZE; ++i) {
+            invPacket.items.push_back({inv.mainInventory[i].itemID,
+                                       inv.mainInventory[i].count,
+                                       inv.mainInventory[i].metadata});
+        }
+        m_server.sendPacket(peer, invPacket, true);
+        sendSlot(-1);
         return;
     }
 
-    inv.handleClick(packet.slot, packet.button != 0);
+    if (packet.slot == -1) {
+        // Creative can manufacture a cursor stack client-side; accept payload when empty.
+        if (inv.cursorStack.isEmpty() && session.gameMode == GameMode::CREATIVE &&
+            packet.itemID > 0 && packet.count > 0) {
+            inv.cursorStack = {packet.itemID, packet.count, packet.metadata, 0};
+        }
+
+        if (!inv.cursorStack.isEmpty()) {
+            ItemStack dropped = inv.cursorStack;
+            int dropCount = (packet.button != 0) ? 1 : dropped.count;
+            if (dropCount > dropped.count) dropCount = dropped.count;
+            dropStack(dropped.itemID, dropCount, dropped.metadata);
+
+            inv.cursorStack.count -= dropCount;
+            if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+        }
+
+        PacketConfirmTransaction resp;
+        resp.windowId = packet.windowId;
+        resp.actionId = packet.actionId;
+        resp.accepted = true;
+        m_server.sendPacket(peer, resp, true);
+        sendSlot(-1);
+        return;
+    }
+
+    if (session.gameMode == GameMode::CREATIVE &&
+        packet.slot >= 0 && packet.slot < InventoryPlayer::INVENTORY_SIZE) {
+        // Creative inventory is client-authoritative for player slots; apply post-click payload.
+        if (packet.itemID > 0 && packet.count > 0) {
+            inv.mainInventory[packet.slot] = {packet.itemID, packet.count, packet.metadata, 0};
+        } else {
+            inv.mainInventory[packet.slot] = {0, 0, 0, 0};
+        }
+    } else {
+        inv.handleClick(packet.slot, packet.button != 0);
+    }
 
     PacketConfirmTransaction resp;
     resp.windowId = packet.windowId;
@@ -427,6 +527,20 @@ void ServerPacketHandler::handleClickWindow(ENetPeer* peer, const uint8_t* data,
     m_server.sendPacket(peer, resp, true);
 
     std::vector<int> slotsToSync = { packet.slot, InventoryPlayer::RESULT_SLOT, InventoryPlayer::WORKBENCH_RESULT };
+    // Sync all crafting grid slots when crafting result is taken (prevents item loss on desync)
+    if (packet.slot == InventoryPlayer::RESULT_SLOT) {
+        for (int i = 0; i < 4; ++i) slotsToSync.push_back(InventoryPlayer::CRAFT_START + i);
+    } else if (packet.slot == InventoryPlayer::WORKBENCH_RESULT) {
+        for (int i = 0; i < 9; ++i) slotsToSync.push_back(InventoryPlayer::WORKBENCH_START + i);
+    } else if (packet.slot >= InventoryPlayer::CRAFT_START && packet.slot < InventoryPlayer::CRAFT_START + 4) {
+        for (int i = 0; i < 4; ++i) slotsToSync.push_back(InventoryPlayer::CRAFT_START + i);
+    } else if (packet.slot >= InventoryPlayer::WORKBENCH_START && packet.slot < InventoryPlayer::WORKBENCH_START + 9) {
+        for (int i = 0; i < 9; ++i) slotsToSync.push_back(InventoryPlayer::WORKBENCH_START + i);
+    }
+
+    std::sort(slotsToSync.begin(), slotsToSync.end());
+    slotsToSync.erase(std::unique(slotsToSync.begin(), slotsToSync.end()), slotsToSync.end());
+
     for (int s : slotsToSync) {
         if (s < 0 || s >= InventoryPlayer::TOTAL_SIZE) continue;
         PacketSetSlot setSlot;

@@ -49,6 +49,8 @@ public:
     InventoryPlayer();
 
     bool addItem(int itemID, int count, uint8_t metadata = 0);
+    // Returns count that could not fit
+    int addItemReturningRemainder(int itemID, int count, uint8_t metadata = 0);
     bool consumeCurrentItem(int count);
     int getCurrentItemID() const;
     int getCurrentItemCount() const;

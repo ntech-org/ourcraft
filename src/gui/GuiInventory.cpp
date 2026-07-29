@@ -4,6 +4,7 @@
 #include "renderer/RenderEngine.hpp"
 #include "world/Block.hpp"
 #include "items/Item.hpp"
+#include "net/Packets.hpp"
 #include <SDL3/SDL.h>
 
 void GuiInventory::initGui() {
@@ -173,6 +174,13 @@ void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightC
         packet.count = inv.cursorStack.count;
         packet.metadata = inv.cursorStack.metadata;
         mc->getNetworkHandler()->sendPacket(packet);
+        // Predict drop locally
+        if (rightClick) {
+            inv.cursorStack.count -= 1;
+            if (inv.cursorStack.count <= 0) inv.cursorStack = {0, 0, 0};
+        } else {
+            inv.cursorStack = {0, 0, 0};
+        }
         return;
     }
 
@@ -197,5 +205,44 @@ void GuiInventory::handleClickOnSlot(InventoryPlayer& inv, int slot, bool rightC
         
         mc->getNetworkHandler()->sendPacket(packet);
     }
+}
+
+void GuiInventory::returnCraftingItems() {
+    if (!mc) return;
+    InventoryPlayer& inv = mc->getPlayer().inventory;
+
+    // Server is authoritative for grid return/drop; predict by moving into inventory only.
+    auto returnRange = [&](int start, int count) {
+        for (int i = 0; i < count; ++i) {
+            int slot = start + i;
+            if (inv.mainInventory[slot].isEmpty()) continue;
+            ItemStack stack = inv.mainInventory[slot];
+            inv.mainInventory[slot] = {0, 0, 0};
+            inv.addItemReturningRemainder(stack.itemID, stack.count, stack.metadata);
+        }
+    };
+
+    returnRange(InventoryPlayer::CRAFT_START, 4);
+    returnRange(InventoryPlayer::WORKBENCH_START, 9);
+    inv.mainInventory[InventoryPlayer::RESULT_SLOT] = {0, 0, 0};
+    inv.mainInventory[InventoryPlayer::WORKBENCH_RESULT] = {0, 0, 0};
+    inv.updateCrafting();
+
+    if (mc->getNetworkHandler()) {
+        PacketClickWindow packet;
+        packet.windowId = 0;
+        packet.slot = -2; // close crafting grids
+        packet.button = 0;
+        packet.actionId = 0;
+        packet.shift = false;
+        packet.itemID = 0;
+        packet.count = 0;
+        packet.metadata = 0;
+        mc->getNetworkHandler()->sendPacket(packet);
+    }
+}
+
+void GuiInventory::onGuiClosed() {
+    returnCraftingItems();
 }
 

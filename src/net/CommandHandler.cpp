@@ -184,9 +184,21 @@ std::string CommandHandler::handleTime(CommandContext& ctx) {
     World* world = ctx.server->getWorld();
     if (action == "set") {
         world->setWorldTime((double)value);
+        if (ctx.server->getServer()) {
+            PacketTimeUpdate timePacket;
+            timePacket.time = world->getWorldTime();
+            timePacket.timeOfDay = std::fmod(world->getWorldTime(), 24000.0);
+            ctx.server->getServer()->broadcastPacket(timePacket, true);
+        }
         return "Set time to " + std::to_string(value);
     } else if (action == "add") {
         world->setWorldTime(world->getWorldTime() + (double)value);
+        if (ctx.server->getServer()) {
+            PacketTimeUpdate timePacket;
+            timePacket.time = world->getWorldTime();
+            timePacket.timeOfDay = std::fmod(world->getWorldTime(), 24000.0);
+            ctx.server->getServer()->broadcastPacket(timePacket, true);
+        }
         return "Added " + std::to_string(value) + " to time";
     }
     return "Unknown action: " + action + ". Use set or add.";

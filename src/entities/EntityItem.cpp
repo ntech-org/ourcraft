@@ -139,3 +139,32 @@ void EntityItem::onCollideWithPlayer(EntityPlayer& player) {
         worldObj.removeEntity(entityID, false);
     }
 }
+
+bool EntityItem::tryMergeWithNearby() {
+    for (auto& entity : worldObj.getEntities()) {
+        if (entity.get() == this) continue;
+        if (entity->entityID == entityID) continue;
+        if (entity->getType() != EntityType::Item) continue;
+
+        auto* other = static_cast<EntityItem*>(entity.get());
+        if (other->pickingUp) continue;
+        if (other->itemID != itemID) continue;
+        if (other->metadata != metadata) continue;
+
+        double dx = posX - other->posX;
+        double dy = posY - other->posY;
+        double dz = posZ - other->posZ;
+        if (dx * dx + dy * dy + dz * dz > MERGE_RADIUS * MERGE_RADIUS) continue;
+
+        int total = other->count + count;
+        if (total <= MAX_MERGE_COUNT) {
+            other->count = total;
+            return true;
+        } else {
+            other->count = MAX_MERGE_COUNT;
+            count = total - MAX_MERGE_COUNT;
+            return false;
+        }
+    }
+    return false;
+}

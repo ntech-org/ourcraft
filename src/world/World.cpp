@@ -1,8 +1,10 @@
 #include "world/World.hpp"
+#include "util/Profiler.hpp"
 #include "world/WorldHelpers.hpp"
 #include "world/Block.hpp"
 #include "world/JavaRandom.hpp"
 #include "entities/Entity.hpp"
+#include "entities/EntityItem.hpp"
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
@@ -300,7 +302,14 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
     return {HitType::NONE};
 }
 
-void World::spawnEntity(std::unique_ptr<Entity> e) { if (e->entityID == -1) e->entityID = m_nextEntityID++; m_entities.push_back(std::move(e)); }
+void World::spawnEntity(std::unique_ptr<Entity> e) {
+    if (e->entityID == -1) e->entityID = m_nextEntityID++;
+    if (!isRemote && e->getType() == EntityType::Item) {
+        auto* item = static_cast<EntityItem*>(e.get());
+        if (item->tryMergeWithNearby()) return;
+    }
+    m_entities.push_back(std::move(e));
+}
 
 void World::removeEntity(int32_t id, bool notify) {
     for (auto& entity : m_entities) {
@@ -368,6 +377,7 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
 
             int nlx = nx & 15, nlz = nz & 15;
             int nidx = (nlx << 11) | (nlz << 7) | ny;
+            if (nidx < 0 || nidx >= Chunk::SIZE) return;
             int oldLight = nChunk->getLightInternal(type, nidx);
             int opacity = Block::lightOpacity[nChunk->getBlockID(nlx, ny, nlz)];
 
@@ -430,6 +440,7 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
 
             int nlx = nx & 15, nlz = nz & 15;
             int nidx = (nlx << 11) | (nlz << 7) | ny;
+            if (nidx < 0 || nidx >= Chunk::SIZE) return;
             int neighborLight = nChunk->getLightInternal(type, nidx);
 
             bool dependent = false;
@@ -467,9 +478,12 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
 
 void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int newOpacity, int oldBlockLight, int newBlockLight, int oldSkyLight) {
     auto queueNeighbors = [&](int x, int y, int z, std::vector<LightNode>& queue) {
-        queue.push_back({x - 1, y, z}); queue.push_back({x + 1, y, z});
-        queue.push_back({x, y - 1, z}); queue.push_back({x, y + 1, z});
-        queue.push_back({x, y, z - 1}); queue.push_back({x, y, z + 1});
+        if (x > 0) queue.push_back({x - 1, y, z});
+        queue.push_back({x + 1, y, z});
+        if (y > 0) queue.push_back({x, y - 1, z});
+        if (y < Chunk::HEIGHT - 1) queue.push_back({x, y + 1, z});
+        if (z > 0) queue.push_back({x, y, z - 1});
+        queue.push_back({x, y, z + 1});
     };
 
     {
@@ -528,6 +542,7 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
 }
 
 void World::calculateInitialSkylight(Chunk& chunk) {
+    OC_ZONE_SCOPED;
     chunk.generateHeightMap();
     const int cx = chunk.getX() << 4;
     const int cz = chunk.getZ() << 4;

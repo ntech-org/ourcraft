@@ -1,6 +1,5 @@
 #include "net/Server.hpp"
 #include "net/Packets.hpp"
-#include <stdexcept>
 #include <iostream>
 
 Server::Server(uint16_t port) {
@@ -10,13 +9,12 @@ Server::Server(uint16_t port) {
 
     std::cout << "[Server] Starting server on port " << port << "..." << std::endl;
 
-    // Set reasonable bandwidth limits (e.g. 20MB/s)
     m_server = enet_host_create(&address, 32, 2, 20 * 1024 * 1024, 20 * 1024 * 1024);
     if (m_server == NULL) {
         std::cerr << "[Server] Failed to create ENet host on port " << port << std::endl;
-        throw std::runtime_error("An error occurred while trying to create an ENet server host.");
+    } else {
+        std::cout << "[Server] Server started successfully." << std::endl;
     }
-    std::cout << "[Server] Server started successfully." << std::endl;
 }
 
 Server::~Server() {
@@ -94,4 +92,10 @@ void Server::kick(ENetPeer* peer, const std::string& reason) {
     packet.reason = reason;
     sendPacket(peer, packet, true);
     enet_peer_disconnect_later(peer, 0);
+}
+
+bool Server::isLocalhost(ENetPeer* peer) const {
+    if (!peer || !m_server) return false;
+    ENetAddress addr = peer->address;
+    return addr.host == ENET_HOST_ANY || addr.host == 0x0100007F || addr.host == 0x00000000;
 }

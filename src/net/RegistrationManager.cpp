@@ -40,9 +40,10 @@ std::string RegistrationManager::generateKey() {
     return oss.str();
 }
 
-std::string RegistrationManager::generateUUID() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
+std::string RegistrationManager::generateUUIDFromHash(const std::string& hash) {
+    std::hash<std::string> hasher;
+    size_t h = hasher(hash);
+    std::mt19937 gen(static_cast<uint32_t>(h));
     std::uniform_int_distribution<> dis(0, 15);
     std::ostringstream oss;
     oss << std::hex;
@@ -72,12 +73,23 @@ std::string RegistrationManager::registerUser(const std::string& username) {
 
     std::string key = generateKey();
     std::string hashedKey = hashKey(key);
-    std::string uuid = generateUUID();
+    std::string uuid = generateUUIDFromHash(hashedKey);
 
     m_users[username] = {hashedKey, uuid};
     save();
 
     return key;
+}
+
+std::string RegistrationManager::reissueKey(const std::string& username) {
+    auto it = m_users.find(username);
+    if (it == m_users.end()) return "";
+
+    std::string newKey = generateKey();
+    it->second.publicKey = hashKey(newKey);
+    save();
+
+    return newKey;
 }
 
 bool RegistrationManager::verifyKey(const std::string& username, const std::string& key) {

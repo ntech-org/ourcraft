@@ -44,13 +44,18 @@ public:
                        const std::vector<std::uint32_t>& indices);
 
     void bind() const;
-    void drawIndirect(const void* commands, std::size_t count) const;
+    void drawIndirect(const void* commands, std::size_t count);
+
+    // Wait until GPU has finished reading VBO/IBO from the last draw.
+    // Must be called before free/upload/grow that reuses buffer ranges.
+    void waitGpuIdle();
 
     bool isInitialized() const { return m_vao != 0; }
     std::size_t getVBOUsage() const { return m_vboCapacity - totalFreeBytes(m_vboFree); }
     std::size_t getIBOUsage() const { return m_eboCapacity - totalFreeBytes(m_eboFree); }
 
 private:
+    void insertDrawFence();
     struct FreeBlock {
         std::size_t offset;
         std::size_t size;
@@ -68,6 +73,7 @@ private:
     GLuint m_ebo = 0;
     mutable GLuint m_indirectBuffer = 0;
     mutable std::size_t m_indirectBufferCapacity = 0;
+    GLsync m_drawFence = nullptr;
     std::size_t m_vboCapacity = 0;
     std::size_t m_eboCapacity = 0;
     std::vector<FreeBlock> m_vboFree;

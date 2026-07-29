@@ -2,6 +2,7 @@
 #include "Minecraft.hpp"
 #include "inventory/CraftingManager.hpp"
 #include "renderer/RenderEngine.hpp"
+#include "net/Packets.hpp"
 #include <SDL3/SDL.h>
 
 GuiCrafting::GuiCrafting() {
@@ -73,11 +74,15 @@ void GuiCrafting::mouseClicked(int mouseX, int mouseY, int button) {
     int craftSlot = getCraftingSlotFromMouse(left, top, mouseX, mouseY);
     if (craftSlot >= 0) {
         handleClickOnSlot(mc->getPlayer().inventory, craftSlot, button == SDL_BUTTON_RIGHT);
+        return;
+    }
+
+    int invSlot = getSlotFromMouse(left, top, mouseX, mouseY);
+    if (invSlot >= 0) {
+        handleClickOnSlot(mc->getPlayer().inventory, invSlot, button == SDL_BUTTON_RIGHT);
     } else {
-        int invSlot = getSlotFromMouse(left, top, mouseX, mouseY);
-        if (invSlot >= 0) {
-            handleClickOnSlot(mc->getPlayer().inventory, invSlot, button == SDL_BUTTON_RIGHT);
-        }
+        // Outside GUI: drop cursor stack
+        handleClickOnSlot(mc->getPlayer().inventory, -1, button == SDL_BUTTON_RIGHT);
     }
 }
 
@@ -94,16 +99,5 @@ void GuiCrafting::keyTyped(SDL_Keycode key, SDL_Scancode scancode, bool down) {
 }
 
 void GuiCrafting::onGuiClosed() {
-    // Return items to inventory
-    InventoryPlayer& inv = mc->getPlayer().inventory;
-    for (int i = 0; i < 9; ++i) {
-        int slot = InventoryPlayer::WORKBENCH_START + i;
-        if (!inv.mainInventory[slot].isEmpty()) {
-            ItemStack stack = inv.mainInventory[slot];
-            inv.mainInventory[slot] = {0, 0, 0};
-            if (!inv.addItem(stack.itemID, stack.count, stack.metadata)) {
-                // Drop item (not implemented yet)
-            }
-        }
-    }
+    GuiInventory::onGuiClosed();
 }

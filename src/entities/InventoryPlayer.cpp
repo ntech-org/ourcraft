@@ -9,9 +9,9 @@ InventoryPlayer::InventoryPlayer() {
     cursorStack = {0, 0, 0};
 }
 
-bool InventoryPlayer::addItem(int itemID, int count, uint8_t metadata) {
+int InventoryPlayer::addItemReturningRemainder(int itemID, int count, uint8_t metadata) {
     if (itemID <= 0 || count <= 0) {
-        return false;
+        return count > 0 ? count : 0;
     }
 
     int remaining = count;
@@ -36,7 +36,11 @@ bool InventoryPlayer::addItem(int itemID, int count, uint8_t metadata) {
         }
     }
 
-    return remaining == 0;
+    return remaining;
+}
+
+bool InventoryPlayer::addItem(int itemID, int count, uint8_t metadata) {
+    return addItemReturningRemainder(itemID, count, metadata) == 0;
 }
 
 bool InventoryPlayer::consumeCurrentItem(int count) {

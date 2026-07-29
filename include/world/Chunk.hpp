@@ -91,6 +91,7 @@ public:
 
     bool isSectionNonEmpty(int sectionIndex) const { return m_sectionNonEmpty & (1u << sectionIndex); }
     uint16_t getSectionNonEmptyMask() const { return m_sectionNonEmpty; }
+    void recomputeSectionNonEmpty();
 
     float getWaterLevel(int x, int z) const { return m_waterLevels[x + z * WIDTH]; }
     void computeWaterLevels();

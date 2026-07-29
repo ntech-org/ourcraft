@@ -51,6 +51,7 @@ ourcraft-cpp/
 | zstd        | ZSTD compression for network payloads           |
 | stb         | Image loading (header-only)                     |
 | freetype    | TrueType/OTF font rendering                     |
+| tracy       | Optional frame profiler (function/line-level)   |
 
 ## Building
 
@@ -69,6 +70,35 @@ xmake build ourcraft-server
 ```
 
 Both targets require C++20. Release builds enable LTO and `fastest` optimization. System links on Linux: `pthread`, `dl`, `m`.
+
+### Profiling (Tracy)
+
+The Tracy client is vendored under `third_party/tracy/public` (keep it in sync with your Tracy GUI / `tracy-git`). Enable:
+
+```bash
+xmake f -c -m debug --tracy=y
+xmake build ourcraft
+```
+
+1. Install/run the Tracy GUI (`tracy` from `tracy-git`, or [releases](https://github.com/wolfpld/tracy/releases)).
+2. Run the game: `xmake run ourcraft`
+3. Connect to localhost. `TRACY_ON_DEMAND` starts capture on connect.
+
+If you update Tracy: replace `third_party/tracy/public` with the matching `public/` tree from that commit, then rebuild with `--tracy=y`.
+
+**What you get**
+- Manual zones: frame loop, ticks, render, mesh workers, chunk gen/load/decorate/light, terrain noise, GPU fence waits, server tick
+- Sampling profiler: uninstrumented functions/lines (needs debug symbols; enabled automatically with `--tracy=y`)
+- Plots: mesh in-flight count, column count
+
+On Linux, sampling may need `sudo sysctl kernel.perf_event_paranoid=1` (or run as root once to check).
+
+Disable again with:
+
+```bash
+xmake f --tracy=n
+xmake build ourcraft
+```
 
 ## Running
 

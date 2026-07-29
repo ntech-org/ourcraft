@@ -36,6 +36,7 @@ private:
     std::atomic<bool> m_running{true};
     std::atomic<bool> m_connected{false};
     std::atomic<bool> m_connecting{false};
+    std::atomic<bool> m_disconnectPacketReceived{false};
 
     std::chrono::steady_clock::time_point m_connectStartTime;
 

@@ -1,6 +1,7 @@
 #include "renderer/ChunkMesher.hpp"
 #include "world/World.hpp"
 #include "world/Block.hpp"
+#include "util/Profiler.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -73,6 +74,7 @@ struct SectionWaterLevels {
 }
 
 ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chunk, int si) {
+    OC_ZONE_SCOPED;
     ChunkMeshData md;
     md.bounds.min = glm::vec3(0.0f);
     md.bounds.max = glm::vec3(16.0f);

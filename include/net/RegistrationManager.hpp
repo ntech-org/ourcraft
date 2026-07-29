@@ -20,13 +20,14 @@ public:
     void save();
 
     std::string registerUser(const std::string& username);
+    std::string reissueKey(const std::string& username);
     bool verifyKey(const std::string& username, const std::string& key);
     bool isRegistered(const std::string& username) const;
     const UserRecord* getUser(const std::string& username) const;
 
 private:
     std::string generateKey();
-    std::string generateUUID();
+    std::string generateUUIDFromHash(const std::string& hash);
     std::string hashKey(const std::string& key);
 
     std::string m_filePath;

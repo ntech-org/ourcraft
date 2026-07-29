@@ -1,13 +1,38 @@
 #include "renderer/BatchedMesh.hpp"
+#include "util/Profiler.hpp"
 #include <algorithm>
 #include <cstring>
 #include <iostream>
 
 BatchedMesh::~BatchedMesh() {
+    if (m_drawFence) {
+        glDeleteSync(m_drawFence);
+        m_drawFence = nullptr;
+    }
     if (m_ebo) glDeleteBuffers(1, &m_ebo);
     if (m_vbo) glDeleteBuffers(1, &m_vbo);
     if (m_vao) glDeleteVertexArrays(1, &m_vao);
     if (m_indirectBuffer) glDeleteBuffers(1, &m_indirectBuffer);
+}
+
+void BatchedMesh::waitGpuIdle() {
+    if (!m_drawFence) return;
+    OC_ZONE_SCOPED_N("GPUFenceWait");
+    GLenum waitResult = GL_TIMEOUT_EXPIRED;
+    while (waitResult != GL_ALREADY_SIGNALED && waitResult != GL_CONDITION_SATISFIED) {
+        waitResult = glClientWaitSync(m_drawFence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000);
+        if (waitResult == GL_WAIT_FAILED) break;
+    }
+    glDeleteSync(m_drawFence);
+    m_drawFence = nullptr;
+}
+
+void BatchedMesh::insertDrawFence() {
+    if (m_drawFence) {
+        glDeleteSync(m_drawFence);
+        m_drawFence = nullptr;
+    }
+    m_drawFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 
 bool BatchedMesh::init(std::size_t vboCapacity, std::size_t iboCapacity) {
@@ -188,8 +213,12 @@ bool BatchedMesh::growBuffer(GLenum target, GLuint& buffer, std::size_t& capacit
 
 BatchedMesh::Allocation BatchedMesh::upload(const std::vector<TerrainVertex>& vertices,
                                             const std::vector<std::uint32_t>& indices) {
+    OC_ZONE_SCOPED;
     Allocation result;
     if (vertices.empty() || indices.empty()) return result;
+
+    // GPU may still be reading VBO/IBO ranges from last frame's draw.
+    waitGpuIdle();
 
     std::size_t vboSize = vertices.size() * sizeof(TerrainVertex);
     std::size_t iboSize = indices.size() * sizeof(std::uint32_t);
@@ -238,6 +267,8 @@ BatchedMesh::Allocation BatchedMesh::upload(const std::vector<TerrainVertex>& ve
 
 void BatchedMesh::free(const Allocation& alloc) {
     if (!alloc.valid) return;
+    // Don't recycle ranges the GPU may still be sampling.
+    waitGpuIdle();
     freeBlock(m_vboFree, alloc.vboOffset, alloc.vboSize);
     freeBlock(m_eboFree, alloc.iboOffset, alloc.iboSize);
 }
@@ -265,8 +296,12 @@ void BatchedMesh::bind() const {
     glBindVertexArray(m_vao);
 }
 
-void BatchedMesh::drawIndirect(const void* commands, std::size_t count) const {
+void BatchedMesh::drawIndirect(const void* commands, std::size_t count) {
     if (count == 0) return;
+
+    // Ensure previous frame finished before overwriting the indirect buffer /
+    // before this draw samples VBO/IBO that may be updated later this frame.
+    waitGpuIdle();
 
     std::size_t neededSize = count * sizeof(DrawElementsIndirectCommand);
     if (m_indirectBuffer == 0) {
@@ -291,4 +326,6 @@ void BatchedMesh::drawIndirect(const void* commands, std::size_t count) const {
                                 static_cast<GLsizei>(count),
                                 sizeof(DrawElementsIndirectCommand));
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+
+    insertDrawFence();
 }

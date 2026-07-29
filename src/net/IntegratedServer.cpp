@@ -2,6 +2,7 @@
 #include "net/ServerTick.hpp"
 #include "net/Packets.hpp"
 #include "net/ServerPacketHandler.hpp"
+#include "util/Profiler.hpp"
 #include "world/InfdevWorldGenerator.hpp"
 #include "entities/EntityItem.hpp"
 #include "entities/EntityLiving.hpp"
@@ -109,6 +110,7 @@ void IntegratedServer::stop() {
 }
 
 void IntegratedServer::run() {
+    OC_THREAD_NAME("Server");
     int port = m_config.getInt("port", 25565);
     m_chunkKeepDistance = m_config.getInt("view-distance", 12);
     m_server = std::make_unique<Server>(port);
@@ -138,8 +140,15 @@ void IntegratedServer::run() {
     auto lastTick = std::chrono::steady_clock::now();
 
     while (m_running) {
-        m_server->poll();
-        m_world->pollGeneratedChunks();
+        OC_ZONE_SCOPED_N("ServerLoop");
+        {
+            OC_ZONE_SCOPED_N("ServerPoll");
+            m_server->poll();
+        }
+        {
+            OC_ZONE_SCOPED_N("ServerPollChunks");
+            m_world->pollGeneratedChunks();
+        }
 
         auto now = std::chrono::steady_clock::now();
         if (m_paused) {
@@ -147,6 +156,7 @@ void IntegratedServer::run() {
         } else if (now - lastTick >= std::chrono::milliseconds(50)) {
             tick();
             lastTick = now;
+            OC_FRAME_MARK_NAMED("ServerTick");
         }
 
         m_server->poll();
@@ -160,6 +170,7 @@ void IntegratedServer::run() {
 }
 
 void IntegratedServer::tick() {
+    OC_ZONE_SCOPED;
     m_tickCounter++;
 
     if (m_tickCounter % 6000 == 0) {

@@ -14,6 +14,8 @@ public:
     void sendPacket(ENetPeer* peer, const Packet& packet, bool reliable = true);
     void broadcastPacket(const Packet& packet, bool reliable = true, ENetPeer* excludePeer = nullptr);
     void kick(ENetPeer* peer, const std::string& reason);
+    bool isLocalhost(ENetPeer* peer) const;
+    bool isValid() const { return m_server != nullptr; }
 
     std::function<void(ENetPeer*)> onClientConnected;
     std::function<void(ENetPeer*)> onClientDisconnected;

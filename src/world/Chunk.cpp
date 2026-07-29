@@ -78,6 +78,10 @@ void Chunk::setBlockID(int x, int y, int z, uint8_t id) {
     const int sectionIndex = getSectionIndex(y);
     markSectionDirty(sectionIndex);
 
+    if (id != 0) {
+        m_sectionNonEmpty |= (1u << sectionIndex);
+    }
+
     if (y % SECTION_HEIGHT == 0 && sectionIndex > 0) {
         markSectionDirty(sectionIndex - 1);
     }
@@ -106,6 +110,10 @@ void Chunk::setBlockIDSafe(int x, int y, int z, uint8_t id) {
 
     const int sectionIndex = getSectionIndex(y);
     markSectionDirty(sectionIndex);
+
+    if (id != 0) {
+        m_sectionNonEmpty |= (1u << sectionIndex);
+    }
 
     if (y % SECTION_HEIGHT == 0 && sectionIndex > 0) {
         markSectionDirty(sectionIndex - 1);
@@ -191,6 +199,19 @@ void Chunk::computeWaterLevels() {
             m_waterLevels[x + z * WIDTH] = wl;
         }
     }
+    for (int si = 0; si < SECTION_COUNT; ++si) {
+        const uint8_t* sectionBlocks = m_blocks.data() + si * WIDTH * SECTION_HEIGHT * DEPTH;
+        for (int i = 0; i < WIDTH * SECTION_HEIGHT * DEPTH; ++i) {
+            if (sectionBlocks[i] != 0) {
+                m_sectionNonEmpty |= (1u << si);
+                break;
+            }
+        }
+    }
+}
+
+void Chunk::recomputeSectionNonEmpty() {
+    m_sectionNonEmpty = 0;
     for (int si = 0; si < SECTION_COUNT; ++si) {
         const uint8_t* sectionBlocks = m_blocks.data() + si * WIDTH * SECTION_HEIGHT * DEPTH;
         for (int i = 0; i < WIDTH * SECTION_HEIGHT * DEPTH; ++i) {
