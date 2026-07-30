@@ -21,7 +21,10 @@ void BatchedMesh::waitGpuIdle() {
     GLenum waitResult = GL_TIMEOUT_EXPIRED;
     while (waitResult != GL_ALREADY_SIGNALED && waitResult != GL_CONDITION_SATISFIED) {
         waitResult = glClientWaitSync(m_drawFence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000);
-        if (waitResult == GL_WAIT_FAILED) break;
+        if (waitResult == GL_WAIT_FAILED) {
+            glFinish();
+            break;
+        }
     }
     glDeleteSync(m_drawFence);
     m_drawFence = nullptr;

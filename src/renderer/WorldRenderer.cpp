@@ -16,10 +16,11 @@
 WorldRenderer::WorldRenderer(World& world) : m_world(world), m_running(true) {
     unsigned int numThreads = std::thread::hardware_concurrency();
     if (numThreads == 0) numThreads = 4;
-    numThreads = std::min(numThreads, 4u);
+    numThreads = std::min(numThreads > 2 ? numThreads - 2 : 1u, 4u);
     for (unsigned int i = 0; i < numThreads; ++i) {
         m_meshWorkers.emplace_back(&WorldRenderer::meshWorkerLoop, this);
     }
+    m_world.enableSectionChangeTracking();
     rebuildSectionList();
 }
 
@@ -31,9 +32,9 @@ WorldRenderer::~WorldRenderer() {
             worker.join();
         }
     }
-    if (m_ssboFence) {
-        glDeleteSync(m_ssboFence);
-        m_ssboFence = nullptr;
+    for (auto& fence : m_ssboFences) {
+        if (fence) glDeleteSync(fence);
+        fence = nullptr;
     }
     if (m_sectionSSBO) {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_sectionSSBO);
@@ -74,16 +75,40 @@ void WorldRenderer::freeSectionMesh(SectionRenderEntry& entry) {
 
 bool WorldRenderer::isSectionMeshReady(const Chunk& chunk) const {
     ChunkState state = chunk.getState();
-    return state == ChunkState::Complete
-        || state == ChunkState::Decorated
-        || state == ChunkState::Lighted
-        || state == ChunkState::LightingFinal;
+    return state == ChunkState::Complete;
 }
 
 bool WorldRenderer::sectionHasRenderableMesh(const SectionRenderEntry& entry) const {
-    if (entry.hasMesh) return true;
-    if (m_batchedOpaque.isInitialized()) return entry.batchedAlloc.valid;
+    if (m_batchedOpaque.isInitialized()) {
+        return entry.batchedAlloc.valid || entry.translucentMesh.hasGeometry();
+    }
     return entry.mesh.hasGeometry() || entry.translucentMesh.hasGeometry();
+}
+
+void WorldRenderer::queueSectionMesh(const std::shared_ptr<Chunk>& chunk, int sectionIndex, int urgency) {
+    if (!chunk || sectionIndex < 0 || sectionIndex >= Chunk::SECTION_COUNT) return;
+    if (!isSectionMeshReady(*chunk)) return;
+
+    const SectionKey key = makeSectionKey(chunk->getX(), chunk->getZ(), sectionIndex);
+    const std::uint32_t version = chunk->getSectionVersion(sectionIndex);
+    const int distance = std::max(std::abs(chunk->getX() - m_playerCX), std::abs(chunk->getZ() - m_playerCZ));
+    const int priority = urgency * 100000 + distance;
+    auto pending = m_pendingMeshVersions.find(key);
+    if (pending != m_pendingMeshVersions.end()
+        && pending->second.chunkPtr == chunk.get()
+        && pending->second.version == version
+        && pending->second.priority <= priority) return;
+
+    MeshTask task;
+    task.chunk = chunk;
+    task.cx = chunk->getX();
+    task.cz = chunk->getZ();
+    task.sectionIndex = sectionIndex;
+    task.requestedVersion = version;
+    task.generation = m_meshGeneration;
+    task.priority = priority;
+    m_pendingMeshVersions[key] = PendingMeshInfo{chunk.get(), version, priority};
+    m_pendingMeshQueue.push(std::move(task));
 }
 
 void WorldRenderer::requestSectionMesh(SectionRenderEntry& entry) {
@@ -108,11 +133,11 @@ void WorldRenderer::initBatchedRendering() {
     glGenBuffers(1, &m_sectionSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_sectionSSBO);
     glBufferStorage(GL_SHADER_STORAGE_BUFFER,
-                      static_cast<GLsizeiptr>(maxSections * sizeof(SectionGPUData)),
+                      static_cast<GLsizeiptr>(kSectionBufferCount * maxSections * sizeof(SectionGPUData)),
                       nullptr, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT |
                                GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     m_sectionSSBOPtr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0,
-                                          static_cast<GLsizeiptr>(maxSections * sizeof(SectionGPUData)),
+                                          static_cast<GLsizeiptr>(kSectionBufferCount * maxSections * sizeof(SectionGPUData)),
                                           GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -154,11 +179,6 @@ void WorldRenderer::meshWorkerLoop() {
 
         {
             std::lock_guard<std::mutex> rlock(m_resultMutex);
-            if (m_resultQueue.size() >= kMaxResultQueue) {
-                // Drop oldest; do NOT touch m_inFlight here — only matching
-                // live results or enqueue recovery may clear it.
-                m_resultQueue.pop();
-            }
             m_resultQueue.push(std::move(result));
         }
     }
@@ -171,6 +191,8 @@ void WorldRenderer::rebuildSectionList() {
         while (!m_taskQueue.empty()) m_taskQueue.pop();
         m_inFlight.clear();
     }
+    while (!m_pendingMeshQueue.empty()) m_pendingMeshQueue.pop();
+    m_pendingMeshVersions.clear();
     {
         std::lock_guard<std::mutex> lock(m_resultMutex);
         while (!m_resultQueue.empty()) m_resultQueue.pop();
@@ -190,8 +212,6 @@ void WorldRenderer::rebuildSectionList() {
 
 void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
     if (!chunk || chunk->getState() == ChunkState::Empty) return;
-
-    chunk->computeWaterLevels();
 
     int cx = chunk->getX(), cz = chunk->getZ();
     ChunkColumn* col = findColumn(cx, cz);
@@ -216,7 +236,7 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
         entry.bounds = { glm::vec3(0.0f), glm::vec3(16.0f) };
 
         const uint32_t newVersion = chunk->getSectionVersion(si);
-        const bool missingMesh = !sectionHasRenderableMesh(entry) && chunk->isSectionNonEmpty(si);
+        const bool missingMesh = !entry.hasMesh && chunk->isSectionNonEmpty(si);
         const bool versionMismatch = entry.hasMesh && entry.uploadedVersion != newVersion;
         const bool needsMesh = chunkReplaced || missingMesh || versionMismatch || chunk->isSectionDirty(si);
 
@@ -225,12 +245,10 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
         }
 
         if (needsMesh) {
-            // Invalidate any prior in-flight bookkeeping for this section.
-            {
-                std::lock_guard<std::mutex> lock(m_taskMutex);
-                m_inFlight.erase(makeSectionKey(cx, cz, si));
-            }
+            // Keep matching in-flight work. The enqueue pass removes stale records
+            // by chunk pointer, generation, and section version.
             requestSectionMesh(entry);
+            queueSectionMesh(chunk, si, 1);
         } else {
             entry.isBuilding = false;
             entry.buildingVersion = 0;
@@ -241,6 +259,10 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
 
 void WorldRenderer::processMeshResults(int maxResults) {
     OC_ZONE_SCOPED;
+    {
+        std::lock_guard<std::mutex> lock(m_resultMutex);
+        if (m_resultQueue.empty()) return;
+    }
     // One fence wait for the whole upload/free batch instead of per section.
     if (m_batchedOpaque.isInitialized()) {
         m_batchedOpaque.beginMutationBatch();
@@ -263,7 +285,6 @@ void WorldRenderer::processMeshResults(int maxResults) {
 
         // Always drop matching in-flight entry for THIS exact build only.
         auto clearMatchingInFlight = [&]() {
-            std::lock_guard<std::mutex> lock(m_taskMutex);
             auto it = m_inFlight.find(key);
             if (it == m_inFlight.end()) return;
             if (it->second.chunkPtr == result.chunkPtr
@@ -303,11 +324,13 @@ void WorldRenderer::processMeshResults(int maxResults) {
         if (result.version != result.requestedVersion || result.requestedVersion != liveVersion) {
             // Stale mesh data — keep existing GPU mesh, force rebuild
             requestSectionMesh(entry);
+            queueSectionMesh(entry.chunk, result.sectionIndex);
             continue;
         }
 
         if (!isSectionMeshReady(*entry.chunk)) {
             requestSectionMesh(entry);
+            queueSectionMesh(entry.chunk, result.sectionIndex, 1);
             continue;
         }
 
@@ -353,139 +376,67 @@ void WorldRenderer::enqueueDirtyMeshes(int limit) {
     OC_ZONE_SCOPED;
     if (limit <= 0) return;
 
-    struct DirtyCandidate {
-        int cx = 0;
-        int cz = 0;
-        int si = 0;
-        int priority = 0;
-        std::shared_ptr<Chunk> chunk;
-        SectionRenderEntry* entry = nullptr;
-    };
-    std::vector<DirtyCandidate> candidates;
-    candidates.reserve(512);
-
-    const int keepDist = m_renderDistanceChunks + 2;
-
-    for (auto& col : m_columns) {
-        if (!col.chunk) continue;
-
-        if (!m_world.isChunkLoaded(col.cx, col.cz)) {
-            col.needsCleanup = true;
-            continue;
-        }
-
-        // Keep column pointer in sync with world's current chunk instance
-        auto live = m_world.getChunk(col.cx, col.cz);
-        if (live && live.get() != col.chunk.get()) {
-            addSectionsForChunk(live);
-            continue;
-        }
-
-        const int distX = std::abs(col.cx - m_playerCX);
-        const int distZ = std::abs(col.cz - m_playerCZ);
-        if (distX > keepDist || distZ > keepDist) continue;
-        if (!isSectionMeshReady(*col.chunk)) continue;
-
-        const int colPriority = std::max(distX, distZ);
-
-        for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
-            auto& entry = col.sections[si];
-            if (!entry.chunk) continue;
-
-            const SectionKey key = makeSectionKey(col.cx, col.cz, si);
-            const uint32_t version = entry.chunk->getSectionVersion(si);
-            const bool nonEmpty = entry.chunk->isSectionNonEmpty(si);
-            const bool hasMesh = sectionHasRenderableMesh(entry);
-
-            bool inFlight = false;
-            {
-                std::lock_guard<std::mutex> lock(m_taskMutex);
-                auto it = m_inFlight.find(key);
-                if (it != m_inFlight.end()) {
-                    // Drop stale in-flight records (chunk replaced / version advanced)
-                    if (it->second.chunkPtr != entry.chunk.get()
-                        || it->second.generation != m_meshGeneration
-                        || it->second.version != version) {
-                        m_inFlight.erase(it);
-                    } else {
-                        inFlight = true;
-                    }
-                }
-            }
-
-            if (inFlight) {
-                entry.isBuilding = true;
-                entry.buildingVersion = version;
-                continue;
-            }
-
-            // Not in flight — clear stuck building flag
-            if (entry.isBuilding) {
-                entry.isBuilding = false;
-                entry.buildingVersion = 0;
-            }
-
-            // Force dirty if:
-            //  - chunk says dirty
-            //  - non-empty section has no mesh
-            //  - mesh version is behind
-            bool needsBuild = entry.chunk->isSectionDirty(si);
-            if (!needsBuild && nonEmpty && !hasMesh) {
-                entry.chunk->touchSection(si);
-                needsBuild = true;
-            }
-            if (!needsBuild && hasMesh && entry.uploadedVersion != version) {
-                entry.chunk->touchSection(si);
-                needsBuild = true;
-            }
-            if (!needsBuild) continue;
-
-            candidates.push_back({col.cx, col.cz, si, colPriority, col.chunk, &entry});
+    for (auto& event : m_world.popDirtySections()) {
+        auto live = m_world.getChunk(event.chunk->getX(), event.chunk->getZ());
+        if (live && live.get() == event.chunk.get()) {
+            queueSectionMesh(event.chunk, event.sectionIndex, event.urgency);
         }
     }
 
-    std::sort(candidates.begin(), candidates.end(),
-        [](const DirtyCandidate& a, const DirtyCandidate& b) {
-            return a.priority < b.priority;
-        });
-
     int buildsStarted = 0;
-    for (const auto& c : candidates) {
-        if (buildsStarted >= limit) break;
-        auto& entry = *c.entry;
-        if (!entry.chunk) continue;
+    const std::size_t maxLiveTasks = std::max<std::size_t>(1, m_meshWorkers.size());
+    std::vector<MeshTask> deferred;
+    while (buildsStarted < limit && m_inFlight.size() < maxLiveTasks && !m_pendingMeshQueue.empty()) {
+        MeshTask task = m_pendingMeshQueue.top();
+        m_pendingMeshQueue.pop();
 
-        const SectionKey key = makeSectionKey(c.cx, c.cz, c.si);
-        const uint32_t version = entry.chunk->getSectionVersion(c.si);
+        const SectionKey key = makeSectionKey(task.cx, task.cz, task.sectionIndex);
+        auto wanted = m_pendingMeshVersions.find(key);
+        if (wanted == m_pendingMeshVersions.end()
+            || wanted->second.chunkPtr != task.chunk.get()
+            || wanted->second.version != task.requestedVersion
+            || wanted->second.priority != task.priority) continue;
 
-        bool enqueued = false;
-        {
-            std::lock_guard<std::mutex> lock(m_taskMutex);
-            if (m_inFlight.size() >= kMaxQueuedTasks) break;
-            if (m_inFlight.count(key) > 0) continue;
-
-            MeshTask task;
-            task.chunk = c.chunk;
-            task.cx = c.cx;
-            task.cz = c.cz;
-            task.sectionIndex = c.si;
-            task.requestedVersion = version;
-            task.generation = m_meshGeneration;
-            task.priority = c.priority;
-            m_taskQueue.push(std::move(task));
-            m_inFlight[key] = InFlightInfo{ entry.chunk.get(), version, m_meshGeneration };
-            enqueued = true;
+        ChunkColumn* col = findColumn(task.cx, task.cz);
+        if (!col || !col->chunk || col->chunk.get() != task.chunk.get()) {
+            m_pendingMeshVersions.erase(wanted);
+            continue;
+        }
+        if (!isSectionMeshReady(*task.chunk)) {
+            deferred.push_back(std::move(task));
+            continue;
+        }
+        if (m_inFlight.count(key) > 0) {
+            deferred.push_back(std::move(task));
+            continue;
         }
 
-        if (!enqueued) break;
+        auto& entry = col->sections[task.sectionIndex];
+        if (!task.chunk->isSectionNonEmpty(task.sectionIndex) && !entry.hasMesh) {
+            task.chunk->clearSectionDirty(task.sectionIndex);
+            entry.uploadedVersion = task.requestedVersion;
+            entry.hasMesh = true;
+            m_pendingMeshVersions.erase(wanted);
+            continue;
+        }
 
+        task.chunk->clearSectionDirty(task.sectionIndex);
+        task.requestedVersion = task.chunk->getSectionVersion(task.sectionIndex);
+        task.generation = m_meshGeneration;
+        {
+            std::lock_guard<std::mutex> lock(m_taskMutex);
+            m_taskQueue.push(task);
+        }
+        m_pendingMeshVersions.erase(wanted);
+        m_inFlight[key] = InFlightInfo{entry.chunk.get(), task.requestedVersion, m_meshGeneration};
         entry.isBuilding = true;
-        entry.buildingVersion = version;
-        entry.chunk->clearSectionDirty(c.si);
+        entry.buildingVersion = task.requestedVersion;
         ++buildsStarted;
     }
 
-    if (buildsStarted > 0) m_cv.notify_all();
+    for (auto& task : deferred) m_pendingMeshQueue.push(std::move(task));
+    if (buildsStarted == 1) m_cv.notify_one();
+    else if (buildsStarted > 1) m_cv.notify_all();
 }
 
 void WorldRenderer::reconcileMissingColumns() {
@@ -513,8 +464,9 @@ void WorldRenderer::reconcileMissingColumns() {
                 entry.chunk = chunk;
                 entry.sectionIndex = si;
             }
-            if (chunk->isSectionNonEmpty(si) && !sectionHasRenderableMesh(entry) && !entry.isBuilding) {
+            if (chunk->isSectionNonEmpty(si) && !entry.hasMesh && !entry.isBuilding) {
                 requestSectionMesh(entry);
+                queueSectionMesh(chunk, si, 1);
             }
         }
     }
@@ -529,7 +481,6 @@ void WorldRenderer::cleanupRemovedColumns() {
             if (col.needsCleanup || !col.chunk || !m_world.isChunkLoaded(col.cx, col.cz)) {
                 for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
                     freeSectionMesh(col.sections[si]);
-                    std::lock_guard<std::mutex> lock(m_taskMutex);
                     m_inFlight.erase(makeSectionKey(col.cx, col.cz, si));
                 }
                 return true;
@@ -551,9 +502,15 @@ void WorldRenderer::cleanupRemovedColumns() {
 void WorldRenderer::updateDirtyMeshes(int limit) {
     OC_ZONE_SCOPED;
     processMeshResults(128);
-    reconcileMissingColumns();
     enqueueDirtyMeshes(limit);
-    cleanupRemovedColumns();
+
+    const bool playerChunkChanged = m_playerCX != m_maintainedPlayerCX || m_playerCZ != m_maintainedPlayerCZ;
+    if (playerChunkChanged || (++m_maintenanceFrame % 120) == 0) {
+        reconcileMissingColumns();
+        cleanupRemovedColumns();
+        m_maintainedPlayerCX = m_playerCX;
+        m_maintainedPlayerCZ = m_playerCZ;
+    }
     OC_PLOT("MeshInFlight", m_inFlight.size());
     OC_PLOT("MeshColumns", m_columns.size());
 }
@@ -582,12 +539,7 @@ void WorldRenderer::updateVisibleSections(const Frustum& frustum, const glm::dve
         for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
             auto& entry = col.sections[si];
             if (!entry.chunk) continue;
-
-            // Skip known-empty sections that already finished meshing as empty
-            if (entry.hasMesh && !sectionHasRenderableMesh(entry)
-                && !entry.chunk->isSectionNonEmpty(si)) {
-                continue;
-            }
+            if (!sectionHasRenderableMesh(entry)) continue;
 
             glm::vec3 relativePos = glm::vec3(
                 glm::dvec3(col.cx * 16, si * 16, col.cz * 16) - cameraPos
@@ -698,29 +650,34 @@ void WorldRenderer::renderOpaqueBatched(const Frustum& frustum, Shader& shader, 
     const std::size_t uploadCount = std::min(m_sectionGPUData.size(), maxSections);
     const std::size_t drawCount = std::min(m_opaqueCommands.size(), uploadCount);
 
-    // Hard wait: GPU must finish reading last frame's SSBO before we overwrite it.
-    // Soft/timeout waits allowed partial overwrites → glitchy transposed faces.
-    if (m_ssboFence) {
+    const std::size_t bufferIndex = m_sectionBufferIndex++ % kSectionBufferCount;
+    GLsync& bufferFence = m_ssboFences[bufferIndex];
+    if (bufferFence) {
         GLenum waitResult = GL_TIMEOUT_EXPIRED;
         while (waitResult != GL_ALREADY_SIGNALED && waitResult != GL_CONDITION_SATISFIED) {
-            waitResult = glClientWaitSync(m_ssboFence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000);
-            if (waitResult == GL_WAIT_FAILED) break;
+            waitResult = glClientWaitSync(bufferFence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000);
+            if (waitResult == GL_WAIT_FAILED) {
+                glFinish();
+                break;
+            }
         }
-        glDeleteSync(m_ssboFence);
-        m_ssboFence = nullptr;
+        glDeleteSync(bufferFence);
+        bufferFence = nullptr;
     }
 
+    const std::size_t regionSize = maxSections * sizeof(SectionGPUData);
+    const std::size_t regionOffset = bufferIndex * regionSize;
     if (m_sectionSSBOPtr && uploadCount > 0) {
-        std::memcpy(m_sectionSSBOPtr, m_sectionGPUData.data(),
+        std::memcpy(static_cast<std::byte*>(m_sectionSSBOPtr) + regionOffset, m_sectionGPUData.data(),
                       uploadCount * sizeof(SectionGPUData));
     }
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_sectionSSBO);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, m_sectionSSBO,
+                      static_cast<GLintptr>(regionOffset), static_cast<GLsizeiptr>(regionSize));
 
     m_batchedOpaque.bind();
     m_batchedOpaque.drawIndirect(m_opaqueCommands.data(), drawCount);
 
-    // Fence covers SSBO read for next frame. BatchedMesh inserts its own VBO/IBO fence.
-    m_ssboFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    bufferFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
     m_stats.drawCalls = 1;
     for (const auto* entry : m_visibleOpaque) {

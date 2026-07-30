@@ -10,6 +10,11 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+constexpr std::size_t CHUNK_DATA_SIZE = Chunk::SIZE + Chunk::SIZE / 2 * 3;
+constexpr uint8_t CHUNK_LIGHTING_VERSION = 1;
+}
+
 SaveHandler::SaveHandler(const std::string& worldDir) : m_worldDir(worldDir) {
     if (!fs::exists(worldDir)) fs::create_directories(worldDir);
 
@@ -45,12 +50,14 @@ bool SaveHandler::loadChunk(Chunk& chunk) {
     rocksdb::Status status = m_db->Get(rocksdb::ReadOptions(), rocksdb::Slice((char*)&keyVal, 8), &value);
 
     if (status.ok()) {
-        if (value.size() >= Chunk::SIZE + Chunk::SIZE / 2 * 3) {
+        if (value.size() >= CHUNK_DATA_SIZE) {
             std::memcpy(const_cast<uint8_t*>(chunk.getBlocks()), value.data(), Chunk::SIZE);
             std::memcpy(const_cast<uint8_t*>(chunk.getMetadata()), value.data() + Chunk::SIZE, Chunk::SIZE / 2);
             std::memcpy(const_cast<uint8_t*>(chunk.getSkylight()), value.data() + Chunk::SIZE + Chunk::SIZE / 2, Chunk::SIZE / 2);
             std::memcpy(const_cast<uint8_t*>(chunk.getBlocklight()), value.data() + Chunk::SIZE + Chunk::SIZE, Chunk::SIZE / 2);
-            chunk.setState(ChunkState::Complete);
+            const bool lightingCurrent = value.size() > CHUNK_DATA_SIZE &&
+                static_cast<uint8_t>(value[CHUNK_DATA_SIZE]) == CHUNK_LIGHTING_VERSION;
+            chunk.setState(lightingCurrent ? ChunkState::Complete : ChunkState::Decorated);
             chunk.setLightWipeComplete(true);
             chunk.generateHeightMap();
             return true;
@@ -61,16 +68,17 @@ bool SaveHandler::loadChunk(Chunk& chunk) {
 }
 
 void SaveHandler::saveChunk(const Chunk& chunk) {
-    if (!m_db || chunk.getState() < ChunkState::Lighted) return;
+    if (!m_db || chunk.getState() != ChunkState::Complete) return;
 
     int cx = chunk.getX();
     int cz = chunk.getZ();
 
-    std::vector<uint8_t> data(Chunk::SIZE + Chunk::SIZE / 2 * 3);
+    std::vector<uint8_t> data(CHUNK_DATA_SIZE + 1);
     std::memcpy(data.data(), chunk.getBlocks(), Chunk::SIZE);
     std::memcpy(data.data() + Chunk::SIZE, chunk.getMetadata(), Chunk::SIZE / 2);
     std::memcpy(data.data() + Chunk::SIZE + Chunk::SIZE / 2, chunk.getSkylight(), Chunk::SIZE / 2);
     std::memcpy(data.data() + Chunk::SIZE + Chunk::SIZE, chunk.getBlocklight(), Chunk::SIZE / 2);
+    data[CHUNK_DATA_SIZE] = CHUNK_LIGHTING_VERSION;
 
     uint64_t keyVal = (uint64_t(cx) << 32) | (uint32_t(cz));
     rocksdb::Status status = m_db->Put(rocksdb::WriteOptions(), rocksdb::Slice((char*)&keyVal, 8), rocksdb::Slice((char*)data.data(), data.size()));
@@ -102,11 +110,10 @@ bool SaveHandler::loadLegacyChunk(Chunk& chunk) {
     std::memcpy(const_cast<uint8_t*>(chunk.getSkylight()), skyLight.data(), Chunk::SIZE / 2);
     std::memcpy(const_cast<uint8_t*>(chunk.getBlocklight()), blockLight.data(), Chunk::SIZE / 2);
 
-    chunk.setState(ChunkState::Complete);
+    chunk.setState(ChunkState::Decorated);
     chunk.setLightWipeComplete(true);
     chunk.generateHeightMap();
 
-    saveChunk(chunk);
     return true;
 }
 

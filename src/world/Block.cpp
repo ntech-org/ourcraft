@@ -6,6 +6,7 @@
 #include "world/IBlockAccess.hpp"
 #include "physics/AxisAlignedBB.hpp"
 #include "entities/EntityPlayer.hpp"
+#include <iterator>
 
 Block* Block::blocksList[256] = { nullptr };
 bool Block::opaqueCubeLookup[256] = { false };
@@ -158,7 +159,7 @@ void Block::init() {
         0, 0, 0, 0, 0, 5, 5, 2, 2, 2, 0, 1.5f, 2, 10, 0, -1, 5, 2.5f, 0,
         3, 5, 2.5f, 0, 0.6f, 3.5f, 3.5f, 1, 3, 0.4f, 0.7f, 2, 1
     };
-    for (int i = 0; i < 69; ++i) {
+    for (std::size_t i = 0; i < std::size(hardnessValues); ++i) {
         if (hardnessValues[i] != 0.0f || i == 0) {
             blockHardness[i] = hardnessValues[i];
         }

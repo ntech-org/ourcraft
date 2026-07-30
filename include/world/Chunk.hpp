@@ -6,6 +6,7 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <functional>
 
 enum class ChunkState {
     Empty,
@@ -16,6 +17,7 @@ enum class ChunkState {
     Decorating,
     Decorated,
     LightingFinal,
+    LightingReady,
     Complete
 };
 
@@ -45,7 +47,9 @@ public:
     inline int getLightInternal(LightType type, int index) const {
         const std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
         int byteIndex = index >> 1;
-        return (index & 1) == 0 ? (data[byteIndex] & 0x0F) : ((data[byteIndex] >> 4) & 0x0F);
+        std::atomic_ref<const uint8_t> byteRef(data[byteIndex]);
+        const uint8_t value = byteRef.load(std::memory_order_relaxed);
+        return (index & 1) == 0 ? (value & 0x0F) : ((value >> 4) & 0x0F);
     }
 
     inline void setLightInternal(LightType type, int index, int val) {
@@ -97,9 +101,12 @@ public:
     void clearSectionDirty(int sectionIndex);
     uint32_t getSectionVersion(int sectionIndex) const;
     void touchSection(int sectionIndex);
+    void setSectionDirtyCallback(std::function<void(int)> callback) {
+        m_sectionDirtyCallback = std::move(callback);
+    }
 
-    bool isSectionNonEmpty(int sectionIndex) const { return m_sectionNonEmpty & (1u << sectionIndex); }
-    uint16_t getSectionNonEmptyMask() const { return m_sectionNonEmpty; }
+    bool isSectionNonEmpty(int sectionIndex) const { return m_sectionNonEmpty.load(std::memory_order_acquire) & (1u << sectionIndex); }
+    uint16_t getSectionNonEmptyMask() const { return m_sectionNonEmpty.load(std::memory_order_acquire); }
     void recomputeSectionNonEmpty();
 
     float getWaterLevel(int x, int z) const { return m_waterLevels[x + z * WIDTH]; }
@@ -112,8 +119,8 @@ public:
     bool isLightWipeComplete() const { return m_lightWipeComplete.load(std::memory_order_acquire); }
     void setLightWipeComplete(bool complete) { m_lightWipeComplete.store(complete, std::memory_order_release); }
 
-    std::mutex& getBlockMutex() { return m_blockMutex; }
-    std::mutex& getLightMutex() { return m_lightMutex; }
+    std::mutex& getBlockMutex() const { return m_blockMutex; }
+    std::mutex& getLightMutex() const { return m_lightMutex; }
 
     static constexpr int getSectionIndex(int y) {
         return y / SECTION_HEIGHT;
@@ -130,14 +137,16 @@ private:
     std::vector<uint8_t> m_skylight;
     std::vector<uint8_t> m_blocklight;
     std::vector<uint8_t> m_heightMap;
-    std::array<bool, SECTION_COUNT> m_sectionDirty {};
-    std::array<uint32_t, SECTION_COUNT> m_sectionVersions {};
-    uint16_t m_sectionNonEmpty = 0;
+    std::array<std::atomic<bool>, SECTION_COUNT> m_sectionDirty {};
+    std::array<std::atomic<uint32_t>, SECTION_COUNT> m_sectionVersions {};
+    std::array<std::atomic<uint16_t>, SECTION_COUNT> m_sectionNonAirCounts {};
+    std::atomic<uint16_t> m_sectionNonEmpty {0};
+    std::function<void(int)> m_sectionDirtyCallback;
     std::array<float, WIDTH * DEPTH> m_waterLevels {};
     bool m_hasAnyWater = false;
     
-    std::mutex m_blockMutex;
-    std::mutex m_lightMutex;
+    mutable std::mutex m_blockMutex;
+    mutable std::mutex m_lightMutex;
     std::atomic<ChunkState> m_state { ChunkState::Empty };
     std::atomic<bool> m_lightWipeComplete { false };
     uint8_t m_primaryBitmask = 0xFF;

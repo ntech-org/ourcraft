@@ -17,7 +17,41 @@ void World::addChunk(std::shared_ptr<Chunk> chunk) {
         m_chunkLookup[key] = chunk;
         m_chunks.push_back(chunk);
     }
+    if (m_trackSectionChanges) {
+        std::weak_ptr<Chunk> weakChunk = chunk;
+        chunk->setSectionDirtyCallback([this, weakChunk](int sectionIndex) {
+            auto dirtyChunk = weakChunk.lock();
+            if (!dirtyChunk) return;
+            queueSectionRemesh(dirtyChunk, sectionIndex, 2);
+        });
+    }
     notifyChunkUpdated(chunk);
+}
+
+void World::enableSectionChangeTracking() {
+    m_trackSectionChanges = true;
+    for (const auto& chunk : getAllChunks()) {
+        if (!chunk) continue;
+        std::weak_ptr<Chunk> weakChunk = chunk;
+        chunk->setSectionDirtyCallback([this, weakChunk](int sectionIndex) {
+            auto dirtyChunk = weakChunk.lock();
+            if (!dirtyChunk) return;
+            queueSectionRemesh(dirtyChunk, sectionIndex, 2);
+        });
+    }
+}
+
+void World::queueSectionRemesh(const std::shared_ptr<Chunk>& chunk, int sectionIndex, int urgency) {
+    if (!chunk || sectionIndex < 0 || sectionIndex >= Chunk::SECTION_COUNT) return;
+    std::lock_guard<std::mutex> lock(m_dirtySectionsMutex);
+    m_dirtySections.push_back({chunk, sectionIndex, urgency});
+}
+
+std::vector<DirtySectionEvent> World::popDirtySections() {
+    std::lock_guard<std::mutex> lock(m_dirtySectionsMutex);
+    std::vector<DirtySectionEvent> result;
+    result.swap(m_dirtySections);
+    return result;
 }
 
 void World::notifyChunkUpdated(std::shared_ptr<Chunk> chunk) {
@@ -84,64 +118,100 @@ bool World::pollGeneratedChunks() {
                 std::lock_guard<std::mutex> lock(m_pendingMutex);
                 m_pendingChunks.erase(chunkKey(cx, cz));
             }
-            chunk->generateBitmask();
             addChunk(chunk);
             worldChanged = true;
-            m_loader->requestLighting(chunk);
+            // Decoration only reads block data. Defer lighting until decoration
+            // completes instead of flood-filling every generated chunk twice.
+            chunk->setState(ChunkState::Lighted);
         } else if (state == ChunkState::Complete) {
-            OC_ZONE_SCOPED_N("HandleComplete");
-            // This chunk was likely loaded from disk already complete
+            finalizeChunk(chunk);
+            worldChanged = true;
+        } else if (state == ChunkState::LightingReady) {
+            worldChanged = true;
+        } else if (state == ChunkState::Lighted) {
+            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) chunk->touchSection(i);
+        } else if (state == ChunkState::Decorated && !isChunkLoaded(cx, cz)) {
+            // Old save records predate the validated-lighting marker. Insert
+            // their final block data and send them through final lighting once.
             {
                 std::lock_guard<std::mutex> lock(m_pendingMutex);
                 m_pendingChunks.erase(chunkKey(cx, cz));
             }
             addChunk(chunk);
             worldChanged = true;
-
-            // Schedule flowing fluids at chunk edges so water levels
-            // equalize across chunk seams — the BlockStationary::updateTick
-            // fix handles conversion from stationary when flow reaches boundaries.
-            for (int y = 0; y < Chunk::HEIGHT; ++y) {
-                for (int x = 0; x < 16; ++x) {
-                    for (int z = 0; z < 16; ++z) {
-                        if (x != 0 && x != 15 && z != 0 && z != 15) continue;
-                        uint8_t id = chunk->getBlockID(x, y, z);
-                        if (id == 8 || id == 10) {
-                            scheduleBlockUpdate(cx * 16 + x, y, cz * 16 + z, id, Block::blocksList[id]->tickRate());
-                        }
-                    }
-                }
-            }
-
-            // Fully finished! Touch all neighbors (including diagonals) to fix boundaries
-            chunk->generateBitmask();
-            for (int dx = -1; dx <= 1; ++dx) {
-                for (int dz = -1; dz <= 1; ++dz) {
-                    if (auto n = getChunk(cx + dx, cz + dz)) {
-                        for (int i = 0; i < Chunk::SECTION_COUNT; ++i) {
-                            n->touchSection(i);
-                        }
-                    }
-                }
-            }
-
-            // IMPORTANT: Don't clear dirty flags here! They need to trigger rebuilds
-            // for water connectivity. The version check in WorldRenderer prevents
-            // continuous remeshing from repeated touches.
-
-            {
-                std::lock_guard<std::mutex> lock(m_completeChunksMutex);
-                m_completeChunks.push_back(chunk);
-            }
-            checkChunkProgression(cx, cz);
-        } else if (state == ChunkState::Lighted) {
-            checkChunkProgression(cx, cz);
-            for (int i = 0; i < Chunk::SECTION_COUNT; ++i) chunk->touchSection(i);
-        } else if (state == ChunkState::Decorated) {
-            checkChunkProgression(cx, cz);
         }
+
+        // Every completed stage can unblock work around this coordinate. This
+        // also lets disk-loaded Complete chunks release LightingReady neighbors.
+        checkChunkProgression(cx, cz);
+        promoteLightingReadyChunks(cx, cz);
     }
     return worldChanged;
+}
+
+void World::finalizeChunk(const std::shared_ptr<Chunk>& chunk) {
+    if (!chunk) return;
+    OC_ZONE_SCOPED_N("HandleComplete");
+    const int cx = chunk->getX();
+    const int cz = chunk->getZ();
+    {
+        std::lock_guard<std::mutex> lock(m_pendingMutex);
+        m_pendingChunks.erase(chunkKey(cx, cz));
+    }
+    addChunk(chunk);
+
+    for (int y = 0; y < Chunk::HEIGHT; ++y) {
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                if (x != 0 && x != 15 && z != 0 && z != 15) continue;
+                uint8_t id = chunk->getBlockID(x, y, z);
+                if (id == 8 || id == 10) {
+                    scheduleBlockUpdate(cx * 16 + x, y, cz * 16 + z, id, Block::blocksList[id]->tickRate());
+                }
+            }
+        }
+    }
+
+    chunk->generateBitmask();
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dz = -1; dz <= 1; ++dz) {
+            if (auto neighbor = getChunk(cx + dx, cz + dz)) {
+                for (int section = 0; section < Chunk::SECTION_COUNT; ++section) {
+                    neighbor->touchSection(section);
+                }
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_completeChunksMutex);
+        m_completeChunks.push_back(chunk);
+    }
+    checkChunkProgression(cx, cz);
+}
+
+void World::promoteLightingReadyChunks(int chunkX, int chunkZ) {
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dz = -1; dz <= 1; ++dz) {
+            auto candidate = getChunk(chunkX + dx, chunkZ + dz);
+            if (!candidate || candidate->getState() != ChunkState::LightingReady) continue;
+
+            bool neighborhoodReady = true;
+            for (int nx = -1; nx <= 1 && neighborhoodReady; ++nx) {
+                for (int nz = -1; nz <= 1; ++nz) {
+                    auto neighbor = getChunk(candidate->getX() + nx, candidate->getZ() + nz);
+                    if (!neighbor || neighbor->getState() < ChunkState::LightingReady) {
+                        neighborhoodReady = false;
+                        break;
+                    }
+                }
+            }
+            if (!neighborhoodReady) continue;
+
+            candidate->setState(ChunkState::Complete);
+            finalizeChunk(candidate);
+        }
+    }
 }
 
 void World::checkChunkProgression(int cx, int cz) {

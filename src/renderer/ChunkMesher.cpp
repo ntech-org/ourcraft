@@ -4,73 +4,64 @@
 #include "util/Profiler.hpp"
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <vector>
 
-namespace {
-struct Neighborhood : public IBlockAccess {
+MeshingSnapshot::MeshingSnapshot(const World& world, int chunkX, int chunkZ, int sectionIndex)
+    : m_baseX(chunkX * Chunk::WIDTH), m_baseZ(chunkZ * Chunk::DEPTH),
+      m_minY(sectionIndex * Chunk::SECTION_HEIGHT - 1) {
     std::shared_ptr<const Chunk> chunks[3][3];
-    const World& world;
-    int baseCX, baseCZ;
-    Neighborhood(const World& w, int cx, int cz) : world(w), baseCX(cx), baseCZ(cz) {}
+    std::vector<std::unique_lock<std::mutex>> blockLocks;
+    blockLocks.reserve(9);
 
-    uint8_t getBlockID(int x, int y, int z) const override {
-        if (y < 0 || y >= 128) return 0;
-        int ncx = (x >> 4) + 1;
-        int ncz = (z >> 4) + 1;
-        if (ncx < 0 || ncx > 2 || ncz < 0 || ncz > 2) return 0;
-        const Chunk* c = chunks[ncx][ncz].get();
-        return c ? c->getBlockID(x & 15, y, z & 15) : 0;
-    }
-    uint8_t getBlockMetadata(int x, int y, int z) const override {
-        if (y < 0 || y >= 128) return 0;
-        int ncx = (x >> 4) + 1;
-        int ncz = (z >> 4) + 1;
-        if (ncx < 0 || ncx > 2 || ncz < 0 || ncz > 2) return 0;
-        const Chunk* c = chunks[ncx][ncz].get();
-        return c ? c->getBlockMetadata(x & 15, y, z & 15) : 0;
-    }
-    const Material& getBlockMaterial(int x, int y, int z) const override {
-        uint8_t id = getBlockID(x, y, z);
-        if (id == 0) return Material::air;
-        Block* b = Block::blocksList[id];
-        return b ? b->blockMaterial : Material::air;
-    }
-    std::pair<int, int> getLightPair(int x, int y, int z) const override {
-        int sky = 15;
-        int block = 0;
-
-        if (y >= 0 && y < 128) {
-            int cx_off = (x >= 0 ? x / 16 : (x - 15) / 16) - baseCX;
-            int cz_off = (z >= 0 ? z / 16 : (z - 15) / 16) - baseCZ;
-            int lx = x & 15;
-            int lz = z & 15;
-            
-            if (cx_off >= -1 && cx_off <= 1 && cz_off >= -1 && cz_off <= 1) {
-                auto& chunk = chunks[cx_off + 1][cz_off + 1];
-                if (chunk) {
-                    sky = chunk->getLightInternal(LightType::Sky, (lx << 11) | (lz << 7) | y);
-                    block = chunk->getLightInternal(LightType::Block, (lx << 11) | (lz << 7) | y);
-                } else {
-                    sky = world.getSavedLightValue(LightType::Sky, x, y, z);
-                    block = world.getSavedLightValue(LightType::Block, x, y, z);
-                }
-            } else {
-                sky = world.getSavedLightValue(LightType::Sky, x, y, z);
-                block = world.getSavedLightValue(LightType::Block, x, y, z);
-            }
-        } else {
-            sky = world.getSavedLightValue(LightType::Sky, x, y, z);
-            block = world.getSavedLightValue(LightType::Block, x, y, z);
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dz = -1; dz <= 1; ++dz) {
+            chunks[dx + 1][dz + 1] = world.getChunk(chunkX + dx, chunkZ + dz);
         }
-
-        return {sky, block};
     }
-};
+    for (auto& column : chunks) {
+        for (auto& chunk : column) {
+            if (chunk) blockLocks.emplace_back(chunk->getBlockMutex());
+        }
+    }
 
-static thread_local float tls_waterLevels[16][16];
+    if (const auto& center = chunks[1][1]) {
+        for (int x = 0; x < Chunk::WIDTH; ++x) {
+            for (int z = 0; z < Chunk::DEPTH; ++z) {
+                m_waterLevels[x * Chunk::DEPTH + z] = center->getWaterLevel(x, z);
+            }
+        }
+    }
 
-struct SectionWaterLevels {
-    float levels[16][16];
-};
+    for (int y = std::max(0, m_minY); y < std::min(Chunk::HEIGHT, m_minY + HALO_HEIGHT); ++y) {
+        for (int z = -1; z <= 16; ++z) {
+            for (int x = -1; x <= 16; ++x) {
+                const int dx = x < 0 ? -1 : (x >= 16 ? 1 : 0);
+                const int dz = z < 0 ? -1 : (z >= 16 ? 1 : 0);
+                const auto& chunk = chunks[dx + 1][dz + 1];
+                if (!chunk) continue;
+
+                const int lx = x & 15;
+                const int lz = z & 15;
+                const int sourceIndex = (lx << 11) | (lz << 7) | y;
+                const int targetIndex = localIndex(x, y, z);
+                m_blocks[targetIndex] = chunk->getBlockID(lx, y, lz);
+                m_metadata[targetIndex] = chunk->getBlockMetadata(lx, y, lz);
+                if (chunk->isLightWipeComplete()) {
+                    m_skylight[targetIndex] = chunk->getLightInternal(LightType::Sky, sourceIndex);
+                    m_blocklight[targetIndex] = chunk->getLightInternal(LightType::Block, sourceIndex);
+                } else {
+                    m_skylight[targetIndex] = 15;
+                }
+            }
+        }
+    }
+}
+
+const Material& MeshingSnapshot::getBlockMaterial(int x, int y, int z) const {
+    const uint8_t id = getBlockID(x, y, z);
+    const Block* block = id ? Block::blocksList[id] : nullptr;
+    return block ? block->blockMaterial : Material::air;
 }
 
 ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chunk, int si) {
@@ -79,36 +70,14 @@ ChunkMeshData ChunkMesher::buildSectionMesh(const World& world, const Chunk& chu
     md.bounds.min = glm::vec3(0.0f);
     md.bounds.max = glm::vec3(16.0f);
 
-    if (!chunk.isSectionNonEmpty(si)) return md;
-
     int cx = chunk.getX(), cz = chunk.getZ();
 
-    Neighborhood n(world, cx, cz);
-    for (int dx = -1; dx <= 1; ++dx)
-        for (int dz = -1; dz <= 1; ++dz)
-            n.chunks[dx+1][dz+1] = world.getChunk(cx + dx, cz + dz);
+    MeshingSnapshot n(world, cx, cz, si);
 
     float waterLevels[16][16];
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            waterLevels[x][z] = chunk.getWaterLevel(x, z);
-        }
-    }
-
-    int prevX = cx, prevZ = cz - 1;
-    int nextX = cx, nextZ = cz + 1;
-    std::shared_ptr<const Chunk> prevChunkSp = world.getChunk(prevX, prevZ);
-    std::shared_ptr<const Chunk> nextChunkSp = world.getChunk(nextX, nextZ);
-    const Chunk* prevChunk = prevChunkSp.get();
-    const Chunk* nextChunk = nextChunkSp.get();
-    if (prevChunk) {
-        for (int x = 0; x < 16; ++x) {
-            waterLevels[x][0] = std::max(waterLevels[x][0], prevChunk->getWaterLevel(x, 15));
-        }
-    }
-    if (nextChunk) {
-        for (int x = 0; x < 16; ++x) {
-            waterLevels[x][15] = std::max(waterLevels[x][15], nextChunk->getWaterLevel(x, 0));
+            waterLevels[x][z] = n.getWaterLevel(x, z);
         }
     }
 

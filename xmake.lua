@@ -23,7 +23,7 @@ if has_config("tracy") then
         set_kind("object")
         set_languages("c++20")
         set_symbols("debug")
-        add_defines("TRACY_ENABLE", "TRACY_ON_DEMAND")
+        add_defines("TRACY_ENABLE", "TRACY_ON_DEMAND", "TRACY_NO_FRAME_IMAGE")
         -- Prefer portable timer if invariant TSC check fails on some CPUs
         -- add_defines("TRACY_TIMER_FALLBACK")
         add_includedirs("third_party/tracy/public", {public = true})
@@ -39,7 +39,7 @@ end
 local function apply_tracy()
     if has_config("tracy") then
         add_deps("tracy-client")
-        add_defines("TRACY_ENABLE", "TRACY_ON_DEMAND")
+        add_defines("TRACY_ENABLE", "TRACY_ON_DEMAND", "TRACY_NO_FRAME_IMAGE")
         add_includedirs("third_party/tracy/public", {public = false})
         set_symbols("debug")
         if is_plat("linux") then
@@ -118,8 +118,10 @@ target("ourcraft-tests")
     add_files("src/inventory/**.cpp")
     add_files("src/simulation/SimulationTick.cpp")
     add_files("src/util/Timer.cpp")
+    add_files("src/net/Packet.cpp")
+    add_files("src/renderer/ChunkMesher.cpp", "src/renderer/GreedyMesher.cpp", "src/renderer/FluidMesher.cpp")
     add_includedirs("include")
-    add_packages("glm", "zstd", "zlib", "rocksdb", "doctest")
+    add_packages("glad", "glm", "zstd", "zlib", "rocksdb", "doctest")
     add_defines("SERVER_ONLY")
 
     if is_plat("linux") then

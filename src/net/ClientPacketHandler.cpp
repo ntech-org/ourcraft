@@ -81,12 +81,9 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         world.m_pendingRequests.erase(key);
         world.m_pendingChunks.erase(key);
 
-        std::shared_ptr<Chunk> chunk = world.getChunk(packet.x, packet.z);
-        bool isNew = false;
-        if (!chunk) {
-            chunk = std::make_shared<Chunk>(packet.x, packet.z);
-            isNew = true;
-        }
+        // Publish a fully initialized replacement instead of rewriting storage
+        // that an existing mesh worker may still be reading.
+        auto chunk = std::make_shared<Chunk>(packet.x, packet.z);
 
         {
             std::lock_guard<std::mutex> blockLock(chunk->getBlockMutex());
@@ -113,17 +110,9 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
 
         chunk->setState(ChunkState::Complete);
         chunk->generateHeightMap();
-        chunk->generateBitmask();
 
-        if (isNew) {
-            world.addChunk(chunk);
-        } else {
-            // Existing client chunk was overwritten — recompute emptiness and
-            // re-notify renderer so meshes rebuild.
-            chunk->recomputeSectionNonEmpty();
-            chunk->computeWaterLevels();
-            world.notifyChunkUpdated(chunk);
-        }
+        chunk->computeWaterLevels();
+        world.addChunk(chunk);
 
         auto nW = world.getChunk(packet.x - 1, packet.z);
         auto nE = world.getChunk(packet.x + 1, packet.z);

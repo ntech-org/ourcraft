@@ -27,7 +27,7 @@ public:
     int renderDistanceChunks = 12; // 2-128 chunk radius
     bool viewBobbing = true;
     bool anaglyph = false;
-    bool limitFramerate = false;
+    bool limitFramerate = true;
     bool fancyGraphics = true;
     bool ambientOcclusion = true;
     int guiScale = 0; // 0 = Auto

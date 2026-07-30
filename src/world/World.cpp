@@ -12,8 +12,10 @@
 World::World() : m_worldTime(6000.0) {}
 
 World::~World() {
-    if (m_loader) {
-        m_loader->stopWorldAccess();
+    // Join loader jobs while every World member they may access is still alive.
+    m_loader.reset();
+    for (auto& chunk : m_chunks) {
+        if (chunk) chunk->setSectionDirtyCallback({});
     }
 }
 
@@ -45,6 +47,46 @@ const Material& World::getBlockMaterial(int x, int y, int z) const {
     return id == 0 ? Material::air : Block::blocksList[id]->blockMaterial;
 }
 
+void World::invalidateMeshDependencies(int x, int y, int z, bool wholeColumn) {
+    const int cx = x >> 4;
+    const int cz = z >> 4;
+    const int lx = x & 15;
+    const int lz = z & 15;
+    const int section = y >> 4;
+
+    int chunkXs[2] = {cx, cx};
+    int chunkZs[2] = {cz, cz};
+    int chunkXCount = 1;
+    int chunkZCount = 1;
+    if (lx == 0) chunkXs[chunkXCount++] = cx - 1;
+    else if (lx == 15) chunkXs[chunkXCount++] = cx + 1;
+    if (lz == 0) chunkZs[chunkZCount++] = cz - 1;
+    else if (lz == 15) chunkZs[chunkZCount++] = cz + 1;
+
+    int sections[3] = {section, section, section};
+    int sectionCount = 1;
+    if (!wholeColumn && (y & 15) == 0 && section > 0) sections[sectionCount++] = section - 1;
+    else if (!wholeColumn && (y & 15) == 15 && section + 1 < Chunk::SECTION_COUNT) sections[sectionCount++] = section + 1;
+
+    for (int ix = 0; ix < chunkXCount; ++ix) {
+        for (int iz = 0; iz < chunkZCount; ++iz) {
+            auto target = getChunk(chunkXs[ix], chunkZs[iz]);
+            if (!target) continue;
+            if (wholeColumn && ix == 0 && iz == 0) {
+                for (int si = 0; si < Chunk::SECTION_COUNT; ++si) {
+                    target->touchSection(si);
+                    queueSectionRemesh(target, si, 0);
+                }
+            } else {
+                for (int is = 0; is < sectionCount; ++is) {
+                    target->touchSection(sections[is]);
+                    queueSectionRemesh(target, sections[is], 0);
+                }
+            }
+        }
+    }
+}
+
 bool World::setBlockID(int x, int y, int z, uint8_t id) {
     if (y < 0 || y >= Chunk::HEIGHT) return false;
     auto chunk = getChunk(x >> 4, z >> 4);
@@ -58,17 +100,14 @@ bool World::setBlockID(int x, int y, int z, uint8_t id) {
     int oldBlockLight = Block::lightValue[oldID];
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
 
-    int si = Chunk::getSectionIndex(y);
     chunk->setBlockID(lx, y, lz, id);
 
     if (onBlockChanged) {
         onBlockChanged(x, y, z, id, chunk->getBlockMetadata(lx, y, lz));
     }
 
-    if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
-    else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
-    if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
-    else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
+    const bool waterChanged = (oldID == 8 || oldID == 9) != (id == 8 || id == 9);
+    invalidateMeshDependencies(x, y, z, waterChanged);
 
     updateLightForBlockChange(x, y, z, oldOpacity, Block::lightOpacity[id], oldBlockLight, Block::lightValue[id], oldSkyLight);
 
@@ -98,6 +137,7 @@ void World::setBlockMetadata(int x, int y, int z, uint8_t meta) {
     auto chunk = getChunk(x >> 4, z >> 4);
     if (!chunk) return;
     chunk->setBlockMetadata(x & 15, y, z & 15, meta);
+    invalidateMeshDependencies(x, y, z);
 }
 
 void World::setBlockMetadataWithNotify(int x, int y, int z, uint8_t meta) {
@@ -341,6 +381,7 @@ void World::setLightValue(LightType type, int x, int y, int z, int val) {
 void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
     size_t head = 0;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> localCache;
+    localCache.reserve(9);
     std::shared_ptr<Chunk> lastChunk = nullptr;
     int lastCX = -999999, lastCZ = -999999;
 
@@ -369,6 +410,7 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
         int lx = n.x & 15, lz = n.z & 15;
         int idx = (lx << 11) | (lz << 7) | n.y;
         int currentLight = chunk->getLightInternal(type, idx);
+        if (currentLight <= 0) continue;
 
         auto check = [&](int nx, int ny, int nz) {
             if (ny < 0 || ny >= Chunk::HEIGHT) return;
@@ -377,7 +419,6 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
 
             int nlx = nx & 15, nlz = nz & 15;
             int nidx = (nlx << 11) | (nlz << 7) | ny;
-            if (nidx < 0 || nidx >= Chunk::SIZE) return;
             int oldLight = nChunk->getLightInternal(type, nidx);
             int opacity = Block::lightOpacity[nChunk->getBlockID(nlx, ny, nlz)];
 
@@ -410,6 +451,7 @@ void World::propagateLight(LightType type, std::vector<LightNode>& queue) {
 void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& removeQueue, std::vector<LightNode>& addQueue) {
     size_t head = 0;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> localCache;
+    localCache.reserve(9);
     std::shared_ptr<Chunk> lastChunk = nullptr;
     int lastCX = -999999, lastCZ = -999999;
 
@@ -440,7 +482,6 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
 
             int nlx = nx & 15, nlz = nz & 15;
             int nidx = (nlx << 11) | (nlz << 7) | ny;
-            if (nidx < 0 || nidx >= Chunk::SIZE) return;
             int neighborLight = nChunk->getLightInternal(type, nidx);
 
             bool dependent = false;
@@ -477,12 +518,13 @@ void World::unpropagateLight(LightType type, std::vector<LightRemovalNode>& remo
 }
 
 void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int newOpacity, int oldBlockLight, int newBlockLight, int oldSkyLight) {
+    std::lock_guard<std::mutex> lightingLock(m_lightingMutex);
     auto queueNeighbors = [&](int x, int y, int z, std::vector<LightNode>& queue) {
-        if (x > 0) queue.push_back({x - 1, y, z});
+        queue.push_back({x - 1, y, z});
         queue.push_back({x + 1, y, z});
         if (y > 0) queue.push_back({x, y - 1, z});
         if (y < Chunk::HEIGHT - 1) queue.push_back({x, y + 1, z});
-        if (z > 0) queue.push_back({x, y, z - 1});
+        queue.push_back({x, y, z - 1});
         queue.push_back({x, y, z + 1});
     };
 
@@ -507,7 +549,7 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
     {
         std::vector<LightNode> addQueue; std::vector<LightRemovalNode> removeQueue;
         if (newOpacity > oldOpacity) {
-            removeQueue.push_back({x, y, z, oldSkyLight});
+            if (oldSkyLight > 0) removeQueue.push_back({x, y, z, oldSkyLight});
             setLightValue(LightType::Sky, x, y, z, 0);
             if (oldSkyLight == 15) {
                 for (int ty = y - 1; ty >= 0; --ty) {
@@ -543,13 +585,24 @@ void World::updateLightForBlockChange(int x, int y, int z, int oldOpacity, int n
 
 void World::calculateInitialSkylight(Chunk& chunk) {
     OC_ZONE_SCOPED;
+    std::lock_guard<std::mutex> lightingLock(m_lightingMutex);
+
+    const bool hadLighting = chunk.isLightWipeComplete();
+    std::vector<uint8_t> oldSky;
+    std::vector<uint8_t> oldBlock;
+    if (hadLighting) {
+        oldSky.assign(chunk.getSkylight(), chunk.getSkylight() + Chunk::SIZE / 2);
+        oldBlock.assign(chunk.getBlocklight(), chunk.getBlocklight() + Chunk::SIZE / 2);
+    }
+
+    chunk.setLightWipeComplete(false);
     chunk.generateHeightMap();
     const int cx = chunk.getX() << 4;
     const int cz = chunk.getZ() << 4;
 
     std::vector<LightNode> skyQueue;
     std::vector<LightNode> blockQueue;
-    skyQueue.reserve(Chunk::SIZE / 2);
+    skyQueue.reserve(Chunk::SIZE / 8);
     blockQueue.reserve(Chunk::SIZE / 32);
 
     for (int x = 0; x < 16; ++x) {
@@ -565,10 +618,12 @@ void World::calculateInitialSkylight(Chunk& chunk) {
             for (int y = Chunk::HEIGHT - 1; y >= 0; --y) {
                 const int idx = (x << 11) | (z << 7) | y;
                 if (y >= height) {
-                    // Above heightmap: already filled with 15, just enqueue.
-                    if (sky > 0) {
-                        skyQueue.push_back({cx + x, y, cz + z});
-                    }
+                    // Above heightmap is already initialized; only the boundary
+                    // frontier needs cross-column propagation below.
+                    const uint8_t id = chunk.getBlockID(x, y, z);
+                    const int emitted = Block::lightValue[id];
+                    chunk.setLightInternalFast(LightType::Block, idx, emitted);
+                    if (emitted > 0) blockQueue.push_back({cx + x, y, cz + z});
                     continue;
                 }
 
@@ -582,10 +637,6 @@ void World::calculateInitialSkylight(Chunk& chunk) {
                     }
                 }
                 chunk.setLightInternalFast(LightType::Sky, idx, sky);
-                if (sky > 0) {
-                    skyQueue.push_back({cx + x, y, cz + z});
-                }
-
                 const int emitted = Block::lightValue[id];
                 chunk.setLightInternalFast(LightType::Block, idx, emitted);
                 if (emitted > 0) {
@@ -597,31 +648,93 @@ void World::calculateInitialSkylight(Chunk& chunk) {
 
     chunk.setLightWipeComplete(true);
 
-    auto seedNeighborBoundary = [&](Chunk* neighbor, int wx, int wz) {
-        if (!neighbor) return;
+    // A previous pass may have sent light across this chunk's boundary before
+    // decoration changed its final geometry. Retract dependencies of boundary
+    // values that decreased; additive propagation alone leaves those seams lit.
+    std::vector<LightRemovalNode> skyRemovalQueue;
+    std::vector<LightRemovalNode> blockRemovalQueue;
+    if (hadLighting) {
+        skyRemovalQueue.reserve(16 * 4 * Chunk::HEIGHT);
+        blockRemovalQueue.reserve(16 * 4 * Chunk::HEIGHT);
+        auto oldLight = [](const std::vector<uint8_t>& data, int index) {
+            const uint8_t packed = data[index >> 1];
+            return (index & 1) == 0 ? packed & 0x0F : (packed >> 4) & 0x0F;
+        };
+
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                if (x != 0 && x != 15 && z != 0 && z != 15) continue;
+                for (int y = 0; y < Chunk::HEIGHT; ++y) {
+                    const int idx = (x << 11) | (z << 7) | y;
+                    const int previousSky = oldLight(oldSky, idx);
+                    const int currentSky = chunk.getLightInternal(LightType::Sky, idx);
+                    if (previousSky > currentSky) {
+                        skyRemovalQueue.push_back({cx + x, y, cz + z, previousSky});
+                    }
+
+                    const int previousBlock = oldLight(oldBlock, idx);
+                    const int currentBlock = chunk.getLightInternal(LightType::Block, idx);
+                    if (previousBlock > currentBlock) {
+                        blockRemovalQueue.push_back({cx + x, y, cz + z, previousBlock});
+                    }
+                }
+            }
+        }
+    }
+
+    // Seed only cells that can improve a horizontal neighbor. Vertical direct
+    // skylight was fully resolved by the column scan above.
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            for (int y = 0; y < Chunk::HEIGHT; ++y) {
+                const int idx = (x << 11) | (z << 7) | y;
+                const int light = chunk.getLightInternal(LightType::Sky, idx);
+                if (light <= 1) continue;
+
+                bool frontier = false;
+                if (x > 0) frontier |= light - std::max(1, Block::lightOpacity[chunk.getBlockID(x - 1, y, z)]) > chunk.getLightInternal(LightType::Sky, idx - (1 << 11));
+                if (x < 15) frontier |= light - std::max(1, Block::lightOpacity[chunk.getBlockID(x + 1, y, z)]) > chunk.getLightInternal(LightType::Sky, idx + (1 << 11));
+                if (z > 0) frontier |= light - std::max(1, Block::lightOpacity[chunk.getBlockID(x, y, z - 1)]) > chunk.getLightInternal(LightType::Sky, idx - (1 << 7));
+                if (z < 15) frontier |= light - std::max(1, Block::lightOpacity[chunk.getBlockID(x, y, z + 1)]) > chunk.getLightInternal(LightType::Sky, idx + (1 << 7));
+                if (frontier) skyQueue.push_back({cx + x, y, cz + z});
+            }
+        }
+    }
+
+    auto seedSeam = [&](Chunk* neighbor, int nwx, int nwz, int cwx, int cwz) {
+        if (!neighbor || !neighbor->isLightWipeComplete()) return;
         for (int y = 0; y < Chunk::HEIGHT; ++y) {
-            const int nidx = ((wx & 15) << 11) | ((wz & 15) << 7) | y;
-            if (neighbor->getLightInternal(LightType::Sky, nidx) > 0) {
-                skyQueue.push_back({wx, y, wz});
-            }
-            if (neighbor->getLightInternal(LightType::Block, nidx) > 0) {
-                blockQueue.push_back({wx, y, wz});
-            }
+            const int nidx = ((nwx & 15) << 11) | ((nwz & 15) << 7) | y;
+            const int cidx = ((cwx & 15) << 11) | ((cwz & 15) << 7) | y;
+            const int neighborOpacity = std::max(1, Block::lightOpacity[neighbor->getBlockID(nwx & 15, y, nwz & 15)]);
+            const int currentOpacity = std::max(1, Block::lightOpacity[chunk.getBlockID(cwx & 15, y, cwz & 15)]);
+
+            const int neighborSky = neighbor->getLightInternal(LightType::Sky, nidx);
+            const int currentSky = chunk.getLightInternal(LightType::Sky, cidx);
+            if (neighborSky - currentOpacity > currentSky) skyQueue.push_back({nwx, y, nwz});
+            if (currentSky - neighborOpacity > neighborSky) skyQueue.push_back({cwx, y, cwz});
+
+            const int neighborBlock = neighbor->getLightInternal(LightType::Block, nidx);
+            const int currentBlock = chunk.getLightInternal(LightType::Block, cidx);
+            if (neighborBlock - currentOpacity > currentBlock) blockQueue.push_back({nwx, y, nwz});
+            if (currentBlock - neighborOpacity > neighborBlock) blockQueue.push_back({cwx, y, cwz});
         }
     };
 
-    Chunk* neighborW = getChunk(chunk.getX() - 1, chunk.getZ()).get();
-    Chunk* neighborE = getChunk(chunk.getX() + 1, chunk.getZ()).get();
-    Chunk* neighborN = getChunk(chunk.getX(), chunk.getZ() - 1).get();
-    Chunk* neighborS = getChunk(chunk.getX(), chunk.getZ() + 1).get();
+    auto neighborW = getChunk(chunk.getX() - 1, chunk.getZ());
+    auto neighborE = getChunk(chunk.getX() + 1, chunk.getZ());
+    auto neighborN = getChunk(chunk.getX(), chunk.getZ() - 1);
+    auto neighborS = getChunk(chunk.getX(), chunk.getZ() + 1);
 
     for (int i = 0; i < 16; ++i) {
-        seedNeighborBoundary(neighborW, cx - 1, cz + i);
-        seedNeighborBoundary(neighborE, cx + 16, cz + i);
-        seedNeighborBoundary(neighborN, cx + i, cz - 1);
-        seedNeighborBoundary(neighborS, cx + i, cz + 16);
+        seedSeam(neighborW.get(), cx - 1, cz + i, cx, cz + i);
+        seedSeam(neighborE.get(), cx + 16, cz + i, cx + 15, cz + i);
+        seedSeam(neighborN.get(), cx + i, cz - 1, cx + i, cz);
+        seedSeam(neighborS.get(), cx + i, cz + 16, cx + i, cz + 15);
     }
 
+    if (!skyRemovalQueue.empty()) unpropagateLight(LightType::Sky, skyRemovalQueue, skyQueue);
+    if (!blockRemovalQueue.empty()) unpropagateLight(LightType::Block, blockRemovalQueue, blockQueue);
     propagateLight(LightType::Sky, skyQueue);
     propagateLight(LightType::Block, blockQueue);
 }

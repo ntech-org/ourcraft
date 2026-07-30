@@ -112,7 +112,9 @@ void IntegratedServer::stop() {
 void IntegratedServer::run() {
     OC_THREAD_NAME("Server");
     int port = m_config.getInt("port", 25565);
-    m_chunkKeepDistance = m_config.getInt("view-distance", 12);
+    if (m_isDedicated) {
+        m_chunkKeepDistance.store(m_config.getInt("view-distance", 12), std::memory_order_release);
+    }
     m_server = std::make_unique<Server>(port);
     if (!m_server->isValid()) {
         std::cerr << "[IntegratedServer] Failed to start server on port " << port << ". Server will not run." << std::endl;
@@ -138,29 +140,33 @@ void IntegratedServer::run() {
     };
 
     auto lastTick = std::chrono::steady_clock::now();
+    constexpr auto tickInterval = std::chrono::milliseconds(50);
 
     while (m_running) {
         OC_ZONE_SCOPED_N("ServerLoop");
+        auto now = std::chrono::steady_clock::now();
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTick);
+        const auto untilTick = m_paused ? tickInterval
+            : (elapsed >= tickInterval ? std::chrono::milliseconds(0) : tickInterval - elapsed);
+        const auto maxPoll = m_world->hasPendingChunkWork() ? std::chrono::milliseconds(5) : tickInterval;
+        const auto pollTimeout = std::clamp(untilTick, std::chrono::milliseconds(0), maxPoll);
         {
             OC_ZONE_SCOPED_N("ServerPoll");
-            m_server->poll();
+            m_server->poll(static_cast<uint32_t>(pollTimeout.count()));
         }
         {
             OC_ZONE_SCOPED_N("ServerPollChunks");
             m_world->pollGeneratedChunks();
         }
 
-        auto now = std::chrono::steady_clock::now();
+        now = std::chrono::steady_clock::now();
         if (m_paused) {
             lastTick = now;
-        } else if (now - lastTick >= std::chrono::milliseconds(50)) {
+        } else if (now - lastTick >= tickInterval) {
             tick();
             lastTick = now;
             OC_FRAME_MARK_NAMED("ServerTick");
         }
-
-        m_server->poll();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     if (m_world) {
@@ -183,8 +189,9 @@ void IntegratedServer::tick() {
         entitiesById[entity->entityID] = entity.get();
     }
 
-    pushChunksToPlayers(*m_world, *m_server, m_players, entitiesById, m_chunkKeepDistance);
-    m_world->popNewChunks();
+    const bool chunksChanged = !m_world->popNewChunks().empty();
+    const int chunkKeepDistance = m_chunkKeepDistance.load(std::memory_order_acquire);
+    pushChunksToPlayers(*m_world, *m_server, m_players, entitiesById, chunkKeepDistance, chunksChanged);
 
     auto removedEntities = m_world->popRemovedEntities();
     for (int32_t id : removedEntities) {
@@ -198,7 +205,7 @@ void IntegratedServer::tick() {
 
     if (++m_unloadTimer >= 20 * 10) {
         m_unloadTimer = 0;
-        unloadFarChunks(*m_world, *m_server, m_players, entitiesById, m_chunkKeepDistance);
+        unloadFarChunks(*m_world, *m_server, m_players, entitiesById, chunkKeepDistance + 2);
     }
 
     broadcastEntityPositions(*m_world, *m_server);

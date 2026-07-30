@@ -214,6 +214,7 @@ class PacketChunkData : public AutoPacket<PacketChunkData> {
 public:
     int32_t x, z;
     uint8_t primaryBitmask = 0;
+    uint8_t lightBitmask = 0;
 
     // Use pointers to avoid massive copies if possible
     const uint8_t* blockPtr = nullptr;
@@ -233,12 +234,20 @@ public:
         writeInt(buffer, x);
         writeInt(buffer, z);
         writeByte(buffer, primaryBitmask);
+        writeByte(buffer, lightBitmask);
 
         std::vector<uint8_t> uncompressed;
-        int sectionCount = 0;
-        for(int i = 0; i < 8; ++i) if(primaryBitmask & (1 << i)) sectionCount++;
+        int blockSectionCount = 0;
+        int lightSectionCount = 0;
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) blockSectionCount++;
+            if(lightBitmask & (1 << i)) lightSectionCount++;
+        }
 
-        uncompressed.reserve(sectionCount * (4096 + 2048 + 2048 + 2048));
+        const std::size_t uncompressedSize = blockSectionCount * (4096 + 2048)
+            + lightSectionCount * (2048 + 2048);
+        uncompressed.resize(uncompressedSize);
+        uint8_t* out = uncompressed.data();
 
         const uint8_t* b = blockPtr ? blockPtr : blocks.data();
         const uint8_t* m = metaPtr ? metaPtr : metadata.data();
@@ -248,32 +257,44 @@ public:
         // 1. Blocks
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
-                const uint8_t* src = b + i * 4096;
-                uncompressed.insert(uncompressed.end(), src, src + 4096);
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    const uint8_t* src = b + (x << 11) + (z << 7) + i * 16;
+                    std::memcpy(out, src, 16);
+                    out += 16;
+                }
             }
         }
 
         // 2. Metadata (already packed in memory)
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
-                const uint8_t* src = m + i * 2048;
-                uncompressed.insert(uncompressed.end(), src, src + 2048);
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    const uint8_t* src = m + ((x << 11) + (z << 7) + i * 16) / 2;
+                    std::memcpy(out, src, 8);
+                    out += 8;
+                }
             }
         }
 
         // 3. Skylight
         for(int i = 0; i < 8; ++i) {
-            if(primaryBitmask & (1 << i)) {
-                const uint8_t* src = s + i * 2048;
-                uncompressed.insert(uncompressed.end(), src, src + 2048);
+            if(lightBitmask & (1 << i)) {
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    const uint8_t* src = s + ((x << 11) + (z << 7) + i * 16) / 2;
+                    std::memcpy(out, src, 8);
+                    out += 8;
+                }
             }
         }
 
         // 4. Blocklight
         for(int i = 0; i < 8; ++i) {
-            if(primaryBitmask & (1 << i)) {
-                const uint8_t* src = bl + i * 2048;
-                uncompressed.insert(uncompressed.end(), src, src + 2048);
+            if(lightBitmask & (1 << i)) {
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    const uint8_t* src = bl + ((x << 11) + (z << 7) + i * 16) / 2;
+                    std::memcpy(out, src, 8);
+                    out += 8;
+                }
             }
         }
 
@@ -288,14 +309,20 @@ public:
         x = readInt(data);
         z = readInt(data);
         primaryBitmask = readByte(data);
+        lightBitmask = readByte(data);
 
         int32_t compressedSize = readInt(data);
         const uint8_t* compressedPtr = data;
 
-        int sectionCount = 0;
-        for(int i = 0; i < 8; ++i) if(primaryBitmask & (1 << i)) sectionCount++;
+        int blockSectionCount = 0;
+        int lightSectionCount = 0;
+        for(int i = 0; i < 8; ++i) {
+            if(primaryBitmask & (1 << i)) blockSectionCount++;
+            if(lightBitmask & (1 << i)) lightSectionCount++;
+        }
 
-        size_t totalExpected = sectionCount * (4096 + 2048 + 2048 + 2048);
+        size_t totalExpected = blockSectionCount * (4096 + 2048)
+            + lightSectionCount * (2048 + 2048);
         std::vector<uint8_t> decompressed;
         Compression::decompress(compressedPtr, compressedSize, decompressed, totalExpected);
 
@@ -309,32 +336,40 @@ public:
         // 1. Blocks
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
-                std::memcpy(blocks.data() + i * 4096, ptr, 4096);
-                ptr += 4096;
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    std::memcpy(blocks.data() + (x << 11) + (z << 7) + i * 16, ptr, 16);
+                    ptr += 16;
+                }
             }
         }
 
         // 2. Metadata
         for(int i = 0; i < 8; ++i) {
             if(primaryBitmask & (1 << i)) {
-                std::memcpy(metadata.data() + i * 2048, ptr, 2048);
-                ptr += 2048;
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    std::memcpy(metadata.data() + ((x << 11) + (z << 7) + i * 16) / 2, ptr, 8);
+                    ptr += 8;
+                }
             }
         }
 
         // 3. Skylight
         for(int i = 0; i < 8; ++i) {
-            if(primaryBitmask & (1 << i)) {
-                std::memcpy(skylight.data() + i * 2048, ptr, 2048);
-                ptr += 2048;
+            if(lightBitmask & (1 << i)) {
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    std::memcpy(skylight.data() + ((x << 11) + (z << 7) + i * 16) / 2, ptr, 8);
+                    ptr += 8;
+                }
             }
         }
 
         // 4. Blocklight
         for(int i = 0; i < 8; ++i) {
-            if(primaryBitmask & (1 << i)) {
-                std::memcpy(blocklight.data() + i * 2048, ptr, 2048);
-                ptr += 2048;
+            if(lightBitmask & (1 << i)) {
+                for (int x = 0; x < 16; ++x) for (int z = 0; z < 16; ++z) {
+                    std::memcpy(blocklight.data() + ((x << 11) + (z << 7) + i * 16) / 2, ptr, 8);
+                    ptr += 8;
+                }
             }
         }
     }

@@ -16,7 +16,6 @@ inline void World::applyBlockChange(int x, int y, int z, uint8_t id, uint8_t met
     int oldBlockLight = Block::lightValue[oldID];
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);
 
-    int si = Chunk::getSectionIndex(y);
     chunk->setBlockID(lx, y, lz, id);
     chunk->setBlockMetadata(lx, y, lz, meta);
 
@@ -24,10 +23,8 @@ inline void World::applyBlockChange(int x, int y, int z, uint8_t id, uint8_t met
         onBlockChanged(x, y, z, id, meta);
     }
 
-    if (lx == 0) { if (auto n = getChunk((x >> 4) - 1, z >> 4)) n->touchSection(si); }
-    else if (lx == 15) { if (auto n = getChunk((x >> 4) + 1, z >> 4)) n->touchSection(si); }
-    if (lz == 0) { if (auto n = getChunk(x >> 4, (z >> 4) - 1)) n->touchSection(si); }
-    else if (lz == 15) { if (auto n = getChunk(x >> 4, (z >> 4) + 1)) n->touchSection(si); }
+    const bool waterChanged = (oldID == 8 || oldID == 9) != (id == 8 || id == 9);
+    invalidateMeshDependencies(x, y, z, waterChanged);
 
     int newOpacity = Block::lightOpacity[id];
     int newBlockLight = Block::lightValue[id];

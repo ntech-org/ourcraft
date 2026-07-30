@@ -42,7 +42,7 @@ static bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
     return false;
 }
 
-void ChunkMesher::greedyMeshTopBottom(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool up, const float* waterLevels) {
+void ChunkMesher::greedyMeshTopBottom(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, bool up, const float* waterLevels) {
     int bx = cx * 16, by = si * 16, bz = cz * 16, off = up ? 1 : -1, f = up ? 1 : 0;
     FaceDirection dir = up ? FaceDirection::Up : FaceDirection::Down;
     thread_local FaceMaskCell tls_mask[256];
@@ -73,7 +73,7 @@ appendVertex(md.opaque, x1, yq, z1, (float)w, (float)h, c.textureIndex, dir, c.d
     }
 }
 
-void ChunkMesher::greedyMeshNorthSouth(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool south, const float* waterLevels) {
+void ChunkMesher::greedyMeshNorthSouth(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, bool south, const float* waterLevels) {
     int bx = cx * 16, by = si * 16, bz = cz * 16, off = south ? 1 : -1, f = south ? 3 : 2;
     FaceDirection dir = south ? FaceDirection::South : FaceDirection::North;
     thread_local FaceMaskCell tls_mask[256];
@@ -103,7 +103,7 @@ appendVertex(md.opaque, x0, y1, zq, 0, 0, c.textureIndex, dir, c.depth, c.waterD
     }
 }
 
-void ChunkMesher::greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool east, const float* waterLevels) {
+void ChunkMesher::greedyMeshWestEast(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, bool east, const float* waterLevels) {
     int bx = cx * 16, by = si * 16, bz = cz * 16, off = east ? 1 : -1, f = east ? 5 : 4;
     FaceDirection dir = east ? FaceDirection::East : FaceDirection::West;
     thread_local FaceMaskCell tls_mask[256];
@@ -134,7 +134,7 @@ appendVertex(md.opaque, xq, y1, z1, (float)w, 0, c.textureIndex, dir, c.depth, c
     }
 }
 
-void ChunkMesher::crossMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz) {
+void ChunkMesher::crossMeshPass(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz) {
     int bx = cx * 16, by = si * 16, bz = cz * 16;
     for (int y = 0; y < 16; ++y) {
         for (int z = 0; z < 16; ++z) {

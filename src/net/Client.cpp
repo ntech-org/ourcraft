@@ -88,14 +88,11 @@ void Client::poll() {
 
 void Client::networkLoop() {
     while (m_running) {
-        bool activity = false;
-
         // 1. Send outgoing packets
         while (auto queued = m_outgoingPackets.pop()) {
             if (m_peer) {
                 ENetPacket* enetPacket = enet_packet_create(queued->data.data(), queued->data.size(), queued->reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
                 enet_peer_send(m_peer, 0, enetPacket);
-                activity = true;
             }
         }
 
@@ -114,8 +111,8 @@ void Client::networkLoop() {
             }
         }
 
-        while (enet_host_service(m_client, &event, 0) > 0) {
-            activity = true;
+        int serviceResult = enet_host_service(m_client, &event, 5);
+        while (serviceResult > 0) {
             switch (event.type) {
                 case ENET_EVENT_TYPE_CONNECT:
                     std::cout << "[Client] Connected to server successfully." << std::endl;
@@ -157,10 +154,7 @@ case ENET_EVENT_TYPE_DISCONNECT: {
                 default:
                     break;
             }
-        }
-
-        if (!activity) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            serviceResult = enet_host_service(m_client, &event, 0);
         }
     }
 }

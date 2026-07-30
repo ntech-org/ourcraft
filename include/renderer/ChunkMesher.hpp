@@ -5,6 +5,7 @@
 #include "world/IBlockAccess.hpp"
 #include "world/Material.hpp"
 #include "world/World.hpp"
+#include <array>
 
 class World;
 
@@ -55,14 +56,64 @@ inline float getWaterDepth(const IBlockAccess& n, int x, int y, int z) {
     return d;
 }
 
+class MeshingSnapshot final : public IBlockAccess {
+public:
+    static constexpr int HALO_SIZE = 18;
+    static constexpr int HALO_HEIGHT = Chunk::SECTION_HEIGHT + 2;
+    static constexpr int CELL_COUNT = HALO_SIZE * HALO_SIZE * HALO_HEIGHT;
+
+    MeshingSnapshot(const World& world, int chunkX, int chunkZ, int sectionIndex);
+
+    uint8_t getBlockID(int x, int y, int z) const override {
+        if (x < -1 || x > 16 || y < m_minY || y >= m_minY + HALO_HEIGHT || z < -1 || z > 16) return 0;
+        return m_blocks[localIndex(x, y, z)];
+    }
+
+    uint8_t getBlockMetadata(int x, int y, int z) const override {
+        if (x < -1 || x > 16 || y < m_minY || y >= m_minY + HALO_HEIGHT || z < -1 || z > 16) return 0;
+        return m_metadata[localIndex(x, y, z)];
+    }
+
+    const Material& getBlockMaterial(int x, int y, int z) const override;
+    float getWaterLevel(int x, int z) const { return m_waterLevels[x * 16 + z]; }
+
+    std::pair<int, int> getLightPair(int x, int y, int z) const override {
+        if (y >= Chunk::HEIGHT) return {15, 0};
+        if (y < 0) return {0, 0};
+        x -= m_baseX;
+        z -= m_baseZ;
+        if (x < -1 || x > 16 || y < m_minY || y >= m_minY + HALO_HEIGHT || z < -1 || z > 16) {
+            return {0, 0};
+        }
+        const int i = localIndex(x, y, z);
+        return {m_skylight[i], m_blocklight[i]};
+    }
+
+private:
+    static int index(int x, int y, int z) {
+        return (y * HALO_SIZE + (z + 1)) * HALO_SIZE + (x + 1);
+    }
+
+    int localIndex(int x, int y, int z) const { return index(x, y - m_minY, z); }
+
+    int m_baseX;
+    int m_baseZ;
+    int m_minY;
+    std::array<uint8_t, CELL_COUNT> m_blocks {};
+    std::array<uint8_t, CELL_COUNT> m_metadata {};
+    std::array<uint8_t, CELL_COUNT> m_skylight {};
+    std::array<uint8_t, CELL_COUNT> m_blocklight {};
+    std::array<float, Chunk::WIDTH * Chunk::DEPTH> m_waterLevels {};
+};
+
 class ChunkMesher {
 public:
     static ChunkMeshData buildSectionMesh(const World& world, const Chunk& chunk, int sectionIndex);
 
 private:
-    static void greedyMeshTopBottom(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool up, const float* waterLevels = nullptr);
-    static void greedyMeshNorthSouth(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool south, const float* waterLevels = nullptr);
-    static void greedyMeshWestEast(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, bool east, const float* waterLevels = nullptr);
-    static void fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, const float* waterLevels = nullptr);
-    static void crossMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz);
+    static void greedyMeshTopBottom(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, bool up, const float* waterLevels = nullptr);
+    static void greedyMeshNorthSouth(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, bool south, const float* waterLevels = nullptr);
+    static void greedyMeshWestEast(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, bool east, const float* waterLevels = nullptr);
+    static void fluidMeshPass(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, const float* waterLevels = nullptr);
+    static void crossMeshPass(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz);
 };

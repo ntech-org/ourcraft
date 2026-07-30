@@ -19,7 +19,7 @@ bool shouldCull(std::uint8_t bid, std::uint8_t nid) {
     return false;
 }
 
-float getCornerHeight(const IBlockAccess& n, int x, int y, int z, const Material& mat) {
+float getCornerHeight(const MeshingSnapshot& n, int x, int y, int z, const Material& mat) {
     float s = 0; int c = 0;
     for (int i = 0; i < 4; ++i) {
         int nx = x - (i & 1), nz = z - (i >> 1 & 1);
@@ -32,7 +32,7 @@ float getCornerHeight(const IBlockAccess& n, int x, int y, int z, const Material
 }
 }
 
-void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const IBlockAccess& n, int si, int cx, int cz, const float* waterLevels) {
+void ChunkMesher::fluidMeshPass(ChunkMeshData& md, const MeshingSnapshot& n, int si, int cx, int cz, const float* waterLevels) {
     int bx = cx * 16, by = si * 16, bz = cz * 16;
     for (int y = 0; y < 16; ++y) {
         int gy = by + y;

@@ -25,7 +25,7 @@ public:
     void stop();
     void setDedicated(bool dedicated) { m_isDedicated = dedicated; }
     void setPaused(bool paused) { m_paused = paused; }
-    void setChunkKeepDistance(int dist) { m_chunkKeepDistance = dist; }
+    void setChunkKeepDistance(int dist) { m_chunkKeepDistance.store(dist, std::memory_order_release); }
     bool isPaused() const { return m_paused; }
     bool isRunning() const { return m_running; }
     int getPlayerCount() const { return (int)m_players.size(); }
@@ -54,7 +54,7 @@ private:
     bool m_isDedicated = false;
 
     std::map<ENetPeer*, PlayerSession> m_players;
-    int m_chunkKeepDistance = 12;
+    std::atomic<int> m_chunkKeepDistance{12};
 
     int m_tickCounter = 0;
     int m_unloadTimer = 0;

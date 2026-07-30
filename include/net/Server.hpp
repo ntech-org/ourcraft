@@ -10,7 +10,7 @@ public:
     Server(uint16_t port);
     ~Server();
 
-    void poll();
+    void poll(uint32_t timeoutMs = 0);
     void sendPacket(ENetPeer* peer, const Packet& packet, bool reliable = true);
     void broadcastPacket(const Packet& packet, bool reliable = true, ENetPeer* excludePeer = nullptr);
     void kick(ENetPeer* peer, const std::string& reason);

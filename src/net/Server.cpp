@@ -22,9 +22,11 @@ Server::~Server() {
     enet_host_destroy(m_server);
 }
 
-void Server::poll() {
+void Server::poll(uint32_t timeoutMs) {
+    if (!m_server) return;
     ENetEvent event;
-    while (enet_host_service(m_server, &event, 0) > 0) {
+    int serviceResult = enet_host_service(m_server, &event, timeoutMs);
+    while (serviceResult > 0) {
         char host[128];
         enet_address_get_host_ip(&event.peer->address, host, 128);
 
@@ -58,6 +60,7 @@ void Server::poll() {
             default:
                 break;
         }
+        serviceResult = enet_host_service(m_server, &event, 0);
     }
 }
 

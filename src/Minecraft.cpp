@@ -237,8 +237,16 @@ void Minecraft::displayGuiScreen(std::shared_ptr<GuiScreen> screen) {
 void Minecraft::run() {
     OC_THREAD_NAME("Main");
     m_lastFrameTime = (double)SDL_GetTicksNS() / 1e9;
+    SDL_GL_SetSwapInterval(m_settings.enableVsync ? 1 : 0);
+    bool appliedVsync = m_settings.enableVsync;
     while (m_running) {
+        const auto frameStart = std::chrono::steady_clock::now();
         OC_ZONE_SCOPED_N("Frame");
+
+        if (appliedVsync != m_settings.enableVsync) {
+            SDL_GL_SetSwapInterval(m_settings.enableVsync ? 1 : 0);
+            appliedVsync = m_settings.enableVsync;
+        }
 
         {
             OC_ZONE_SCOPED_N("PollEvents");
@@ -298,6 +306,11 @@ void Minecraft::run() {
         {
             OC_ZONE_SCOPED_N("SwapBuffers");
             SDL_GL_SwapWindow(m_window);
+        }
+
+        if (m_settings.limitFramerate && m_settings.maxFps > 0) {
+            const auto frameDuration = std::chrono::duration<double>(1.0 / m_settings.maxFps);
+            std::this_thread::sleep_until(frameStart + frameDuration);
         }
 
         OC_FRAME_MARK;

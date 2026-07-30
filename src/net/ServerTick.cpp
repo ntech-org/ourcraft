@@ -280,7 +280,8 @@ void spawnNewEntities(World& world, Server& server, std::map<ENetPeer*, PlayerSe
 }
 
 void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players,
-                         const std::unordered_map<int32_t, Entity*>& entitiesById, int chunkKeepDistance) {
+                         const std::unordered_map<int32_t, Entity*>& entitiesById, int chunkKeepDistance,
+                         bool chunksChanged) {
     for (auto& [peer, session] : players) {
         auto playerIt = entitiesById.find(session.entityID);
         Entity* player = playerIt == entitiesById.end() ? nullptr : playerIt->second;
@@ -290,10 +291,34 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Playe
         int pz = (int)std::floor(player->posZ / 16.0);
         int viewRadius = chunkKeepDistance;
         int requestRadius = chunkKeepDistance + 2;
+        const bool playerChunkChanged = px != session.streamChunkX || pz != session.streamChunkZ;
+        if (!playerChunkChanged && !chunksChanged && !session.chunkStreamPending) continue;
+
+        if (playerChunkChanged) {
+            session.streamChunkX = px;
+            session.streamChunkZ = pz;
+            for (auto it = session.sentChunks.begin(); it != session.sentChunks.end();) {
+                const int cx = static_cast<int32_t>(it->first >> 32);
+                const int cz = static_cast<int32_t>(it->first & 0xFFFFFFFFu);
+                if (std::abs(cx - px) <= viewRadius && std::abs(cz - pz) <= viewRadius) {
+                    ++it;
+                    continue;
+                }
+                PacketChunkUnload packet;
+                packet.x = cx;
+                packet.z = cz;
+                server.sendPacket(peer, packet, true);
+                it = session.sentChunks.erase(it);
+            }
+        }
+
         const auto& offsets = getChunkOffsetsForRadius(requestRadius);
 
         int chunksSentThisTick = 0;
         int chunkLimitPerTick = 8 + (chunkKeepDistance / 4);
+        int chunksRequestedThisTick = 0;
+        constexpr int chunkRequestLimitPerTick = 64;
+        bool budgetExhausted = false;
 
         for (const ChunkOffset& off : offsets) {
             const int cx = px + off.dx;
@@ -304,12 +329,22 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Playe
 
             auto chunk = world.getChunk(cx, cz);
             if (!chunk) {
-                world.requestChunk(cx, cz);
+                if (!world.isChunkPending(cx, cz)) {
+                    if (chunksRequestedThisTick >= chunkRequestLimitPerTick) {
+                        budgetExhausted = true;
+                        break;
+                    }
+                    world.requestChunk(cx, cz);
+                    ++chunksRequestedThisTick;
+                }
                 continue;
             }
 
             if (!inView) continue;
-            if (chunksSentThisTick >= chunkLimitPerTick) break;
+            if (chunksSentThisTick >= chunkLimitPerTick) {
+                budgetExhausted = true;
+                break;
+            }
 
             ChunkState currentState = chunk->getState();
             if (currentState != ChunkState::Complete) continue;
@@ -318,7 +353,8 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Playe
             if (it == session.sentChunks.end()) {
                 PacketChunkData packet;
                 packet.x = cx; packet.z = cz;
-                packet.primaryBitmask = 0xFF;
+                packet.primaryBitmask = chunk->getPrimaryBitmask();
+                packet.lightBitmask = 0xFF;
                 packet.blockPtr = chunk->getBlocks();
                 packet.metaPtr = chunk->getMetadata();
                 packet.skyPtr = chunk->getSkylight();
@@ -328,6 +364,7 @@ void pushChunksToPlayers(World& world, Server& server, std::map<ENetPeer*, Playe
                 chunksSentThisTick++;
             }
         }
+        session.chunkStreamPending = budgetExhausted;
     }
 }
 

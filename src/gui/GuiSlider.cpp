@@ -13,6 +13,8 @@ void GuiSlider::updateText() {
         this->text = prefix + std::to_string(chunks) + " chunks";
     } else if (id == 6) { // FOV
         this->text = prefix + std::to_string((int)(30.0f + sliderValue * 80.0f));
+    } else if (id == 9) { // Maximum frame rate
+        this->text = prefix + std::to_string(30 + (int)(sliderValue * 210.0f));
     } else {
         this->text = prefix + std::to_string((int)(sliderValue * 100)) + "%";
     }

@@ -124,13 +124,22 @@ private:
         std::uint32_t generation = 0;
     };
 
+    struct PendingMeshInfo {
+        Chunk* chunkPtr = nullptr;
+        std::uint32_t version = 0;
+        int priority = 0;
+    };
+
     World& m_world;
     std::vector<ChunkColumn> m_columns;
     std::unordered_map<std::uint64_t, std::size_t> m_columnIndex;
     Stats m_stats;
     int m_playerCX = 0;
     int m_playerCZ = 0;
+    int m_maintainedPlayerCX = 0;
+    int m_maintainedPlayerCZ = 0;
     int m_renderDistanceChunks = 12;
+    std::uint32_t m_maintenanceFrame = 0;
     std::vector<SectionRenderEntry*> m_visibleOpaque;
     std::vector<SectionRenderEntry*> m_visibleTranslucent;
     std::uint32_t m_meshGeneration = 1;
@@ -160,6 +169,7 @@ private:
     bool isSectionMeshReady(const Chunk& chunk) const;
     bool sectionHasRenderableMesh(const SectionRenderEntry& entry) const;
     void requestSectionMesh(SectionRenderEntry& entry);
+    void queueSectionMesh(const std::shared_ptr<Chunk>& chunk, int sectionIndex, int urgency = 0);
     void processMeshResults(int maxResults);
     void enqueueDirtyMeshes(int limit);
     void cleanupRemovedColumns();
@@ -169,6 +179,8 @@ private:
 
     std::vector<std::thread> m_meshWorkers;
     std::priority_queue<MeshTask, std::vector<MeshTask>, MeshTaskPriority> m_taskQueue;
+    std::priority_queue<MeshTask, std::vector<MeshTask>, MeshTaskPriority> m_pendingMeshQueue;
+    std::unordered_map<SectionKey, PendingMeshInfo, SectionKeyHash> m_pendingMeshVersions;
     std::unordered_map<SectionKey, InFlightInfo, SectionKeyHash> m_inFlight;
     std::queue<MeshResult> m_resultQueue;
 
@@ -181,12 +193,11 @@ private:
     Shader* m_batchedShader = nullptr;
     GLuint m_sectionSSBO = 0;
     void* m_sectionSSBOPtr = nullptr;
-    GLsync m_ssboFence = nullptr;
+    static constexpr std::size_t kSectionBufferCount = 3;
+    std::array<GLsync, kSectionBufferCount> m_ssboFences {};
+    std::size_t m_sectionBufferIndex = 0;
     std::vector<SectionGPUData> m_sectionGPUData;
     std::vector<BatchedMesh::DrawElementsIndirectCommand> m_opaqueCommands;
-
-    static constexpr std::size_t kMaxQueuedTasks = 2048;
-    static constexpr std::size_t kMaxResultQueue = 4096;
 
     void buildBatchedFrameData(const Frustum& frustum, const glm::dvec3& cameraPos);
 };

@@ -60,6 +60,12 @@ struct HitResult {
     class Entity* entity = nullptr;
 };
 
+struct DirtySectionEvent {
+    std::shared_ptr<Chunk> chunk;
+    int sectionIndex;
+    int urgency;
+};
+
 class World : public IBlockAccess {
 public:
     World();
@@ -84,6 +90,7 @@ public:
 
     bool isChunkLoaded(int chunkX, int chunkZ) const;
     bool isChunkPending(int chunkX, int chunkZ) const;
+    bool hasPendingChunkWork() const { return m_loader && m_loader->hasPendingWork(); }
     
     // Fast bulk check
     void getLoadedAndPendingChunks(int playerCX, int playerCZ, int radius, 
@@ -143,6 +150,9 @@ public:
     std::vector<std::shared_ptr<Chunk>> getAllChunks() const;
     std::vector<std::shared_ptr<Chunk>> popNewChunks();
     std::vector<std::shared_ptr<Chunk>> popCompleteChunks();
+    std::vector<DirtySectionEvent> popDirtySections();
+    void enableSectionChangeTracking();
+    void queueSectionRemesh(const std::shared_ptr<Chunk>& chunk, int sectionIndex, int urgency);
     std::vector<int32_t> popRemovedEntities();
 
     void spawnEntity(std::unique_ptr<Entity> entity);
@@ -168,6 +178,9 @@ private:
 
     void notifyBlockOfNeighborChange(int x, int y, int z, int neighborID);
     void applyBlockChange(int x, int y, int z, uint8_t id, uint8_t meta, bool notify);
+    void invalidateMeshDependencies(int x, int y, int z, bool wholeColumn = false);
+    void finalizeChunk(const std::shared_ptr<Chunk>& chunk);
+    void promoteLightingReadyChunks(int chunkX, int chunkZ);
     static int floorDiv(int value, int divisor);
     static int floorMod(int value, int divisor);
     static std::uint64_t chunkKey(int chunkX, int chunkZ);
@@ -178,6 +191,9 @@ private:
     std::mutex m_newChunksMutex;
     std::vector<std::shared_ptr<Chunk>> m_completeChunks;
     std::mutex m_completeChunksMutex;
+    std::vector<DirtySectionEvent> m_dirtySections;
+    std::mutex m_dirtySectionsMutex;
+    bool m_trackSectionChanges = false;
     std::vector<int32_t> m_removedEntities;
     std::mutex m_removedEntitiesMutex;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> m_chunkLookup;
@@ -196,6 +212,7 @@ private:
     std::unique_ptr<ChunkLoader> m_loader;
     mutable std::shared_mutex m_chunkMutex;
     mutable std::mutex m_pendingMutex;
+    std::mutex m_lightingMutex;
 
     std::set<NextTickListEntry> m_scheduledTickSet;
     uint64_t m_tickCount = 0;

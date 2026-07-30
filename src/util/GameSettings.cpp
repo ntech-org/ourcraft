@@ -14,7 +14,7 @@ void GameSettings::setDefaults() {
     renderDistanceChunks = 12;
     viewBobbing = true;
     anaglyph = false;
-    limitFramerate = false;
+    limitFramerate = true;
     fancyGraphics = true;
     ambientOcclusion = true;
     guiScale = 0;

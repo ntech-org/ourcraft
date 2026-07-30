@@ -3,6 +3,7 @@
 #include "gui/GuiOptionButton.hpp"
 #include "gui/GuiOptions.hpp"
 #include "Minecraft.hpp"
+#include <algorithm>
 
 void GuiGraphicsSettings::initGui() {
     m_pendingSettings = mc->getSettings();
@@ -66,10 +67,26 @@ void GuiGraphicsSettings::initGui() {
     auto scaleBtn = std::make_unique<GuiButton>(7, midX + 5, height / 6 + 104, 150, 20, scaleText);
     controlList.push_back(std::move(scaleBtn));
 
+    auto vsyncBtn = std::make_unique<GuiOptionButton>(8, midX - 155, height / 6 + 128, 150, 20,
+        "VSync", std::vector<std::string>{"OFF", "ON"}, m_pendingSettings.enableVsync ? 1 : 0);
+    vsyncBtn->onValueChange = [this](int idx) {
+        this->m_pendingSettings.enableVsync = (idx == 1);
+    };
+    controlList.push_back(std::move(vsyncBtn));
+
+    float fpsVal = std::clamp((float)(m_pendingSettings.maxFps - 30) / 210.0f, 0.0f, 1.0f);
+    auto fpsSlider = std::make_unique<GuiSlider>(9, midX + 5, height / 6 + 128, fpsVal, "Max FPS: ", [this](float val) {
+        this->m_pendingSettings.maxFps = 30 + (int)(val * 210.0f);
+        this->m_pendingSettings.limitFramerate = true;
+    });
+    fpsSlider->width = 150;
+    fpsSlider->height = 20;
+    controlList.push_back(std::move(fpsSlider));
+
     // Apply / Cancel / Reset buttons
-    controlList.push_back(std::make_unique<GuiButton>(100, midX - 155, height / 6 + 140, 100, 20, "Reset"));
-    controlList.push_back(std::make_unique<GuiButton>(101, midX - 50, height / 6 + 140, 100, 20, "Cancel"));
-    controlList.push_back(std::make_unique<GuiButton>(102, midX + 55, height / 6 + 140, 100, 20, "Apply"));
+    controlList.push_back(std::make_unique<GuiButton>(100, midX - 155, height / 6 + 164, 100, 20, "Reset"));
+    controlList.push_back(std::make_unique<GuiButton>(101, midX - 50, height / 6 + 164, 100, 20, "Cancel"));
+    controlList.push_back(std::make_unique<GuiButton>(102, midX + 55, height / 6 + 164, 100, 20, "Apply"));
 }
 
 void GuiGraphicsSettings::drawScreen(int mouseX, int mouseY, float partialTicks) {
