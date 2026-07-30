@@ -63,6 +63,15 @@ public:
         } while (!byteRef.compare_exchange_weak(expected, desired, std::memory_order_relaxed, std::memory_order_relaxed));
     }
 
+    // Fast non-atomic path for single-writer initial lighting (before wipe-complete).
+    inline void setLightInternalFast(LightType type, int index, int val) {
+        std::vector<uint8_t>& data = (type == LightType::Sky) ? m_skylight : m_blocklight;
+        setLightValue(data, index, val);
+    }
+
+    // Fill sky light = 15 for y in [minY, maxY] in one column (Y-major, consecutive indices).
+    void fillColumnSkyLight15(int x, int z, int minY, int maxY);
+
     void markSectionDirtyInternal(int sectionIndex);
 
     int getX() const { return m_x; }

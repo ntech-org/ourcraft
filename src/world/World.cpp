@@ -554,9 +554,24 @@ void World::calculateInitialSkylight(Chunk& chunk) {
 
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
+            const int height = chunk.getHeight(x, z);
+
+            // Bulk-fill open sky above heightmap with 15 (fast, no CAS).
+            if (height < Chunk::HEIGHT) {
+                chunk.fillColumnSkyLight15(x, z, height, Chunk::HEIGHT - 1);
+            }
+
             int sky = 15;
             for (int y = Chunk::HEIGHT - 1; y >= 0; --y) {
                 const int idx = (x << 11) | (z << 7) | y;
+                if (y >= height) {
+                    // Above heightmap: already filled with 15, just enqueue.
+                    if (sky > 0) {
+                        skyQueue.push_back({cx + x, y, cz + z});
+                    }
+                    continue;
+                }
+
                 const uint8_t id = chunk.getBlockID(x, y, z);
                 int opacity = 0;
                 if (id != 0) {
@@ -566,13 +581,13 @@ void World::calculateInitialSkylight(Chunk& chunk) {
                         if (sky < 0) sky = 0;
                     }
                 }
-                chunk.setLightInternal(LightType::Sky, idx, sky);
+                chunk.setLightInternalFast(LightType::Sky, idx, sky);
                 if (sky > 0) {
                     skyQueue.push_back({cx + x, y, cz + z});
                 }
 
                 const int emitted = Block::lightValue[id];
-                chunk.setLightInternal(LightType::Block, idx, emitted);
+                chunk.setLightInternalFast(LightType::Block, idx, emitted);
                 if (emitted > 0) {
                     blockQueue.push_back({cx + x, y, cz + z});
                 }

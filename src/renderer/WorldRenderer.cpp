@@ -241,6 +241,10 @@ void WorldRenderer::addSectionsForChunk(std::shared_ptr<Chunk> chunk) {
 
 void WorldRenderer::processMeshResults(int maxResults) {
     OC_ZONE_SCOPED;
+    // One fence wait for the whole upload/free batch instead of per section.
+    if (m_batchedOpaque.isInitialized()) {
+        m_batchedOpaque.beginMutationBatch();
+    }
     int resultsProcessed = 0;
     while (resultsProcessed < maxResults) {
         MeshResult result;
@@ -339,6 +343,9 @@ void WorldRenderer::processMeshResults(int maxResults) {
         entry.hasMesh = true;
         entry.isBuilding = false;
         entry.buildingVersion = 0;
+    }
+    if (m_batchedOpaque.isInitialized()) {
+        m_batchedOpaque.endMutationBatch();
     }
 }
 

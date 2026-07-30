@@ -135,6 +135,26 @@ void Chunk::generateHeightMap() {
     }
 }
 
+void Chunk::fillColumnSkyLight15(int x, int z, int minY, int maxY) {
+    if (minY > maxY || minY < 0 || maxY >= HEIGHT) return;
+    // Y-major: indices (x<<11)|(z<<7)|y are consecutive in y.
+    int base = (x << 11) | (z << 7);
+    int y = minY;
+    // Align to even index so we can write full 0xFF bytes (two nibbles of 15).
+    if (y & 1) {
+        setLightValue(m_skylight, base + y, 15);
+        ++y;
+    }
+    int end = maxY + 1;
+    int evenEnd = end & ~1;
+    for (; y < evenEnd; y += 2) {
+        m_skylight[(base + y) >> 1] = 0xFF;
+    }
+    if (y <= maxY) {
+        setLightValue(m_skylight, base + y, 15);
+    }
+}
+
 void Chunk::generateBitmask() {
     m_primaryBitmask = 0;
     for (int i = 0; i < SECTION_COUNT; ++i) {

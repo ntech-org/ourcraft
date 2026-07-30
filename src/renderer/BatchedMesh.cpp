@@ -27,6 +27,15 @@ void BatchedMesh::waitGpuIdle() {
     m_drawFence = nullptr;
 }
 
+void BatchedMesh::beginMutationBatch() {
+    waitGpuIdle();
+    m_mutationBatchActive = true;
+}
+
+void BatchedMesh::endMutationBatch() {
+    m_mutationBatchActive = false;
+}
+
 void BatchedMesh::insertDrawFence() {
     if (m_drawFence) {
         glDeleteSync(m_drawFence);
@@ -217,8 +226,9 @@ BatchedMesh::Allocation BatchedMesh::upload(const std::vector<TerrainVertex>& ve
     Allocation result;
     if (vertices.empty() || indices.empty()) return result;
 
-    // GPU may still be reading VBO/IBO ranges from last frame's draw.
-    waitGpuIdle();
+    // Outside a mutation batch each upload hard-waits (Wayland-safe).
+    // Inside a batch, beginMutationBatch() already waited once.
+    if (!m_mutationBatchActive) waitGpuIdle();
 
     std::size_t vboSize = vertices.size() * sizeof(TerrainVertex);
     std::size_t iboSize = indices.size() * sizeof(std::uint32_t);
@@ -268,7 +278,7 @@ BatchedMesh::Allocation BatchedMesh::upload(const std::vector<TerrainVertex>& ve
 void BatchedMesh::free(const Allocation& alloc) {
     if (!alloc.valid) return;
     // Don't recycle ranges the GPU may still be sampling.
-    waitGpuIdle();
+    if (!m_mutationBatchActive) waitGpuIdle();
     freeBlock(m_vboFree, alloc.vboOffset, alloc.vboSize);
     freeBlock(m_eboFree, alloc.iboOffset, alloc.iboSize);
 }

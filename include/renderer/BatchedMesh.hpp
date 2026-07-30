@@ -43,6 +43,11 @@ public:
                        const std::vector<TerrainVertex>& vertices,
                        const std::vector<std::uint32_t>& indices);
 
+    // One hard fence wait for a batch of upload/free (Wayland-safe).
+    // Without a batch, each upload/free still waits individually.
+    void beginMutationBatch();
+    void endMutationBatch();
+
     void bind() const;
     void drawIndirect(const void* commands, std::size_t count);
 
@@ -74,6 +79,7 @@ private:
     mutable GLuint m_indirectBuffer = 0;
     mutable std::size_t m_indirectBufferCapacity = 0;
     GLsync m_drawFence = nullptr;
+    bool m_mutationBatchActive = false;
     std::size_t m_vboCapacity = 0;
     std::size_t m_eboCapacity = 0;
     std::vector<FreeBlock> m_vboFree;
