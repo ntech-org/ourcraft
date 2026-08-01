@@ -183,7 +183,7 @@ const SoundBuffer* SoundSystem::loadOGG(const std::string& path) {
 }
 
 ALuint SoundSystem::createSource(const SoundBuffer* buf, float volume, float pitch,
-                                  bool is3D, float x, float y, float z, bool addToSources) {
+                                  bool is3D, double x, double y, double z, bool addToSources) {
     if (!m_initialized || !buf || buf->empty()) return 0;
     ALuint src = 0;
     alGenSources(1, &src);
@@ -198,7 +198,10 @@ ALuint SoundSystem::createSource(const SoundBuffer* buf, float volume, float pit
 
     if (is3D) {
         alSourcei(src, AL_SOURCE_RELATIVE, AL_FALSE);
-        alSource3f(src, AL_POSITION, x, y, z);
+        alSource3f(src, AL_POSITION,
+                   static_cast<float>(x - m_listenerX),
+                   static_cast<float>(y - m_listenerY),
+                   static_cast<float>(z - m_listenerZ));
         alSourcef(src, AL_REFERENCE_DISTANCE, 1.5f);
         alSourcef(src, AL_MAX_DISTANCE, 24.0f);
         alSourcef(src, AL_ROLLOFF_FACTOR, 1.0f);
@@ -212,7 +215,7 @@ ALuint SoundSystem::createSource(const SoundBuffer* buf, float volume, float pit
 
     alSourcePlay(src);
     if (addToSources) {
-        m_sources.push_back({src, volume});
+        m_sources.push_back({src, volume, is3D, x, y, z});
     }
     return src;
 }
@@ -247,7 +250,7 @@ void SoundSystem::play(const SoundBuffer* buf, float volume, float pitch) {
     }
 }
 
-void SoundSystem::play3D(const SoundBuffer* buf, float x, float y, float z,
+void SoundSystem::play3D(const SoundBuffer* buf, double x, double y, double z,
                           float volume, float pitch) {
     if (!buf || !m_initialized) return;
     if (!buf->empty()) {
@@ -298,13 +301,16 @@ void SoundSystem::cleanupSources() {
     }
 }
 
-void SoundSystem::update(float lx, float ly, float lz, float yaw, float pitch,
+void SoundSystem::update(double lx, double ly, double lz, float yaw, float pitch,
                           float soundVolume, float musicVolume) {
     if (!m_initialized) return;
 
     pollLoads();
 
-    alListener3f(AL_POSITION, lx, ly, lz);
+    m_listenerX = lx;
+    m_listenerY = ly;
+    m_listenerZ = lz;
+    alListener3f(AL_POSITION, 0, 0, 0);
 
     float radYaw = yaw * 3.14159265f / 180.0f;
     float radPitch = pitch * 3.14159265f / 180.0f;
@@ -321,8 +327,15 @@ void SoundSystem::update(float lx, float ly, float lz, float yaw, float pitch,
         if (!as.source) continue;
         ALint state;
         alGetSourcei(as.source, AL_SOURCE_STATE, &state);
-        if (state == AL_PLAYING || state == AL_PAUSED)
+        if (state == AL_PLAYING || state == AL_PAUSED) {
+            if (as.is3D) {
+                alSource3f(as.source, AL_POSITION,
+                           static_cast<float>(as.x - m_listenerX),
+                           static_cast<float>(as.y - m_listenerY),
+                           static_cast<float>(as.z - m_listenerZ));
+            }
             alSourcef(as.source, AL_GAIN, as.baseVolume * soundVolume);
+        }
     }
     if (m_musicSource) {
         ALint state;

@@ -56,7 +56,7 @@ void Minecraft::setupPlayerCallbacks() {
     m_player->isLocalPlayer = true;
     m_player->onPlaySound = [this](const std::string& name, float vol, float pitch) {
         if (auto* snd = m_soundPool.getRandom(name, *m_soundSystem))
-            m_soundSystem->play3D(snd, (float)m_player->posX, (float)m_player->posY, (float)m_player->posZ, m_settings.soundVolume * vol, pitch);
+            m_soundSystem->play3D(snd, m_player->posX, m_player->posY, m_player->posZ, m_settings.soundVolume * vol, pitch);
     };
     m_player->onOpenCraftingTable = [this]() {
         displayGuiScreen(std::make_shared<GuiCrafting>());
@@ -270,7 +270,7 @@ void Minecraft::run() {
 
         if (m_soundSystem && m_player) {
             OC_ZONE_SCOPED_N("SoundUpdate");
-            m_soundSystem->update((float)m_player->posX, (float)m_player->posY + 1.6f, (float)m_player->posZ,
+            m_soundSystem->update(m_player->posX, m_player->posY + 1.6, m_player->posZ,
                                   m_player->rotationYaw, m_player->rotationPitch,
                                   m_settings.soundVolume, m_settings.musicVolume);
         }

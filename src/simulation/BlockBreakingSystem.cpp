@@ -46,7 +46,7 @@ void BlockBreakingSystem::tick(Minecraft& mc, EntityPlayer& player, World& world
                     const Block* block = Block::blocksList[targetID];
                     if (block) {
                         const SoundBuffer* snd = pool.getRandom(block->stepSound->getBreakSound(), *sound);
-                        if (snd) sound->play3D(snd, (float)m_objectMouseOver.x, (float)m_objectMouseOver.y, (float)m_objectMouseOver.z, soundVolume, 1.0f);
+                        if (snd) sound->play3D(snd, m_objectMouseOver.x, m_objectMouseOver.y, m_objectMouseOver.z, soundVolume, 1.0f);
                     }
                 }
             }
@@ -76,7 +76,7 @@ void BlockBreakingSystem::tick(Minecraft& mc, EntityPlayer& player, World& world
                                     const Block* b = Block::blocksList[targetID];
                                     if (b) {
                                         auto* snd = pool.getRandom("random.break", *sound);
-                                        if (snd) sound->play3D(snd, (float)m_breakX, (float)m_breakY, (float)m_breakZ, soundVolume, 1.0f);
+                                        if (snd) sound->play3D(snd, m_breakX, m_breakY, m_breakZ, soundVolume, 1.0f);
                                     }
                                     held = {0, 0, 0};
                                 }
@@ -155,7 +155,7 @@ bool BlockBreakingSystem::finishBreakingCurrentBlock(Minecraft& mc, EntityPlayer
     player.swing();
     if (const Block* b = Block::blocksList[targetID]) {
         if (auto* snd = pool.getRandom(b->stepSound->getBreakSound(), *sound))
-            sound->play3D(snd, (float)m_breakX, (float)m_breakY, (float)m_breakZ, soundVolume, 1.0f);
+            sound->play3D(snd, m_breakX, m_breakY, m_breakZ, soundVolume, 1.0f);
     }
     resetBlockBreaking(false, mc, network, mc.getGameRenderer());
     return true;

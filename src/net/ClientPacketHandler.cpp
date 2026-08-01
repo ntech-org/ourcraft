@@ -162,7 +162,7 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
                     try {
                         auto& mc = player.getMinecraft();
                         if (auto* snd = mc.getSoundPool().getRandom("random.pop", mc.getSoundSystem()))
-                            mc.getSoundSystem().play3D(snd, (float)item->posX, (float)item->posY, (float)item->posZ, mc.getSettings().soundVolume, 1.0f);
+                            mc.getSoundSystem().play3D(snd, item->posX, item->posY, item->posZ, mc.getSettings().soundVolume, 1.0f);
                     } catch (...) {}
                 }
                 break;
@@ -180,7 +180,7 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             if (distSq < 0.0001) return;
 
             if (auto* snd = mc.getSoundPool().getRandom(packet.name, mc.getSoundSystem())) {
-                mc.getSoundSystem().play3D(snd, (float)packet.x, (float)packet.y, (float)packet.z, packet.volume, packet.pitch);
+                mc.getSoundSystem().play3D(snd, packet.x, packet.y, packet.z, packet.volume, packet.pitch);
             }
         } catch (...) {}
     } else if (type == PacketType::ChunkUnload) {

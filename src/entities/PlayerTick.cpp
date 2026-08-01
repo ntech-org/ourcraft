@@ -57,7 +57,7 @@ void handleBlockPlacement(Minecraft& mc, EntityPlayer& player, World& world) {
                         player.swing();
                         if (auto* b = Block::blocksList[itemID]) {
                             if (auto* snd = mc.getSoundPool().getRandom(b->stepSound->getBreakSound(), mc.getSoundSystem()))
-                                mc.getSoundSystem().play3D(snd, (float)x, (float)y, (float)z, mc.getSettings().soundVolume, 0.8f);
+                                mc.getSoundSystem().play3D(snd, x, y, z, mc.getSettings().soundVolume, 0.8f);
                         }
                         mc.getNetworkHandler()->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, 0);
                         bb.setRightClickDelayTimer(4);
