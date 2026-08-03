@@ -21,3 +21,5 @@ void unloadFarChunks(World& world, Server& server, std::map<ENetPeer*, PlayerSes
                      const std::unordered_map<int32_t, Entity*>& entitiesById, int keepDistance);
 void spawnMobs(World& world, std::map<ENetPeer*, PlayerSession>& players,
                const std::unordered_map<int32_t, Entity*>& entitiesById);
+
+int getEntitySpawnType(EntityType type);

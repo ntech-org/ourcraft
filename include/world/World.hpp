@@ -198,6 +198,8 @@ private:
     std::mutex m_removedEntitiesMutex;
     std::unordered_map<std::uint64_t, std::shared_ptr<Chunk>, ChunkHasher> m_chunkLookup;
     std::vector<std::unique_ptr<Entity>> m_entities;
+    std::vector<std::unique_ptr<Entity>> m_pendingSpawns;
+    bool m_isUpdating = false;
     int32_t m_nextEntityID = 0;
 
     std::vector<std::unique_ptr<TileEntity>> m_tileEntities;

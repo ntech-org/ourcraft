@@ -1,4 +1,5 @@
 #include "entities/EntityLiving.hpp"
+#include "entities/EntityItem.hpp"
 #include "world/World.hpp"
 #include "world/Block.hpp"
 #include "world/BlockFluid.hpp"
@@ -42,6 +43,25 @@ void EntityLiving::onUpdate() {
     float dist = (float)std::sqrt(dx * dx + dz * dz);
 
     Entity::onUpdate();
+
+    // Death handling
+    if (health <= 0) {
+        deathTime++;
+        if (deathTime >= 20 && !isDead) {
+            isDead = true;
+            onDeath();
+        }
+        // Still render death animation (fall over) but skip AI/movement
+        if (worldObj.isRemote && !isLocalPlayer) {
+            prevLimbSwing = limbSwing;
+            prevLimbSwingAmount = limbSwingAmount;
+            float f = dist * 4.0f;
+            if (f > 1.0f) f = 1.0f;
+            limbSwingAmount += (f - limbSwingAmount) * 0.4f;
+            limbSwing += limbSwingAmount;
+        }
+        return;
+    }
 
     prevRenderYawOffset = renderYawOffset;
 
@@ -114,30 +134,22 @@ void EntityLiving::onUpdate() {
         } else {
             if (inWater) {
                 // Infdev Water Physics
-                float waterDrag = 0.8f;
-                int decay = ((BlockFluid*)Block::waterMoving)->getEffectiveFlowDecay(worldObj, (int)std::floor(posX), (int)std::floor(posY), (int)std::floor(posZ));
-                float jumpBoost = (decay < 0 ? 0.0f : (0.16f * ((float)decay / 8.0f)));
-                float buoyancy = 0.04f + jumpBoost;
-
-                if (jumping) motionY += buoyancy;
+                if (jumping) motionY += 0.04F;
                 moveEntity(motionX, motionY, motionZ);
-                motionX *= waterDrag; motionY *= waterDrag; motionZ *= waterDrag;
-                if (!isFlying) motionY -= 0.02f;
+                motionX *= 0.8F; motionY *= 0.8F; motionZ *= 0.8F;
+                if (!isFlying) motionY -= 0.02F;
+                if (motionY > 0.4F) motionY = 0.4F;
 
                 if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
                     motionY = 0.30000001192092896;
                 }
             } else if (inLava) {
                 // Infdev Lava Physics
-                float lavaDrag = 0.5f;
-                int decay = ((BlockFluid*)Block::lavaMoving)->getEffectiveFlowDecay(worldObj, (int)std::floor(posX), (int)std::floor(posY), (int)std::floor(posZ));
-                float jumpBoost = (decay < 0 ? 0.0f : (0.16f * ((float)decay / 8.0f)));
-                float buoyancy = 0.04f + jumpBoost;
-
-                if (jumping) motionY += buoyancy;
+                if (jumping) motionY += 0.04F;
                 moveEntity(motionX, motionY, motionZ);
-                motionX *= lavaDrag; motionY *= lavaDrag; motionZ *= lavaDrag;
-                if (!isFlying) motionY -= 0.02f;
+                motionX *= 0.5F; motionY *= 0.5F; motionZ *= 0.5F;
+                if (!isFlying) motionY -= 0.02F;
+                if (motionY > 0.4F) motionY = 0.4F;
 
                 if (isCollidedHorizontally && isOffsetPositionInLiquid(motionX, motionY + 0.6000000238418579 - posY + prevPosY, motionZ)) {
                     motionY = 0.30000001192092896;
@@ -154,6 +166,8 @@ void EntityLiving::onUpdate() {
                 if (!isFlying) motionY -= 0.08f;
             }
         }
+        // Push out of overlapping entities (player can push mobs, etc.)
+        pushOutOfEntities();
     }
 
     prevLimbSwing = limbSwing;
@@ -226,10 +240,31 @@ void EntityLiving::attackEntityFrom(Entity* source, int amount) {
             const double dx = source->posX - posX;
             const double dz = source->posZ - posZ;
             attackedAtYaw = (float)(std::atan2(dz, dx) * 180.0 / 3.14159265358979323846) - rotationYaw;
+            // Knockback
+            double dist = std::sqrt(dx * dx + dz * dz);
+            if (dist > 0.001) {
+                double knockback = 0.4;
+                motionX -= (dx / dist) * knockback;
+                motionY += 0.3;
+                motionZ -= (dz / dist) * knockback;
+            }
         } else {
             attackedAtYaw = 0.0f;
         }
         if (onHurt) onHurt();
+    }
+}
+
+void EntityLiving::onDeath() {
+    int dropID = getDropItemID();
+    if (dropID > 0) {
+        int count = 1 + (std::rand() % 2); // 1-2 items
+        auto item = std::make_unique<EntityItem>(worldObj, dropID, count, 0);
+        item->setPosition(posX, posY + 0.5, posZ);
+        item->motionX = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.2;
+        item->motionY = 0.2;
+        item->motionZ = ((double)(std::rand() % 1000) / 1000.0 - 0.5) * 0.2;
+        worldObj.spawnEntity(std::move(item));
     }
 }
 

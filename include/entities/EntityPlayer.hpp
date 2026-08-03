@@ -21,6 +21,8 @@ public:
     void onUpdate() override;
     void updateEntityActionState() override;
 
+    float getEyeHeight() const override { return 1.62F; }
+
     float cameraYaw = 0.0f;
     float prevCameraYaw = 0.0f;
     float cameraPitch = 0.0f;

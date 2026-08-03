@@ -4,8 +4,15 @@
 #include "world/World.hpp"
 #include "entities/EntityItem.hpp"
 #include "entities/EntityZombie.hpp"
+#include "entities/EntityPig.hpp"
+#include "entities/EntitySheep.hpp"
+#include "entities/EntitySkeleton.hpp"
+#include "entities/EntitySpider.hpp"
+#include "entities/EntityCreeper.hpp"
 #include "entities/EntityPlayer.hpp"
+#include "entities/EntityLiving.hpp"
 #include "Minecraft.hpp"
+#include "gui/GuiChest.hpp"
 #include <cstring>
 #include <mutex>
 
@@ -38,6 +45,16 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
         } else if (packet.type == 2) {
             auto item = std::make_unique<EntityItem>(world, packet.dataA, packet.dataB, packet.dataC);
             entity = std::move(item);
+        } else if (packet.type == 3) {
+            entity = std::make_unique<EntityPig>(world);
+        } else if (packet.type == 4) {
+            entity = std::make_unique<EntitySheep>(world);
+        } else if (packet.type == 5) {
+            entity = std::make_unique<EntitySkeleton>(world);
+        } else if (packet.type == 6) {
+            entity = std::make_unique<EntitySpider>(world);
+        } else if (packet.type == 7) {
+            entity = std::make_unique<EntityCreeper>(world);
         } else {
             auto p = std::make_unique<EntityPlayer>(world);
             p->username = packet.username;
@@ -208,6 +225,11 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             for (size_t i = 0; i < packet.items.size() && i < InventoryPlayer::TOTAL_SIZE; ++i) {
                 player.inventory.mainInventory[i] = {packet.items[i].id, (int)packet.items[i].count, packet.items[i].metadata};
             }
+        } else if (packet.windowId == 1) {
+            try {
+                auto chest = std::dynamic_pointer_cast<GuiChest>(player.getMinecraft().getCurrentScreen());
+                if (chest) chest->setItems(packet.items);
+            } catch (...) {}
         }
     } else if (type == PacketType::SetSlot) {
         PacketSetSlot packet;
@@ -218,6 +240,11 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             } else if (packet.slot >= 0 && packet.slot < InventoryPlayer::TOTAL_SIZE) {
                 player.inventory.mainInventory[packet.slot] = {packet.itemID, packet.count, packet.metadata};
             }
+        } else if (packet.windowId == 1) {
+            try {
+                auto chest = std::dynamic_pointer_cast<GuiChest>(player.getMinecraft().getCurrentScreen());
+                if (chest) chest->setSlot(packet.slot, {packet.itemID, packet.count, packet.metadata, 0});
+            } catch (...) {}
         }
     } else if (type == PacketType::ConfirmTransaction) {
         PacketConfirmTransaction packet;
@@ -260,9 +287,32 @@ void handleClientPacket(NetworkHandler& handler, World& world, EntityPlayer& pla
             }
             mc.getChatRenderer().addMessage("", "[System] " + packet.message + ". Key saved automatically.", 0);
         } catch (...) {}
+    } else if (type == PacketType::OpenChest) {
+        PacketOpenChest packet;
+        packet.deserialize(ptr, size - 1);
+        std::vector<ItemStack> contents;
+        contents.reserve(packet.items.size());
+        for (const auto& item : packet.items) contents.push_back({item.id, item.count, item.metadata, 0});
+        try {
+            auto& mc = player.getMinecraft();
+            auto gui = std::make_shared<GuiChest>(packet.rows, std::move(contents));
+            gui->parentScreen = mc.getCurrentScreen();
+            mc.displayGuiScreen(gui);
+        } catch (...) {}
     } else if (type == PacketType::TimeUpdate) {
         PacketTimeUpdate packet;
         packet.deserialize(ptr, size - 1);
         world.setWorldTime(packet.time);
+    } else if (type == PacketType::EntityHurt) {
+        PacketEntityHurt packet;
+        packet.deserialize(ptr, size - 1);
+        for (auto& entity : world.getEntities()) {
+            if (entity->entityID == packet.entityID) {
+                if (auto* living = dynamic_cast<EntityLiving*>(entity.get())) {
+                    living->hurtTime = living->maxHurtTime = 10;
+                }
+                break;
+            }
+        }
     }
 }

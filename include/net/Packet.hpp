@@ -34,7 +34,9 @@ enum class PacketType : uint8_t {
     GameModeChange = 25,
     HeldItemChange = 26,
     KeyResponse = 27,
-    TimeUpdate = 28
+    TimeUpdate = 28,
+    OpenChest = 29,
+    EntityHurt = 30
 };
 
 class Packet {

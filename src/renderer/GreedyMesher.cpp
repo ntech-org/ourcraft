@@ -143,40 +143,53 @@ void ChunkMesher::crossMeshPass(ChunkMeshData& md, const MeshingSnapshot& n, int
                 uint8_t bid = n.getBlockID(x, gy, z);
                 if (!bid) continue;
                 const Block* b = Block::blocksList[bid];
-                if (!b || b->getRenderShape() != BlockRenderShape::Cross) continue;
+                if (!b) continue;
+                BlockRenderShape shape = b->getRenderShape();
+                if (shape != BlockRenderShape::Cross && shape != BlockRenderShape::Special) continue;
 
-                int tex = b->getTexture(0);
+                int metadata = n.getBlockMetadata(x, gy, z);
+                int tex = b->getTexture(0, metadata);
                 auto light = n.getLightPair(bx + x, gy, bz + z);
                 float sl = (float)light.first, bl = (float)light.second;
 
-                float x0 = (float)x, x1 = x0 + 1.0f;
-                float y0 = (float)y, y1 = y0 + 1.0f;
-                float z0 = (float)z, z1 = z0 + 1.0f;
+                AxisAlignedBB bounds = b->getBlockBounds(n, x, gy, z);
+                float x0 = (float)x + (float)bounds.minX;
+                float y0 = (float)y + (float)bounds.minY;
+                float z0 = (float)z + (float)bounds.minZ;
+                float x1 = (float)x + (float)bounds.maxX;
+                float y1 = (float)y + (float)bounds.maxY;
+                float z1 = (float)z + (float)bounds.maxZ;
+
+                if (x0 == x1 || y0 == y1 || z0 == z1) continue;
+
+                float fx0 = x0, fx1 = x1;
+                float fy0 = y0, fy1 = y1;
+                float fz0 = z0, fz1 = z1;
 
                 // First plane (double sided)
-                appendVertex(md.opaque, x0, y1, z0, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x0, y0, z0, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x1, y0, z1, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x1, y1, z1, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy1, fz0, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy0, fz0, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy0, fz1, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy1, fz1, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
                 appendIndices(md.opaque);
 
-                appendVertex(md.opaque, x1, y1, z1, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x1, y0, z1, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x0, y0, z0, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x0, y1, z0, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy1, fz1, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy0, fz1, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy0, fz0, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy1, fz0, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
                 appendIndices(md.opaque);
 
                 // Second plane (double sided)
-                appendVertex(md.opaque, x0, y1, z1, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x0, y0, z1, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x1, y0, z0, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x1, y1, z0, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy1, fz1, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy0, fz1, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy0, fz0, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy1, fz0, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
                 appendIndices(md.opaque);
 
-                appendVertex(md.opaque, x1, y1, z0, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x1, y0, z0, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x0, y0, z1, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
-                appendVertex(md.opaque, x0, y1, z1, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy1, fz0, 1, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx1, fy0, fz0, 1, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy0, fz1, 0, 1, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
+                appendVertex(md.opaque, fx0, fy1, fz1, 0, 0, tex, FaceDirection::Up, 0, 0.0f, sl, bl);
                 appendIndices(md.opaque);
             }
         }

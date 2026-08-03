@@ -11,7 +11,12 @@ enum class EntityType {
     Player,
     Living,
     Zombie,
-    Item
+    Item,
+    Pig,
+    Sheep,
+    Skeleton,
+    Spider,
+    Creeper
 };
 
 class Entity {
@@ -66,6 +71,9 @@ public:
 
     bool isInsideOfMaterial(const class Material& material) const;
     bool isEntityInsideOpaqueBlock() const;
+
+    // Push other entities out of this entity's bounding box
+    void pushOutOfEntities();
+
+    virtual float getEyeHeight() const { return (float)(height * 0.85F); }
 };
-
-

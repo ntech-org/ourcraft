@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Material.hpp"
+#include "physics/AxisAlignedBB.hpp"
 #include "sound/StepSound.hpp"
 #include <glm/vec3.hpp>
 #include <cstdint>
@@ -25,6 +26,8 @@ class AxisAlignedBB;
 class JavaRandom;
 class Entity;
 class EntityPlayer;
+class IBlockAccess;
+struct HitResult;
 
 class Block {
 public:
@@ -95,6 +98,7 @@ public:
     virtual ~Block() = default;
 
     virtual int getTexture(int side) const;
+    virtual int getTexture(int side, int metadata) const { return getTexture(side); }
     virtual BlockRenderLayer getRenderLayer() const;
     virtual BlockRenderShape getRenderShape() const;
     virtual bool isFullCube() const;
@@ -105,10 +109,19 @@ public:
 
     virtual void getCollisionBoxes(World& world, int x, int y, int z, const AxisAlignedBB& mask, std::vector<AxisAlignedBB>& list) const;
     virtual AxisAlignedBB getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const;
+    virtual AxisAlignedBB getSelectedBoundingBoxFromPool(World& world, int x, int y, int z) const;
+    virtual AxisAlignedBB getBlockBounds(const IBlockAccess& world, int x, int y, int z) const;
+    virtual HitResult collisionRayTrace(World& world, int x, int y, int z, glm::dvec3 start, glm::dvec3 end) const;
+
+    virtual bool canPlaceBlockAt(World& world, int x, int y, int z) const { return true; }
+    virtual void onBlockPlaced(World& world, int x, int y, int z, int side, float hitX, float hitY, float hitZ) const {}
 
     virtual void updateTick(World& world, int x, int y, int z, JavaRandom& random) const {}
     virtual void onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {}
     virtual void onBlockAdded(World& world, int x, int y, int z) const {}
+    virtual void onBlockRemoval(World& world, int x, int y, int z, int metadata) const {}
+    virtual void onBlockDestroyedByPlayer(World& world, int x, int y, int z, int metadata) const {}
+    virtual void onEntityWalking(World& world, int x, int y, int z, Entity* entity) const {}
     virtual bool onBlockActivated(World& world, int x, int y, int z, EntityPlayer* player) const { return false; }
     virtual int tickRate() const { return 10; }
     virtual int idDropped(int metadata) const;
@@ -121,9 +134,16 @@ public:
     const Material& blockMaterial;
     const StepSound* stepSound = &SOUND_STONE;
 
-protected:
-    void setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1);
+    double getBlockBoundsMinX() const { return minX; }
+    double getBlockBoundsMinY() const { return minY; }
+    double getBlockBoundsMinZ() const { return minZ; }
+    double getBlockBoundsMaxX() const { return maxX; }
+    double getBlockBoundsMaxY() const { return maxY; }
+    double getBlockBoundsMaxZ() const { return maxZ; }
 
-    double minX, minY, minZ;
-    double maxX, maxY, maxZ;
+protected:
+    void setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1) const;
+
+    mutable double minX, minY, minZ;
+    mutable double maxX, maxY, maxZ;
 };

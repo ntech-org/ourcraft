@@ -17,6 +17,7 @@ public:
     static const Material sand;
     static const Material glass;
     static const Material tnt;
+    static const Material circuits;
 
     Material(bool liquid = false, bool solid = true, bool blocksGrass = true)
         : m_liquid(liquid), m_solid(solid), m_blocksGrass(blocksGrass) {}

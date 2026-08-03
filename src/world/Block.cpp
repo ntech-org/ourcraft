@@ -1,12 +1,20 @@
 #include "world/Block.hpp"
 #include "world/BlockRegistry.hpp"
 #include "world/BlockFurnace.hpp"
+#include "world/BlockCrops.hpp"
+#include "world/WorldGenTrees.hpp"
 #include "world/World.hpp"
 #include "world/BlockFluid.hpp"
 #include "world/IBlockAccess.hpp"
+#include "world/Material.hpp"
+#include "world/JavaRandom.hpp"
 #include "physics/AxisAlignedBB.hpp"
 #include "entities/EntityPlayer.hpp"
+#include "entities/Entity.hpp"
+#include "entities/EntityItem.hpp"
+#include "items/Item.hpp"
 #include <iterator>
+#include <cstdlib>
 
 Block* Block::blocksList[256] = { nullptr };
 bool Block::opaqueCubeLookup[256] = { false };
@@ -79,7 +87,7 @@ void Block::init() {
     dirt = new Block(3, 2, Material::ground);
     cobblestone = new Block(4, 16, Material::rock);
     planks = new Block(5, 4, Material::wood);
-    sapling = new BlockCross(6, 15);
+    sapling = new BlockSapling(6, 15);
     bedrock = new Block(7, 17, Material::rock);
     waterMoving = new BlockFlowing(8, Material::water);
     waterStill = new BlockStationary(9, Material::water);
@@ -108,7 +116,7 @@ void Block::init() {
     bookshelf = new Block(47, 35, Material::wood);
     cobblestoneMossy = new Block(48, 36, Material::rock);
     obsidian = new Block(49, 37, Material::rock);
-    torch = new BlockCross(50, 80);
+    torch = new BlockTorch(50, 80);
     fire = new Block(51, 31, Material::fire);
     mobSpawner = new Block(52, 65, Material::rock);
     stairCompactWood = new Block(53, 4, Material::wood);
@@ -117,7 +125,7 @@ void Block::init() {
     oreDiamond = new BlockOre(56, 50);
     blockDiamond = new Block(57, 40, Material::iron);
     workbench = new BlockWorkbench(58);
-    crops = new BlockCross(59, 88);
+    crops = new BlockCrops(59, 88);
     farmland = new BlockFarmland(60);
     furnaceIdle = new BlockFurnace(61, false, Material::rock);
     furnaceActive = new BlockFurnace(62, true, Material::rock);
@@ -179,6 +187,7 @@ void Block::init() {
     lightOpacity[50] = 0;
     lightOpacity[51] = 0;
     lightOpacity[59] = 0;
+    lightOpacity[60] = 255;
     lightOpacity[63] = 0;
     lightOpacity[65] = 0;
     lightOpacity[66] = 0;
@@ -251,16 +260,231 @@ void Block::getCollisionBoxes(World& world, int x, int y, int z, const AxisAlign
 }
 
 AxisAlignedBB Block::getCollisionBoundingBoxFromPool(World& world, int x, int y, int z) const {
-    return AxisAlignedBB((double)x + minX, (double)y + minY, (double)z + minZ, (double)x + maxX, (double)y + maxY, (double)z + maxZ);
+    AxisAlignedBB bounds = getBlockBounds(world, x, y, z);
+    return AxisAlignedBB((double)x + bounds.minX, (double)y + bounds.minY, (double)z + bounds.minZ,
+                         (double)x + bounds.maxX, (double)y + bounds.maxY, (double)z + bounds.maxZ);
 }
 
-void Block::setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1) {
+AxisAlignedBB Block::getSelectedBoundingBoxFromPool(World& world, int x, int y, int z) const {
+    AxisAlignedBB bounds = getBlockBounds(world, x, y, z);
+    return AxisAlignedBB((double)x + bounds.minX, (double)y + bounds.minY, (double)z + bounds.minZ,
+                         (double)x + bounds.maxX, (double)y + bounds.maxY, (double)z + bounds.maxZ);
+}
+
+AxisAlignedBB Block::getBlockBounds(const IBlockAccess& world, int x, int y, int z) const {
+    return AxisAlignedBB(minX, minY, minZ, maxX, maxY, maxZ);
+}
+
+HitResult Block::collisionRayTrace(World& world, int x, int y, int z, glm::dvec3 start, glm::dvec3 end) const {
+    AxisAlignedBB bounds = getBlockBounds(world, x, y, z);
+    AxisAlignedBB bb((double)x + bounds.minX, (double)y + bounds.minY, (double)z + bounds.minZ,
+                     (double)x + bounds.maxX, (double)y + bounds.maxY, (double)z + bounds.maxZ);
+    if (bb.minX == bb.maxX && bb.minY == bb.maxY && bb.minZ == bb.maxZ) return {HitType::NONE};
+    auto hit = bb.calculateIntercept(start, end);
+    if (!hit) return {HitType::NONE};
+    return {HitType::BLOCK, x, y, z, hit->side, hit->hitVec};
+}
+
+static bool isNormalCube(const World& world, int x, int y, int z) {
+    uint8_t id = world.getBlockID(x, y, z);
+    return id > 0 && Block::blocksList[id] && Block::blocksList[id]->isFullCube();
+}
+
+bool BlockTorch::canPlaceBlockAt(World& world, int x, int y, int z) const {
+    return isNormalCube(world, x - 1, y, z) || isNormalCube(world, x + 1, y, z) ||
+           isNormalCube(world, x, y, z - 1) || isNormalCube(world, x, y, z + 1) ||
+           isNormalCube(world, x, y - 1, z);
+}
+
+void BlockTorch::onBlockPlaced(World& world, int x, int y, int z, int side, float hitX, float hitY, float hitZ) const {
+    int metadata = world.getBlockMetadata(x, y, z);
+    if (side == 1 && isNormalCube(world, x, y - 1, z)) metadata = 5;
+    if (side == 2 && isNormalCube(world, x, y, z + 1)) metadata = 4;
+    if (side == 3 && isNormalCube(world, x, y, z - 1)) metadata = 3;
+    if (side == 4 && isNormalCube(world, x + 1, y, z)) metadata = 2;
+    if (side == 5 && isNormalCube(world, x - 1, y, z)) metadata = 1;
+    world.setBlockMetadataWithNotify(x, y, z, (uint8_t)metadata);
+}
+
+void BlockTorch::onBlockAdded(World& world, int x, int y, int z) const {
+    if (world.getBlockMetadata(x, y, z) == 0) {
+        if (isNormalCube(world, x - 1, y, z)) world.setBlockMetadataWithNotify(x, y, z, 1);
+        else if (isNormalCube(world, x + 1, y, z)) world.setBlockMetadataWithNotify(x, y, z, 2);
+        else if (isNormalCube(world, x, y, z - 1)) world.setBlockMetadataWithNotify(x, y, z, 3);
+        else if (isNormalCube(world, x, y, z + 1)) world.setBlockMetadataWithNotify(x, y, z, 4);
+        else if (isNormalCube(world, x, y - 1, z)) world.setBlockMetadataWithNotify(x, y, z, 5);
+    }
+    if (!canPlaceBlockAt(world, x, y, z)) world.setBlockWithNotify(x, y, z, 0);
+}
+
+void BlockTorch::onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {
+    int metadata = world.getBlockMetadata(x, y, z);
+    bool supported = (metadata == 1 && isNormalCube(world, x - 1, y, z)) ||
+                     (metadata == 2 && isNormalCube(world, x + 1, y, z)) ||
+                     (metadata == 3 && isNormalCube(world, x, y, z - 1)) ||
+                     (metadata == 4 && isNormalCube(world, x, y, z + 1)) ||
+                     (metadata == 5 && isNormalCube(world, x, y - 1, z));
+    if (supported) return;
+
+    if (!world.isRemote) {
+        auto item = std::make_unique<EntityItem>(world, blockID, 1, 0);
+        item->setPosition(x + 0.5, y + 0.5, z + 0.5);
+        item->delayBeforeCanPickup = 10;
+        world.spawnEntity(std::move(item));
+    }
+    world.setBlockWithNotify(x, y, z, 0);
+}
+
+bool BlockChest::canPlaceBlockAt(World& world, int x, int y, int z) const {
+    int adjacent = 0;
+    const int offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    for (const auto& offset : offsets) {
+        int nx = x + offset[0], nz = z + offset[1];
+        if (world.getBlockID(nx, y, nz) != blockID) continue;
+        if (++adjacent > 1) return false;
+        for (const auto& neighborOffset : offsets) {
+            int nnx = nx + neighborOffset[0], nnz = nz + neighborOffset[1];
+            if (nnx == x && nnz == z) continue;
+            if (world.getBlockID(nnx, y, nnz) == blockID) return false;
+        }
+    }
+    return true;
+}
+
+void BlockChest::onBlockAdded(World& world, int x, int y, int z) const {
+    if (world.getTileEntity(x, y, z)) return;
+    auto chest = std::make_unique<TileEntityChest>();
+    chest->x = x; chest->y = y; chest->z = z; chest->world = &world;
+    if (!world.isRemote && world.getSaveHandler()) {
+        world.getSaveHandler()->loadChest(x, y, z, chest->chestContents, TileEntityChest::CHEST_SIZE);
+    }
+    world.addTileEntity(std::move(chest));
+}
+
+void BlockChest::onBlockRemoval(World& world, int x, int y, int z, int metadata) const {
+    auto* chest = dynamic_cast<TileEntityChest*>(world.getTileEntity(x, y, z));
+    if (chest && !world.isRemote) {
+        for (const ItemStack& stack : chest->chestContents) {
+            if (stack.isEmpty()) continue;
+            auto item = std::make_unique<EntityItem>(world, stack.itemID, stack.count, stack.metadata);
+            item->setPosition(x + 0.5, y + 0.5, z + 0.5);
+            item->delayBeforeCanPickup = 10;
+            world.spawnEntity(std::move(item));
+        }
+        if (world.getSaveHandler()) world.getSaveHandler()->removeChest(x, y, z);
+    }
+    world.removeTileEntity(x, y, z);
+}
+
+void Block::setBlockBounds(float x0, float y0, float z0, float x1, float y1, float z1) const {
     minX = x0; minY = y0; minZ = z0;
     maxX = x1; maxY = y1; maxZ = z1;
 }
 
 int Block::idDropped(int metadata) const {
     return blockID;
+}
+
+bool BlockFarmland::isWaterNearby(World& world, int x, int y, int z) const {
+    for (int dx = -4; dx <= 4; ++dx) {
+        for (int dy = 0; dy <= 1; ++dy) {
+            for (int dz = -4; dz <= 4; ++dz) {
+                if (world.getBlockMaterial(x + dx, y + dy, z + dz) == Material::water) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool BlockFarmland::isCropsNearby(World& world, int x, int y, int z) const {
+    for (int dx = x; dx <= x; ++dx) {
+        for (int dz = z; dz <= z; ++dz) {
+            if (world.getBlockID(dx, y + 1, dz) == Block::crops->blockID) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void BlockFarmland::updateTick(World& world, int x, int y, int z, JavaRandom& random) const {
+    if (random.nextInt(5) != 0) return;
+    if (isWaterNearby(world, x, y, z)) {
+        world.setBlockMetadataWithNotify(x, y, z, 7);
+        return;
+    }
+    int meta = world.getBlockMetadata(x, y, z);
+    if (meta > 0) {
+        world.setBlockMetadataWithNotify(x, y, z, meta - 1);
+    } else if (!isCropsNearby(world, x, y, z)) {
+        world.setBlockWithNotify(x, y, z, Block::dirt->blockID);
+    }
+}
+
+void BlockFarmland::onEntityWalking(World& world, int x, int y, int z, Entity* entity) const {
+    (void)entity;
+    if (std::rand() % 4 == 0) {
+        world.setBlockWithNotify(x, y, z, Block::dirt->blockID);
+    }
+}
+
+void BlockFarmland::onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {
+    (void)neighborID;
+    if (world.getBlockMaterial(x, y + 1, z).isSolid()) {
+        world.setBlockWithNotify(x, y, z, Block::dirt->blockID);
+    }
+}
+
+void BlockFarmland::onBlockAdded(World& world, int x, int y, int z) const {
+    world.setBlockMetadataWithNotify(x, y, z, 0);
+}
+
+bool BlockSapling::canPlaceBlockAt(World& world, int x, int y, int z) const {
+    int belowID = world.getBlockID(x, y - 1, z);
+    return belowID == Block::grass->blockID || belowID == Block::dirt->blockID;
+}
+
+bool BlockSapling::canBlockStay(World& world, int x, int y, int z) const {
+    auto lightPair = world.getLightPair(x, y, z);
+    if (std::max(lightPair.first, lightPair.second) < 8) return false;
+    int belowID = world.getBlockID(x, y - 1, z);
+    return belowID == Block::grass->blockID || belowID == Block::dirt->blockID;
+}
+
+void BlockSapling::updateTick(World& world, int x, int y, int z, JavaRandom& random) const {
+    if (world.getBlockID(x, y, z) != blockID) return;
+    auto lightPair = world.getLightPair(x, y, z);
+    int light = std::max(lightPair.first, lightPair.second);
+    if (light < 9 || random.nextInt(5) != 0) {
+        world.scheduleBlockUpdate(x, y, z, blockID, tickRate());
+        return;
+    }
+    int meta = world.getBlockMetadata(x, y, z);
+    if (meta < 15) {
+        world.setBlockMetadataWithNotify(x, y, z, (uint8_t)(meta + 1));
+    } else {
+        world.setBlockWithNotify(x, y, z, 0);
+        WorldGenTrees gen;
+        if (!gen.generate(world, random, x, y, z)) {
+            world.setBlockWithNotify(x, y, z, blockID);
+        }
+    }
+}
+
+void BlockSapling::onBlockAdded(World& world, int x, int y, int z) const {
+    if (world.getBlockID(x, y, z) == blockID) {
+        world.scheduleBlockUpdate(x, y, z, blockID, tickRate());
+    }
+}
+
+void BlockSapling::onNeighborBlockChange(World& world, int x, int y, int z, int neighborID) const {
+    (void)neighborID;
+    if (world.getBlockID(x, y, z) != blockID) return;
+    if (!canBlockStay(world, x, y, z)) {
+        world.setBlockWithNotify(x, y, z, 0);
+    }
 }
 
 float Block::getHardness(uint8_t blockID) {

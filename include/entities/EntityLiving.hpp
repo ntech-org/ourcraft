@@ -47,6 +47,8 @@ public:
 
 
     virtual void attackEntityFrom(Entity* source, int amount);
+    virtual void onDeath();
+    virtual int getDropItemID() const { return 0; }
 
     virtual void moveRelative(float strafe, float forward, float friction);
 

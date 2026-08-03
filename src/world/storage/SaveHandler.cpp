@@ -13,6 +13,10 @@ namespace fs = std::filesystem;
 namespace {
 constexpr std::size_t CHUNK_DATA_SIZE = Chunk::SIZE + Chunk::SIZE / 2 * 3;
 constexpr uint8_t CHUNK_LIGHTING_VERSION = 1;
+
+std::string chestKey(int x, int y, int z) {
+    return "__chest__:" + std::to_string(x) + ":" + std::to_string(y) + ":" + std::to_string(z);
+}
 }
 
 SaveHandler::SaveHandler(const std::string& worldDir) : m_worldDir(worldDir) {
@@ -38,6 +42,43 @@ SaveHandler::SaveHandler(const std::string& worldDir) : m_worldDir(worldDir) {
 }
 
 SaveHandler::~SaveHandler() = default;
+
+bool SaveHandler::loadChest(int x, int y, int z, ItemStack* contents, int size) {
+    if (!m_db || !contents || size <= 0) return false;
+    std::string value;
+    if (!m_db->Get(rocksdb::ReadOptions(), chestKey(x, y, z), &value).ok()) return false;
+    constexpr std::size_t stackSize = sizeof(int32_t) * 3 + sizeof(uint8_t);
+    if (value.size() != (std::size_t)size * stackSize) return false;
+
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(value.data());
+    for (int i = 0; i < size; ++i) {
+        int32_t itemID, count, damage;
+        std::memcpy(&itemID, data, 4); data += 4;
+        std::memcpy(&count, data, 4); data += 4;
+        uint8_t metadata = *data++;
+        std::memcpy(&damage, data, 4); data += 4;
+        contents[i] = {itemID, count, metadata, damage};
+    }
+    return true;
+}
+
+void SaveHandler::saveChest(int x, int y, int z, const ItemStack* contents, int size) {
+    if (!m_db || !contents || size <= 0) return;
+    std::string value;
+    value.reserve((std::size_t)size * 13);
+    for (int i = 0; i < size; ++i) {
+        const ItemStack& stack = contents[i];
+        value.append(reinterpret_cast<const char*>(&stack.itemID), 4);
+        value.append(reinterpret_cast<const char*>(&stack.count), 4);
+        value.push_back((char)stack.metadata);
+        value.append(reinterpret_cast<const char*>(&stack.damage), 4);
+    }
+    m_db->Put(rocksdb::WriteOptions(), chestKey(x, y, z), value);
+}
+
+void SaveHandler::removeChest(int x, int y, int z) {
+    if (m_db) m_db->Delete(rocksdb::WriteOptions(), chestKey(x, y, z));
+}
 
 bool SaveHandler::loadChunk(Chunk& chunk) {
     if (!m_db) return loadLegacyChunk(chunk);

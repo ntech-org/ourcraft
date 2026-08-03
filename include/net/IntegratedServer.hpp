@@ -28,6 +28,7 @@ public:
     void setChunkKeepDistance(int dist) { m_chunkKeepDistance.store(dist, std::memory_order_release); }
     bool isPaused() const { return m_paused; }
     bool isRunning() const { return m_running; }
+    bool isDedicated() const { return m_isDedicated; }
     int getPlayerCount() const { return (int)m_players.size(); }
 
     Server* getServer() const { return m_server.get(); }
@@ -37,6 +38,9 @@ public:
     RegistrationManager& getRegistrationManager() { return m_registrationManager; }
     ServerConfig& getConfig() { return m_config; }
     std::map<ENetPeer*, PlayerSession>& getPlayers() { return m_players; }
+
+    void setHostUsername(const std::string& name) { m_hostUsername = name; }
+    const std::string& getHostUsername() const { return m_hostUsername; }
 
     void broadcastSound(const std::string& name, double x, double y, double z, float volume, float pitch, ENetPeer* excludePeer = nullptr);
     void broadcastChat(const std::string& sender, const std::string& message, ENetPeer* excludePeer = nullptr);
@@ -59,6 +63,7 @@ private:
     int m_tickCounter = 0;
     int m_unloadTimer = 0;
     int m_spawnTimer = 0;
+    std::string m_hostUsername;
 
     ServerConfig m_config;
     Permissions m_permissions;

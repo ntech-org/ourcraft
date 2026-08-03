@@ -25,4 +25,8 @@ struct PlayerSession {
     int streamChunkX = std::numeric_limits<int>::min();
     int streamChunkZ = std::numeric_limits<int>::min();
     bool chunkStreamPending = true;
+    int openChestX[2] = {0, 0};
+    int openChestY[2] = {0, 0};
+    int openChestZ[2] = {0, 0};
+    int openChestCount = 0;
 };

@@ -1,6 +1,7 @@
 #include "entities/Entity.hpp"
 #include "world/World.hpp"
 #include "world/Block.hpp"
+#include "world/BlockFluid.hpp"
 #include "world/Material.hpp"
 #include <cmath>
 
@@ -181,7 +182,7 @@ void Entity::preparePlayerToSpawn() {
 }
 
 bool Entity::handleWaterMovement() {
-    if (worldObj.handleMaterialAcceleration(boundingBox.expand(0.0, -0.1, 0.0), Material::water, this)) {
+    if (worldObj.handleMaterialAcceleration(boundingBox.expand(0.0, -0.4, 0.0), Material::water, this)) {
         inWater = true;
         fallDistance = 0.0f;
     } else {
@@ -191,7 +192,7 @@ bool Entity::handleWaterMovement() {
 }
 
 bool Entity::handleLavaMovement() {
-    if (worldObj.handleMaterialAcceleration(boundingBox.expand(0.0, -0.1, 0.0), Material::lava, this)) {
+    if (worldObj.handleMaterialAcceleration(boundingBox.expand(0.0, -0.4, 0.0), Material::lava, this)) {
         inLava = true;
         fallDistance = 0.0f;
     } else {
@@ -209,22 +210,58 @@ bool Entity::isOffsetPositionInLiquid(double dx, double dy, double dz) {
 void Entity::fall(float distance) {}
 
 bool Entity::isInsideOfMaterial(const Material& material) const {
-    double eyeY = posY + (double)yOffset;
+    double eyeY = posY + (double)getEyeHeight();
     int ix = (int)std::floor(posX);
     int iy = (int)std::floor(eyeY);
     int iz = (int)std::floor(posZ);
     uint8_t id = worldObj.getBlockID(ix, iy, iz);
     if (id == 0) return material == Material::air;
-    return Block::blocksList[id]->blockMaterial == material;
+    if (Block::blocksList[id]->blockMaterial != material) return false;
+    const Block* b = Block::blocksList[id];
+    if (b->blockID == 8 || b->blockID == 9 || b->blockID == 10 || b->blockID == 11) {
+        int meta = worldObj.getBlockMetadata(ix, iy, iz);
+        float airFrac = BlockFluid::getPercentAir(meta);
+        float surfaceY = (float)(iy + 1) - (airFrac - 1.0F / 9.0F);
+        return eyeY < (double)surfaceY;
+    }
+    return true;
 }
 
 
 bool Entity::isEntityInsideOpaqueBlock() const {
-    double eyeY = posY + (double)yOffset;
+    double eyeY = posY + (double)getEyeHeight();
     int ix = (int)std::floor(posX);
     int iy = (int)std::floor(eyeY);
     int iz = (int)std::floor(posZ);
     uint8_t id = worldObj.getBlockID(ix, iy, iz);
     if (id == 0) return false;
     return Block::blocksList[id]->isOccluder();
+}
+
+void Entity::pushOutOfEntities() {
+    if (!handlePhysics) return;
+    for (const auto& other : worldObj.getEntities()) {
+        if (other.get() == this) continue;
+        if (!other->boundingBox.intersectsWith(boundingBox)) continue;
+        // Calculate overlap and push apart
+        double dx = posX - other->posX;
+        double dz = posZ - other->posZ;
+        double overlapX = (double)(width / 2.0f + other->width / 2.0f) - std::abs(dx);
+        double overlapZ = (double)(width / 2.0f + other->width / 2.0f) - std::abs(dz);
+        if (overlapX <= 0.0 || overlapZ <= 0.0) continue;
+        // Push in the direction of minimum overlap
+        if (overlapX < overlapZ) {
+            double push = (dx >= 0.0 ? 1.0 : -1.0) * overlapX * 0.5;
+            posX += push;
+            other->posX -= push;
+            boundingBox.minX += push; boundingBox.maxX += push;
+            other->boundingBox.minX -= push; other->boundingBox.maxX -= push;
+        } else {
+            double push = (dz >= 0.0 ? 1.0 : -1.0) * overlapZ * 0.5;
+            posZ += push;
+            other->posZ -= push;
+            boundingBox.minZ += push; boundingBox.maxZ += push;
+            other->boundingBox.minZ -= push; other->boundingBox.maxZ -= push;
+        }
+    }
 }

@@ -4,8 +4,14 @@
 
 class TileEntityChest : public TileEntity {
 public:
-    TileEntityChest() = default;
+    TileEntityChest();
     int getBlockID() const override { return 54; }
-    InventoryPlayer inventory;
     static constexpr int CHEST_SIZE = 27;
+
+    ItemStack& getStackInSlot(int slot) { return chestContents[slot]; }
+    const ItemStack& getStackInSlot(int slot) const { return chestContents[slot]; }
+    void setInventorySlotContents(int slot, const ItemStack& stack);
+    void markDirty();
+
+    ItemStack chestContents[CHEST_SIZE];
 };

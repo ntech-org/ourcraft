@@ -38,3 +38,9 @@
 build/
 /world/
 options.txt
+
+# Runtime data (accounts, server config, saved worlds)
+accounts.json
+server.toml
+server_data/
+worlds/

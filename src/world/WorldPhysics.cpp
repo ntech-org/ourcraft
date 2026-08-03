@@ -56,7 +56,7 @@ bool World::handleMaterialAcceleration(const AxisAlignedBB& bb, const Material& 
     
     if (glm::length(velocity) > 0.0f) {
         velocity = glm::normalize(velocity);
-        double force = 0.014;
+        double force = 0.004;
         entity->motionX += velocity.x * force;
         entity->motionY += velocity.y * force;
         entity->motionZ += velocity.z * force;

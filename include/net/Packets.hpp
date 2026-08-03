@@ -141,7 +141,7 @@ public:
 class PacketSpawnEntity : public AutoPacket<PacketSpawnEntity> {
 public:
     int32_t id;
-    uint8_t type; // 0 = Player, 1 = Zombie, 2 = Item
+    uint8_t type; // 0 = Player, 1 = Zombie, 2 = Item, 3 = Pig, 4 = Sheep, 5 = Skeleton, 6 = Spider, 7 = Creeper
     double x, y, z;
     float yaw, pitch;
     int32_t dataA = 0;
@@ -411,7 +411,7 @@ class PacketBlockPlacement : public AutoPacket<PacketBlockPlacement> {
 public:
     int32_t x, y, z;
     uint8_t face;
-    uint8_t blockID;
+    int32_t itemID;
     uint8_t metadata;
 
     PacketType getType() const override { return PacketType::BlockPlacement; }
@@ -421,7 +421,7 @@ public:
         writeInt(buffer, y);
         writeInt(buffer, z);
         writeByte(buffer, face);
-        writeByte(buffer, blockID);
+        writeInt(buffer, itemID);
         writeByte(buffer, metadata);
     }
 
@@ -430,7 +430,7 @@ public:
         y = readInt(data);
         z = readInt(data);
         face = readByte(data);
-        blockID = readByte(data);
+        itemID = readInt(data);
         metadata = readByte(data);
     }
 };
@@ -602,6 +602,34 @@ public:
             items[i].id = readInt(data);
             items[i].count = readInt(data);
             items[i].metadata = readByte(data);
+        }
+    }
+};
+
+class PacketOpenChest : public AutoPacket<PacketOpenChest> {
+public:
+    int32_t x, y, z;
+    uint8_t rows = 3;
+    std::vector<PacketWindowItems::Item> items;
+
+    PacketType getType() const override { return PacketType::OpenChest; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeInt(buffer, x); writeInt(buffer, y); writeInt(buffer, z);
+        writeByte(buffer, rows);
+        writeInt(buffer, (int32_t)items.size());
+        for (const auto& item : items) {
+            writeInt(buffer, item.id); writeInt(buffer, item.count); writeByte(buffer, item.metadata);
+        }
+    }
+
+    void readImpl(const uint8_t*& data) {
+        x = readInt(data); y = readInt(data); z = readInt(data);
+        rows = readByte(data);
+        int32_t count = readInt(data);
+        items.resize(std::max(0, count));
+        for (auto& item : items) {
+            item.id = readInt(data); item.count = readInt(data); item.metadata = readByte(data);
         }
     }
 };
@@ -816,5 +844,23 @@ public:
     void readImpl(const uint8_t*& data) {
         time = readDouble(data);
         timeOfDay = readDouble(data);
+    }
+};
+
+class PacketEntityHurt : public AutoPacket<PacketEntityHurt> {
+public:
+    int32_t entityID;
+    int8_t damage;
+
+    PacketType getType() const override { return PacketType::EntityHurt; }
+
+    void writeImpl(std::vector<uint8_t>& buffer) const {
+        writeInt(buffer, entityID);
+        writeByte(buffer, (uint8_t)damage);
+    }
+
+    void readImpl(const uint8_t*& data) {
+        entityID = readInt(data);
+        damage = (int8_t)readByte(data);
     }
 };

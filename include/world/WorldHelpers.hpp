@@ -12,6 +12,10 @@ inline void World::applyBlockChange(int x, int y, int z, uint8_t id, uint8_t met
     uint8_t oldMeta = chunk->getBlockMetadata(lx, y, lz);
     if (oldID == id && oldMeta == meta) return;
 
+    if (oldID > 0 && oldID != id && Block::blocksList[oldID]) {
+        Block::blocksList[oldID]->onBlockRemoval(*this, x, y, z, oldMeta);
+    }
+
     int oldOpacity = Block::lightOpacity[oldID];
     int oldBlockLight = Block::lightValue[oldID];
     int oldSkyLight = chunk->getLight(LightType::Sky, lx, y, lz);

@@ -13,6 +13,7 @@
 #include "entities/EntityItem.hpp"
 #include "entities/EntityLiving.hpp"
 #include "entities/EntityPlayer.hpp"
+#include "entities/EntitySheep.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -60,7 +61,9 @@ glm::mat4 computeViewBobMatrix(EntityPlayer& player, float partialTicks) {
 }
 
 void renderEntity(Entity& entity, float pTicks, World& world, Camera& camera, Shader& entityShader,
-                  RenderEngine& renderEngine, ModelBiped& playerModel, ModelZombie& zombieModel) {
+                  RenderEngine& renderEngine, ModelBiped& playerModel, ModelZombie& zombieModel,
+                  ModelPig& pigModel, ModelSheep& sheepModel, ModelSheepFur& sheepFurModel,
+                  ModelSkeleton& skeletonModel, ModelSpider& spiderModel, ModelCreeper& creeperModel) {
     double ex = entity.prevPosX + (entity.posX - entity.prevPosX) * (double)pTicks;
     double ey = entity.prevPosY + (entity.posY - entity.prevPosY) * (double)pTicks;
     double ez = entity.prevPosZ + (entity.posZ - entity.prevPosZ) * (double)pTicks;
@@ -116,7 +119,21 @@ void renderEntity(Entity& entity, float pTicks, World& world, Camera& camera, Sh
         return;
     }
 
-    renderEngine.bindTexture(renderEngine.getTexture(dynamic_cast<EntityPlayer*>(&entity) ? TEX_CHAR : "/mob/zombie.png"));
+    const char* texturePath = "/mob/zombie.png";
+    if (dynamic_cast<EntityPlayer*>(&entity)) {
+        texturePath = TEX_CHAR;
+    } else if (entity.getType() == EntityType::Pig) {
+        texturePath = "/mob/pig.png";
+    } else if (entity.getType() == EntityType::Sheep) {
+        texturePath = "/mob/sheep.png";
+    } else if (entity.getType() == EntityType::Skeleton) {
+        texturePath = "/mob/skeleton.png";
+    } else if (entity.getType() == EntityType::Spider) {
+        texturePath = "/mob/spider.png";
+    } else if (entity.getType() == EntityType::Creeper) {
+        texturePath = "/mob/creeper.png";
+    }
+    renderEngine.bindTexture(renderEngine.getTexture(texturePath));
 
     float renderYaw = 0.0f, interpYaw = entity.rotationYaw, headPitch = entity.rotationPitch;
     if (auto living = dynamic_cast<EntityLiving*>(&entity)) {
@@ -138,10 +155,49 @@ void renderEntity(Entity& entity, float pTicks, World& world, Camera& camera, Sh
         if (living->isSwinging) swing = ((float)living->swingProgressInt + pTicks) / 8.0f;
     }
 
-    if (dynamic_cast<EntityPlayer*>(&entity)) {
-        playerModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, (float)((double)SDL_GetTicksNS() / 1e9), netHeadYaw, -headPitch, 0.0625f, swing);
-    } else {
-        zombieModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, (float)((double)SDL_GetTicksNS() / 1e9), netHeadYaw, -headPitch, 0.0625f, swing);
+    float ageInTicks = (float)((double)SDL_GetTicksNS() / 1e9);
+
+    auto renderModel = [&]() {
+        if (dynamic_cast<EntityPlayer*>(&entity)) {
+            playerModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        } else if (entity.getType() == EntityType::Zombie) {
+            zombieModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        } else if (entity.getType() == EntityType::Pig) {
+            pigModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        } else if (entity.getType() == EntityType::Sheep) {
+            sheepModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+            auto* sheep = dynamic_cast<EntitySheep*>(&entity);
+            if (sheep && !sheep->sheared) {
+                renderEngine.bindTexture(renderEngine.getTexture("/mob/sheep_fur.png"));
+                sheepFurModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+            }
+        } else if (entity.getType() == EntityType::Skeleton) {
+            skeletonModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        } else if (entity.getType() == EntityType::Spider) {
+            spiderModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        } else if (entity.getType() == EntityType::Creeper) {
+            creeperModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        } else {
+            zombieModel.render(entityShader, modelMat, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, -headPitch, 0.0625f, swing);
+        }
+    };
+
+    renderModel();
+
+    // Hurt animation: red tint overlay
+    if (auto* living = dynamic_cast<EntityLiving*>(&entity)) {
+        if (living->hurtTime > 0) {
+            glDepthFunc(GL_EQUAL);
+            glDisable(GL_TEXTURE_2D);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(b, 0.0f, 0.0f, 0.4f);
+            renderModel();
+            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+            glDisable(GL_BLEND);
+            glEnable(GL_TEXTURE_2D);
+            glDepthFunc(GL_LEQUAL);
+        }
     }
 }
 

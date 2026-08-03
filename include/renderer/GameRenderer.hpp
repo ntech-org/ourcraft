@@ -14,6 +14,12 @@
 #include "renderer/Frustum.hpp"
 #include "renderer/ModelBiped.hpp"
 #include "renderer/ModelZombie.hpp"
+#include "renderer/ModelPig.hpp"
+#include "renderer/ModelSheep.hpp"
+#include "renderer/ModelSheepFur.hpp"
+#include "renderer/ModelSkeleton.hpp"
+#include "renderer/ModelSpider.hpp"
+#include "renderer/ModelCreeper.hpp"
 #include "world/World.hpp"
 #include "entities/EntityPlayer.hpp"
 
@@ -96,6 +102,12 @@ private:
     std::unique_ptr<Shader> m_textShader;
     std::unique_ptr<ModelBiped> m_playerModel;
     std::unique_ptr<ModelZombie> m_zombieModel;
+    std::unique_ptr<ModelPig> m_pigModel;
+    std::unique_ptr<ModelSheep> m_sheepModel;
+    std::unique_ptr<ModelSheepFur> m_sheepFurModel;
+    std::unique_ptr<ModelSkeleton> m_skeletonModel;
+    std::unique_ptr<ModelSpider> m_spiderModel;
+    std::unique_ptr<ModelCreeper> m_creeperModel;
 
     ProfilerResult m_profiler;
     

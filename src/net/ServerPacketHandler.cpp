@@ -1,9 +1,11 @@
 #include "net/ServerPacketHandler.hpp"
+#include "net/IntegratedServer.hpp"
 #include "net/Server.hpp"
 #include "net/Packets.hpp"
 #include "net/Permissions.hpp"
 #include "net/CommandHandler.hpp"
 #include "net/RegistrationManager.hpp"
+#include "net/ServerTick.hpp"
 #include "world/World.hpp"
 #include "world/Block.hpp"
 #include "items/Item.hpp"
@@ -12,6 +14,7 @@
 #include "entities/EntityLiving.hpp"
 #include "entities/EntityItem.hpp"
 #include "entities/EntityZombie.hpp"
+#include "world/TileEntityChest.hpp"
 #include <iostream>
 #include <chrono>
 #include <cmath>
@@ -122,6 +125,14 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
 
     std::cout << "Server: Player " << packet.username << " (" << serverUUID << ") logged in." << std::endl;
 
+    // Auto-op the host in singleplayer
+    if (!m_integratedServer.isDedicated() && packet.username == m_integratedServer.getHostUsername()) {
+        if (!m_permissions.isOp(packet.username)) {
+            m_permissions.addOp(packet.username);
+            std::cout << "Server: Auto-opped host player " << packet.username << std::endl;
+        }
+    }
+
     auto player = std::make_unique<EntityPlayer>(m_world);
     player->username = packet.username;
     player->uuid = serverUUID;
@@ -197,7 +208,7 @@ void ServerPacketHandler::handleLogin(ENetPeer* peer, const uint8_t* data, size_
     for (const auto& entity : m_world.getEntities()) {
         PacketSpawnEntity spawn;
         spawn.id = entity->entityID;
-        spawn.type = dynamic_cast<EntityZombie*>(entity.get()) ? 1 : (dynamic_cast<EntityItem*>(entity.get()) ? 2 : 0);
+        spawn.type = getEntitySpawnType(entity->getType());
         spawn.x = entity->posX;
         spawn.y = entity->posY;
         spawn.z = entity->posZ;
@@ -309,6 +320,9 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
 
         const uint8_t oldID = m_world.getBlockID(packet.x, packet.y, packet.z);
         const uint8_t oldMeta = m_world.getBlockMetadata(packet.x, packet.y, packet.z);
+        if (oldID > 0 && Block::blocksList[oldID]) {
+            Block::blocksList[oldID]->onBlockDestroyedByPlayer(m_world, packet.x, packet.y, packet.z, oldMeta);
+        }
         m_world.setBlockWithNotify(packet.x, packet.y, packet.z, 0);
 
         if (const Block* b = Block::blocksList[oldID]) {
@@ -368,13 +382,95 @@ void ServerPacketHandler::handlePlayerDigging(ENetPeer* peer, const uint8_t* dat
 void ServerPacketHandler::handleBlockPlacement(ENetPeer* peer, const uint8_t* data, size_t size) {
     PacketBlockPlacement packet;
     packet.deserialize(data, size);
+    if (!m_players.count(peer)) return;
+    PlayerSession& session = m_players[peer];
+    EntityPlayer* player = findPlayer(session.entityID);
+    if (!player) return;
+
+    if (packet.itemID == 0) {
+        uint8_t targetID = m_world.getBlockID(packet.x, packet.y, packet.z);
+        if (targetID == Block::chest->blockID) {
+            session.openChestCount = 0;
+            double dx = player->posX - (packet.x + 0.5);
+            double dy = player->posY - (packet.y + 0.5);
+            double dz = player->posZ - (packet.z + 0.5);
+            if (dx * dx + dy * dy + dz * dz > 64.0 ||
+                m_world.getBlockMaterial(packet.x, packet.y + 1, packet.z).isSolid()) return;
+            session.openChestCount = 1;
+            session.openChestX[0] = packet.x; session.openChestY[0] = packet.y; session.openChestZ[0] = packet.z;
+
+            const int offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+            for (const auto& offset : offsets) {
+                int nx = packet.x + offset[0], nz = packet.z + offset[1];
+                if (m_world.getBlockID(nx, packet.y, nz) != Block::chest->blockID) continue;
+                if (m_world.getBlockMaterial(nx, packet.y + 1, nz).isSolid()) {
+                    session.openChestCount = 0;
+                    return;
+                }
+                session.openChestCount = 2;
+                session.openChestX[1] = nx; session.openChestY[1] = packet.y; session.openChestZ[1] = nz;
+                if (nx < packet.x || nz < packet.z) {
+                    std::swap(session.openChestX[0], session.openChestX[1]);
+                    std::swap(session.openChestY[0], session.openChestY[1]);
+                    std::swap(session.openChestZ[0], session.openChestZ[1]);
+                }
+                break;
+            }
+
+            PacketOpenChest open;
+            open.x = packet.x; open.y = packet.y; open.z = packet.z;
+            open.rows = (uint8_t)(session.openChestCount * 3);
+            for (int part = 0; part < session.openChestCount; ++part) {
+                auto* chest = dynamic_cast<TileEntityChest*>(m_world.getTileEntity(
+                    session.openChestX[part], session.openChestY[part], session.openChestZ[part]));
+                if (!chest) {
+                    session.openChestCount = 0;
+                    return;
+                }
+                for (const ItemStack& stack : chest->chestContents) {
+                    open.items.push_back({stack.itemID, stack.count, stack.metadata});
+                }
+            }
+            m_server.sendPacket(peer, open, true);
+            return;
+        }
+        if (targetID > 0 && Block::blocksList[targetID]) {
+            Block::blocksList[targetID]->onBlockActivated(m_world, packet.x, packet.y, packet.z, player);
+        }
+        return;
+    }
+
+    if (packet.itemID >= 256) {
+        ItemStack& held = player->inventory.getCurrentStack();
+        if (held.itemID != packet.itemID || !Item::itemsList[packet.itemID]) return;
+        if (!Item::itemsList[packet.itemID]->onItemUse(held, *player, m_world, packet.x, packet.y, packet.z, packet.face)) return;
+
+        PacketSetSlot setSlot;
+        setSlot.windowId = 0;
+        setSlot.slot = player->inventory.currentSlot;
+        setSlot.itemID = held.itemID;
+        setSlot.count = held.count;
+        setSlot.metadata = held.metadata;
+        m_server.sendPacket(peer, setSlot, true);
+        return;
+    }
+
+    if (packet.itemID <= 0 || packet.itemID >= 256 || !Block::blocksList[packet.itemID]) return;
+    if (session.gameMode == GameMode::SURVIVAL && player->inventory.getCurrentItemID() != packet.itemID) return;
+
     int x = packet.x, y = packet.y, z = packet.z;
     if (packet.face == 0) y--; else if (packet.face == 1) y++;
     else if (packet.face == 2) z--; else if (packet.face == 3) z++;
     else if (packet.face == 4) x--; else if (packet.face == 5) x++;
-    m_world.setBlockAndMetadataWithNotify(x, y, z, packet.blockID, packet.metadata);
+    Block* block = Block::blocksList[packet.itemID];
+    if (m_world.getBlockID(x, y, z) != 0 || !block->canPlaceBlockAt(m_world, x, y, z)) return;
+    AxisAlignedBB placementBox((double)x, (double)y, (double)z, x + 1.0, y + 1.0, z + 1.0);
+    if (player->boundingBox.intersectsWith(placementBox)) return;
 
-    if (const Block* b = Block::blocksList[packet.blockID]) {
+    m_world.setBlockAndMetadataWithNotify(x, y, z, (uint8_t)packet.itemID, packet.metadata);
+    block->onBlockPlaced(m_world, x, y, z, packet.face, 0.5f, 0.5f, 0.5f);
+
+    if (const Block* b = Block::blocksList[packet.itemID]) {
         PacketPlaySound ps;
         ps.name = b->stepSound->getBreakSound();
         ps.x = x + 0.5; ps.y = y + 0.5; ps.z = z + 0.5;
@@ -382,21 +478,15 @@ void ServerPacketHandler::handleBlockPlacement(ENetPeer* peer, const uint8_t* da
         m_server.broadcastPacket(ps, false, peer);
     }
 
-    if (m_players.count(peer)) {
-        PlayerSession& session = m_players[peer];
-        if (session.gameMode == GameMode::SURVIVAL && packet.blockID > 0) {
-            EntityPlayer* player = findPlayer(session.entityID);
-            if (player) {
-                player->inventory.consumeCurrentItem(1);
-                PacketSetSlot setSlot;
-                setSlot.windowId = 0;
-                setSlot.slot = player->inventory.currentSlot;
-                setSlot.itemID = player->inventory.mainInventory[player->inventory.currentSlot].itemID;
-                setSlot.count = player->inventory.mainInventory[player->inventory.currentSlot].count;
-                setSlot.metadata = player->inventory.mainInventory[player->inventory.currentSlot].metadata;
-                m_server.sendPacket(peer, setSlot, true);
-            }
-        }
+    if (session.gameMode == GameMode::SURVIVAL) {
+        player->inventory.consumeCurrentItem(1);
+        PacketSetSlot setSlot;
+        setSlot.windowId = 0;
+        setSlot.slot = player->inventory.currentSlot;
+        setSlot.itemID = player->inventory.mainInventory[player->inventory.currentSlot].itemID;
+        setSlot.count = player->inventory.mainInventory[player->inventory.currentSlot].count;
+        setSlot.metadata = player->inventory.mainInventory[player->inventory.currentSlot].metadata;
+        m_server.sendPacket(peer, setSlot, true);
     }
 }
 
@@ -445,6 +535,74 @@ void ServerPacketHandler::handleClickWindow(ENetPeer* peer, const uint8_t* data,
         item->motionY = 0.2;
         m_world.spawnEntity(std::move(item));
     };
+
+    if (packet.windowId == 1) {
+        if (packet.slot == -2) {
+            session.openChestCount = 0;
+            return;
+        }
+        if (session.openChestCount <= 0) return;
+        for (int part = 0; part < session.openChestCount; ++part) {
+            int x = session.openChestX[part], y = session.openChestY[part], z = session.openChestZ[part];
+            double dx = player->posX - (x + 0.5);
+            double dy = player->posY - (y + 0.5);
+            double dz = player->posZ - (z + 0.5);
+            if (m_world.getBlockID(x, y, z) != Block::chest->blockID ||
+                m_world.getBlockMaterial(x, y + 1, z).isSolid() ||
+                dx * dx + dy * dy + dz * dz > 64.0) {
+                session.openChestCount = 0;
+                return;
+            }
+        }
+        const int chestSlots = session.openChestCount * TileEntityChest::CHEST_SIZE;
+        if (packet.slot < 0 || packet.slot >= chestSlots + InventoryPlayer::INVENTORY_SIZE) return;
+
+        ItemStack* target = nullptr;
+        TileEntityChest* targetChest = nullptr;
+        if (packet.slot < chestSlots) {
+            int part = packet.slot / TileEntityChest::CHEST_SIZE;
+            int chestSlot = packet.slot % TileEntityChest::CHEST_SIZE;
+            targetChest = dynamic_cast<TileEntityChest*>(m_world.getTileEntity(
+                session.openChestX[part], session.openChestY[part], session.openChestZ[part]));
+            if (!targetChest) return;
+            target = &targetChest->chestContents[chestSlot];
+        } else {
+            target = &inv.mainInventory[packet.slot - chestSlots];
+        }
+
+        bool rightClick = packet.button != 0;
+        if (inv.cursorStack.isEmpty()) {
+            if (!target->isEmpty()) inv.cursorStack = target->splitStack(rightClick ? (target->count + 1) / 2 : target->count);
+        } else if (target->isEmpty()) {
+            *target = inv.cursorStack.splitStack(rightClick ? 1 : inv.cursorStack.count);
+        } else if (target->isItemEqual(inv.cursorStack)) {
+            int amount = std::min(rightClick ? 1 : inv.cursorStack.count, 64 - target->count);
+            if (amount > 0) { target->count += amount; inv.cursorStack.splitStack(amount); }
+        } else if (!rightClick) {
+            std::swap(*target, inv.cursorStack);
+        }
+        if (targetChest) targetChest->markDirty();
+
+        PacketWindowItems items;
+        items.windowId = 1;
+        for (int part = 0; part < session.openChestCount; ++part) {
+            auto* chest = dynamic_cast<TileEntityChest*>(m_world.getTileEntity(
+                session.openChestX[part], session.openChestY[part], session.openChestZ[part]));
+            if (!chest) return;
+            for (const ItemStack& stack : chest->chestContents) items.items.push_back({stack.itemID, stack.count, stack.metadata});
+        }
+        for (int i = 0; i < InventoryPlayer::INVENTORY_SIZE; ++i) {
+            const ItemStack& stack = inv.mainInventory[i];
+            items.items.push_back({stack.itemID, stack.count, stack.metadata});
+        }
+        m_server.sendPacket(peer, items, true);
+
+        PacketSetSlot cursor;
+        cursor.windowId = 0; cursor.slot = -1;
+        cursor.itemID = inv.cursorStack.itemID; cursor.count = inv.cursorStack.count; cursor.metadata = inv.cursorStack.metadata;
+        m_server.sendPacket(peer, cursor, true);
+        return;
+    }
 
     // slot == -2: close crafting UI — return craft/workbench ingredients
     if (packet.slot == -2) {
@@ -589,7 +747,15 @@ void ServerPacketHandler::handleUseEntity(ENetPeer* peer, const uint8_t* data, s
     else if (itemID >= 270 && itemID <= 279) damage = 2;
 
     if (auto* living = dynamic_cast<EntityLiving*>(target)) {
-        living->attackEntityFrom(nullptr, damage);
+        // Apply knockback by passing the player as source
+        living->attackEntityFrom(player, damage);
+
+        // Broadcast hurt animation to all clients
+        PacketEntityHurt hurt;
+        hurt.entityID = target->entityID;
+        hurt.damage = (int8_t)damage;
+        m_server.broadcastPacket(hurt, true);
+
         PacketPlaySound ps;
         ps.name = "damage.hit";
         ps.x = target->posX; ps.y = target->posY + target->height * 0.5; ps.z = target->posZ;

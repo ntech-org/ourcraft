@@ -1,8 +1,11 @@
 #include "entities/EntityZombie.hpp"
+#include "items/Item.hpp"
 #include <cstdlib>
 
 EntityZombie::EntityZombie(World& world) : EntityLiving(world) {
     setSize(0.6f, 1.8f);
+    health = 20;
+    maxHealth = 20;
 }
 
 void EntityZombie::updateEntityActionState() {
@@ -18,8 +21,11 @@ void EntityZombie::updateEntityActionState() {
         rotationYaw = (float)std::rand() / (float)RAND_MAX * 360.0f;
     }
 
-    float forward = 0.5f;
-    float strafe = 0.0f;
+    moveForward = 0.5f;
+    moveStrafe = 0.0f;
+    moveRelative(moveStrafe, moveForward, onGround ? 0.1f : 0.02f);
+}
 
-    // moveRelative logic would go here if we want them to actually move
+int EntityZombie::getDropItemID() const {
+    return Item::feather ? Item::feather->itemID : 0;
 }

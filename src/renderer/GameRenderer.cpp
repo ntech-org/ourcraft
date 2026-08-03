@@ -55,6 +55,12 @@ GameRenderer::GameRenderer(SDL_Window* window, World& world, EntityPlayer& playe
     m_textShader = std::make_unique<Shader>("assets/shaders/text.vert", "assets/shaders/text.frag");
     m_playerModel = std::make_unique<ModelBiped>();
     m_zombieModel = std::make_unique<ModelZombie>();
+    m_pigModel = std::make_unique<ModelPig>();
+    m_sheepModel = std::make_unique<ModelSheep>();
+    m_sheepFurModel = std::make_unique<ModelSheepFur>();
+    m_skeletonModel = std::make_unique<ModelSkeleton>();
+    m_spiderModel = std::make_unique<ModelSpider>();
+    m_creeperModel = std::make_unique<ModelCreeper>();
 
     m_renderEngine->registerTextureFX(std::make_unique<TextureWaterFX>());
     m_renderEngine->registerTextureFX(std::make_unique<TextureWaterFlowFX>());
@@ -342,13 +348,18 @@ void GameRenderer::renderSelectionBox(const glm::mat4& projection, const glm::ma
     int y = hit.y;
     int z = hit.z;
 
-    const glm::vec3 relativePos = glm::vec3(glm::dvec3(x, y, z) - m_camera.position);
-    float x0 = relativePos.x - 0.002f;
-    float y0 = relativePos.y - 0.002f;
-    float z0 = relativePos.z - 0.002f;
-    float x1 = x0 + 1.004f;
-    float y1 = y0 + 1.004f;
-    float z1 = z0 + 1.004f;
+    uint8_t bid = m_world.getBlockID(x, y, z);
+    if (!bid || !Block::blocksList[bid]) return;
+    Block* b = Block::blocksList[bid];
+    AxisAlignedBB sel = b->getSelectedBoundingBoxFromPool(m_world, x, y, z);
+    if (sel.minX == sel.maxX || sel.minY == sel.maxY || sel.minZ == sel.maxZ) return;
+
+    float x0 = (float)(sel.minX - m_camera.position.x) - 0.002f;
+    float y0 = (float)(sel.minY - m_camera.position.y) - 0.002f;
+    float z0 = (float)(sel.minZ - m_camera.position.z) - 0.002f;
+    float x1 = (float)(sel.maxX - m_camera.position.x) + 0.002f;
+    float y1 = (float)(sel.maxY - m_camera.position.y) + 0.002f;
+    float z1 = (float)(sel.maxZ - m_camera.position.z) + 0.002f;
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -393,13 +404,18 @@ void GameRenderer::renderBreakingOverlay(const glm::mat4& projection, const glm:
     const int tex = 240 + stage;
     const FaceUV uv = getTextureUV(tex);
 
-    const glm::vec3 relativePos = glm::vec3(glm::dvec3(m_breakOverlayX, m_breakOverlayY, m_breakOverlayZ) - m_camera.position);
-    const float x0 = relativePos.x;
-    const float y0 = relativePos.y;
-    const float z0 = relativePos.z;
-    const float x1 = x0 + 1.0f;
-    const float y1 = y0 + 1.0f;
-    const float z1 = z0 + 1.0f;
+    uint8_t bid = m_world.getBlockID(m_breakOverlayX, m_breakOverlayY, m_breakOverlayZ);
+    if (!bid || !Block::blocksList[bid]) return;
+    Block* b = Block::blocksList[bid];
+    AxisAlignedBB sel = b->getSelectedBoundingBoxFromPool(m_world, m_breakOverlayX, m_breakOverlayY, m_breakOverlayZ);
+    if (sel.minX == sel.maxX || sel.minY == sel.maxY || sel.minZ == sel.maxZ) return;
+
+    const float x0 = (float)(sel.minX - m_camera.position.x);
+    const float y0 = (float)(sel.minY - m_camera.position.y);
+    const float z0 = (float)(sel.minZ - m_camera.position.z);
+    const float x1 = (float)(sel.maxX - m_camera.position.x);
+    const float y1 = (float)(sel.maxY - m_camera.position.y);
+    const float z1 = (float)(sel.maxZ - m_camera.position.z);
     const float eps = 0.001f;
 
     glEnable(GL_BLEND);
@@ -474,14 +490,18 @@ void GameRenderer::renderEntities(float partialTicks, const glm::mat4& projectio
     m_entityShader->setVec3("sunDirection", m_world.getSunDirection());
 
     for (const auto& entity : m_world.getEntities()) {
-        renderEntity(*entity.get(), partialTicks, m_world, m_camera, *m_entityShader, *m_renderEngine, *m_playerModel, *m_zombieModel);
+        renderEntity(*entity.get(), partialTicks, m_world, m_camera, *m_entityShader, *m_renderEngine,
+                     *m_playerModel, *m_zombieModel, *m_pigModel, *m_sheepModel, *m_sheepFurModel,
+                     *m_skeletonModel, *m_spiderModel, *m_creeperModel);
         if (auto* player = dynamic_cast<EntityPlayer*>(entity.get())) {
             ::renderThirdPersonHeldItem(player, partialTicks, m_camera.position, *m_entityShader, *m_renderEngine, *m_playerModel);
         }
     }
 
     if (cameraMode != 0) {
-        renderEntity(m_player, partialTicks, m_world, m_camera, *m_entityShader, *m_renderEngine, *m_playerModel, *m_zombieModel);
+        renderEntity(m_player, partialTicks, m_world, m_camera, *m_entityShader, *m_renderEngine,
+                     *m_playerModel, *m_zombieModel, *m_pigModel, *m_sheepModel, *m_sheepFurModel,
+                     *m_skeletonModel, *m_spiderModel, *m_creeperModel);
         ::renderThirdPersonHeldItem(&m_player, partialTicks, m_camera.position, *m_entityShader, *m_renderEngine, *m_playerModel);
     }
 }

@@ -40,6 +40,9 @@ public:
 
     bool loadPlayerData(const std::string& name, PlayerSaveData& data);
     void savePlayerData(const PlayerSaveData& data);
+    bool loadChest(int x, int y, int z, ItemStack* contents, int size);
+    void saveChest(int x, int y, int z, const ItemStack* contents, int size);
+    void removeChest(int x, int y, int z);
     
     std::string getWorldDir() const { return m_worldDir; }
 

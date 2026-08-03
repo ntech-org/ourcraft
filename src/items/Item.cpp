@@ -5,6 +5,8 @@
 #include "items/ItemSpade.hpp"
 #include "items/ItemSword.hpp"
 #include "items/ItemHoe.hpp"
+#include "items/ItemSeeds.hpp"
+#include "world/Block.hpp"
 
 Item* Item::itemsList[1024] = { nullptr };
 
@@ -130,7 +132,7 @@ void Item::init() {
     hoeSteel = new ItemHoe(292, 2); hoeSteel->name = "hoeSteel"; hoeSteel->iconIndex = 130;
     hoeDiamond = new ItemHoe(293, 3); hoeDiamond->name = "hoeDiamond"; hoeDiamond->iconIndex = 131;
     hoeGold = new ItemHoe(294, 4); hoeGold->name = "hoeGold"; hoeGold->iconIndex = 132;
-    seeds = new Item(295); seeds->name = "seeds"; seeds->iconIndex = 9;
+    seeds = new ItemSeeds(295, Block::crops->blockID); seeds->name = "seeds"; seeds->iconIndex = 9;
     wheat = new Item(296); wheat->name = "wheat"; wheat->iconIndex = 25;
     bread = new ItemFood(297, 5); bread->name = "bread"; bread->iconIndex = 41;
     flint = new Item(318); flint->name = "flint"; flint->iconIndex = 6;

@@ -95,6 +95,10 @@ bool World::setBlockID(int x, int y, int z, uint8_t id) {
 
     uint8_t oldID = chunk->getBlockID(lx, y, lz);
     if (oldID == id) return false;
+    uint8_t oldMetadata = chunk->getBlockMetadata(lx, y, lz);
+    if (oldID > 0 && Block::blocksList[oldID]) {
+        Block::blocksList[oldID]->onBlockRemoval(*this, x, y, z, oldMetadata);
+    }
 
     int oldOpacity = Block::lightOpacity[oldID];
     int oldBlockLight = Block::lightValue[oldID];
@@ -218,10 +222,23 @@ void World::update(float dt) {
         }
         tickTileEntities();
     }
-    for (auto& e : m_entities) {
-        e->onUpdate();
+    // Iterate by index to avoid iterator invalidation from push_back during onUpdate
+    m_isUpdating = true;
+    for (size_t i = 0; i < m_entities.size(); ++i) {
+        if (m_entities[i] && !m_entities[i]->isDead) {
+            m_entities[i]->onUpdate();
+        }
     }
-    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [](const auto& e) { return e->isDead; }), m_entities.end());
+    m_isUpdating = false;
+    // Process any entities spawned during onUpdate (e.g. mob death drops)
+    for (auto& e : m_pendingSpawns) {
+        if (e) {
+            m_entities.push_back(std::move(e));
+        }
+    }
+    m_pendingSpawns.clear();
+    // Remove dead entities
+    m_entities.erase(std::remove_if(m_entities.begin(), m_entities.end(), [](const auto& e) { return !e || e->isDead; }), m_entities.end());
 }
 
 static std::uint64_t tileKey(int x, int y, int z) {
@@ -291,12 +308,16 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
     int y2 = (int)std::floor(end.y);
     int z2 = (int)std::floor(end.z);
 
-    uint8_t id = getBlockID(x1, y1, z1);
-    if (id > 0) {
-        if (!ignoreLiquids || !Block::blocksList[id]->blockMaterial.isLiquid()) {
-            return {HitType::BLOCK, x1, y1, z1, -1, start};
-        }
-    }
+    const glm::dvec3 rayEnd = end;
+    auto traceCell = [&](int x, int y, int z, const glm::dvec3& rayStart) {
+        uint8_t id = getBlockID(x, y, z);
+        if (!id || !Block::blocksList[id]) return HitResult{HitType::NONE};
+        if (ignoreLiquids && Block::blocksList[id]->blockMaterial.isLiquid()) return HitResult{HitType::NONE};
+        return Block::blocksList[id]->collisionRayTrace(*this, x, y, z, rayStart, rayEnd);
+    };
+
+    HitResult initialHit = traceCell(x1, y1, z1, start);
+    if (initialHit.type == HitType::BLOCK) return initialHit;
 
     int count = 200;
     while (count-- >= 0) {
@@ -332,12 +353,8 @@ HitResult World::rayTraceBlocks(glm::dvec3 start, glm::dvec3 end, bool ignoreLiq
         y1 = (int)std::floor(start.y) - (side == 1 ? 1 : 0);
         z1 = (int)std::floor(start.z) - (side == 3 ? 1 : 0);
 
-        uint8_t hitID = getBlockID(x1, y1, z1);
-        if (hitID > 0) {
-            if (!ignoreLiquids || !Block::blocksList[hitID]->blockMaterial.isLiquid()) {
-                return {HitType::BLOCK, x1, y1, z1, side, start};
-            }
-        }
+        HitResult hit = traceCell(x1, y1, z1, start);
+        if (hit.type == HitType::BLOCK) return hit;
     }
     return {HitType::NONE};
 }
@@ -348,7 +365,11 @@ void World::spawnEntity(std::unique_ptr<Entity> e) {
         auto* item = static_cast<EntityItem*>(e.get());
         if (item->tryMergeWithNearby()) return;
     }
-    m_entities.push_back(std::move(e));
+    if (m_isUpdating) {
+        m_pendingSpawns.push_back(std::move(e));
+    } else {
+        m_entities.push_back(std::move(e));
+    }
 }
 
 void World::removeEntity(int32_t id, bool notify) {

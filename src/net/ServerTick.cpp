@@ -6,6 +6,11 @@
 #include "world/World.hpp"
 #include "entities/EntityItem.hpp"
 #include "entities/EntityZombie.hpp"
+#include "entities/EntityPig.hpp"
+#include "entities/EntitySheep.hpp"
+#include "entities/EntitySkeleton.hpp"
+#include "entities/EntitySpider.hpp"
+#include "entities/EntityCreeper.hpp"
 #include "entities/EntityPlayer.hpp"
 #include "entities/EntityLiving.hpp"
 #include "items/Item.hpp"
@@ -43,15 +48,20 @@ const std::vector<ChunkOffset>& getChunkOffsetsForRadius(int radius) {
     return cache.emplace(radius, std::move(offsets)).first->second;
 }
 
+} // namespace
+
 int getEntitySpawnType(EntityType type) {
     switch (type) {
         case EntityType::Zombie: return 1;
         case EntityType::Item: return 2;
+        case EntityType::Pig: return 3;
+        case EntityType::Sheep: return 4;
+        case EntityType::Skeleton: return 5;
+        case EntityType::Spider: return 6;
+        case EntityType::Creeper: return 7;
         default: return 0;
     }
 }
-
-} // namespace
 
 void saveAllPlayers(World& world, Server& server, std::map<ENetPeer*, PlayerSession>& players) {
     auto saveHandler = world.getSaveHandler();
@@ -406,12 +416,16 @@ void spawnMobs(World& world, std::map<ENetPeer*, PlayerSession>& players,
         auto it = entitiesById.find(session.entityID);
         if (it == entitiesById.end()) continue;
         Entity* player = it->second;
+        int px = (int)std::floor(player->posX);
+        int pz = (int)std::floor(player->posZ);
 
-        for (int i = 0; i < 3; ++i) {
-            int rx = (std::rand() % 64) - 32;
-            int rz = (std::rand() % 64) - 32;
-            int x = (int)std::floor(player->posX) + rx;
-            int z = (int)std::floor(player->posZ) + rz;
+        // Monster spawning (dark areas)
+        for (int attempt = 0; attempt < 6; ++attempt) {
+            int x = px + (std::rand() % 32) - 16;
+            int z = pz + (std::rand() % 32) - 16;
+
+            // Must be on a loaded chunk
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
 
             int y = 0;
             for (y = 127; y > 0; --y) {
@@ -419,17 +433,75 @@ void spawnMobs(World& world, std::map<ENetPeer*, PlayerSession>& players,
             }
             y++;
 
-            if (y > 0 && y < 128) {
-                int light = world.getSavedLightValue(LightType::Block, x, y, z);
-                int skyLight = world.getSavedLightValue(LightType::Sky, x, y, z);
+            if (y <= 0 || y >= 128) continue;
 
-                if (light < 7 && skyLight < 7) {
-                    auto zombie = std::make_unique<EntityZombie>(world);
-                    zombie->setPosition(x + 0.5, y, z + 0.5);
-                    if (world.getCollidingBoundingBoxes(zombie->boundingBox).empty()) {
-                        world.spawnEntity(std::move(zombie));
-                    }
-                }
+            int light = world.getSavedLightValue(LightType::Block, x, y, z);
+            int skyLight = world.getSavedLightValue(LightType::Sky, x, y, z);
+            if (light >= 7 || skyLight >= 7) continue;
+
+            // Must have a solid block to stand on
+            if (y <= 0) continue;
+            uint8_t groundID = world.getBlockID(x, y - 1, z);
+            if (groundID == 0) continue;
+            // Need 2 air blocks above the ground
+            if (world.getBlockID(x, y, z) != 0) continue;
+
+            double dx = (x + 0.5) - player->posX;
+            double dz = (z + 0.5) - player->posZ;
+            if (dx * dx + dz * dz < 576.0) continue; // at least 24 blocks away
+
+            int mobType = std::rand() % 4;
+            std::unique_ptr<EntityLiving> mob;
+            switch (mobType) {
+                case 0: mob = std::make_unique<EntityZombie>(world); break;
+                case 1: mob = std::make_unique<EntitySkeleton>(world); break;
+                case 2: mob = std::make_unique<EntitySpider>(world); break;
+                case 3: mob = std::make_unique<EntityCreeper>(world); break;
+            }
+            if (!mob) continue;
+            mob->setPosition(x + 0.5, y, z + 0.5);
+            if (world.getCollidingBoundingBoxes(mob->boundingBox).empty()) {
+                world.spawnEntity(std::move(mob));
+            }
+        }
+
+        // Animal spawning (bright grass areas)
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            int x = px + (std::rand() % 64) - 32;
+            int z = pz + (std::rand() % 64) - 32;
+
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+
+            int y = 0;
+            for (y = 127; y > 0; --y) {
+                if (world.getBlockID(x, y, z) != 0) break;
+            }
+            y++;
+
+            if (y <= 0 || y >= 128) continue;
+
+            int light = world.getSavedLightValue(LightType::Block, x, y, z);
+            int skyLight = world.getSavedLightValue(LightType::Sky, x, y, z);
+            if (light <= 8 && skyLight <= 8) continue;
+
+            // Must have a grass block to stand on and 2 air blocks above
+            if (y <= 0) continue;
+            uint8_t groundID = world.getBlockID(x, y - 1, z);
+            if (groundID != 2) continue; // grass block
+            if (world.getBlockID(x, y, z) != 0) continue;
+
+            double dx = (x + 0.5) - player->posX;
+            double dz = (z + 0.5) - player->posZ;
+            if (dx * dx + dz * dz < 1024.0) continue; // at least 32 blocks away
+
+            int animalType = std::rand() % 2;
+            std::unique_ptr<EntityLiving> animal;
+            if (animalType == 0) animal = std::make_unique<EntityPig>(world);
+            else animal = std::make_unique<EntitySheep>(world);
+
+            animal->setPosition(x + 0.5, y, z + 0.5);
+            if (world.getCollidingBoundingBoxes(animal->boundingBox).empty()) {
+                world.spawnEntity(std::move(animal));
             }
         }
     }

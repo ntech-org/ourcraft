@@ -15,3 +15,4 @@ const Material Material::fire(false, false, false);
 const Material Material::sand(false, true, true);
 const Material Material::glass(false, true, true);
 const Material Material::tnt(false, true, true);
+const Material Material::circuits(false, false, false);

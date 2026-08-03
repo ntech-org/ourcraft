@@ -18,6 +18,7 @@ NetworkHandler::NetworkHandler(World& world, EntityPlayer& player, bool startSer
 
     if (startServer) {
         m_server = std::make_unique<IntegratedServer>(worldName);
+        m_server->setHostUsername(m_player.username);
         m_server->start();
     }
 
@@ -142,7 +143,7 @@ void NetworkHandler::sendPlacement(int x, int y, int z, int face, int id, int me
     PacketBlockPlacement packet;
     packet.x = x; packet.y = y; packet.z = z;
     packet.face = (uint8_t)face;
-    packet.blockID = (uint8_t)id;
+    packet.itemID = id;
     packet.metadata = (uint8_t)meta;
     m_client->sendPacket(packet, true);
 }

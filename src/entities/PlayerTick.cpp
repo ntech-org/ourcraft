@@ -34,8 +34,19 @@ void handleBlockPlacement(Minecraft& mc, EntityPlayer& player, World& world) {
     if (hit.type == HitType::BLOCK) {
         uint8_t targetID = world.getBlockID(hit.x, hit.y, hit.z);
         if (targetID > 0 && Block::blocksList[targetID]->onBlockActivated(world, hit.x, hit.y, hit.z, &player)) {
+            mc.getNetworkHandler()->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, 0, 0);
             bb.setRightClickDelayTimer(4);
         } else {
+            int itemID = player.inventory.getCurrentItemID();
+            if (itemID >= 256 && Item::itemsList[itemID]) {
+                mc.getNetworkHandler()->sendPlacement(hit.x, hit.y, hit.z, hit.sideHit, itemID, currentStack.metadata);
+                if (Item::itemsList[itemID]->onItemUse(currentStack, player, world, hit.x, hit.y, hit.z, hit.sideHit)) {
+                    player.swing();
+                    bb.setRightClickDelayTimer(4);
+                }
+                return;
+            }
+
             int x = hit.x, y = hit.y, z = hit.z;
             int face = hit.sideHit;
             if (face == 0) y--; else if (face == 1) y++;
@@ -44,16 +55,14 @@ void handleBlockPlacement(Minecraft& mc, EntityPlayer& player, World& world) {
 
             AxisAlignedBB blockBB((double)x, (double)y, (double)z, (double)x + 1.0, (double)y + 1.0, (double)z + 1.0);
             if (!player.boundingBox.intersectsWith(blockBB)) {
-                int itemID = player.inventory.getCurrentItemID();
+                itemID = player.inventory.getCurrentItemID();
                 if (itemID > 0 && itemID < 256 && Block::blocksList[itemID]) {
-                    if (itemID == 50) {
-                        if (face != 1) return;
-                        uint8_t belowID = world.getBlockID(x, y - 1, z);
-                        if (belowID == 0 || !Block::blocksList[belowID] || !Block::blocksList[belowID]->blockMaterial.isSolid()) return;
-                    }
+                    Block* block = Block::blocksList[itemID];
+                    if (!block->canPlaceBlockAt(world, x, y, z)) return;
                     const bool shouldConsume = player.gameMode == GameMode::SURVIVAL;
                     if (!shouldConsume || player.inventory.consumeCurrentItem(1)) {
-                        world.setBlockWithNotify(x, y, z, (uint8_t)itemID);
+                        world.setBlockAndMetadataWithNotify(x, y, z, (uint8_t)itemID, 0);
+                        block->onBlockPlaced(world, x, y, z, face, 0.5f, 0.5f, 0.5f);
                         player.swing();
                         if (auto* b = Block::blocksList[itemID]) {
                             if (auto* snd = mc.getSoundPool().getRandom(b->stepSound->getBreakSound(), mc.getSoundSystem()))
